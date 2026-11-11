@@ -1,5 +1,5 @@
 import AppKit
-import SkillwatchCore
+import SkilloriCore
 import SwiftUI
 
 struct InstallationDetail: View {
@@ -78,7 +78,7 @@ struct InstallationDetail: View {
                 .font(.caption).foregroundStyle(.secondary)
         case .managed(let owner):
             LabeledContent("Managed by", value: owner)
-            Text("\(owner) installs and updates this skill. Skillwatch only reads it.")
+            Text("\(owner) installs and updates this skill. Skillori only reads it.")
                 .font(.caption).foregroundStyle(.secondary)
         case .unknown:
             Label("Source unknown", systemImage: "questionmark.circle")

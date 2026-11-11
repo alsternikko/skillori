@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds a Release Skillwatch.app, signs it with Developer ID, notarizes it with Apple and
+# Builds a Release Skillori.app, signs it with Developer ID, notarizes it with Apple and
 # staples the ticket. Spike version: no DMG and no Sparkle yet.
 #
 # Needs scripts/notarize.conf.local (not committed) with:
@@ -21,14 +21,14 @@ security find-generic-password -s "$NOTARY_KEYCHAIN_SERVICE" -a "$NOTARY_APPLE_I
 
 cd "$root"
 xcodegen generate --quiet
-xcodebuild -project Skillwatch.xcodeproj -scheme Skillwatch -configuration Release \
+xcodebuild -project Skillori.xcodeproj -scheme Skillori -configuration Release \
   -derivedDataPath build/DerivedData build -quiet
 
-app="build/DerivedData/Build/Products/Release/Skillwatch.app"
+app="build/DerivedData/Build/Products/Release/Skillori.app"
 codesign --verify --strict --deep "$app" || fail "Signature check failed."
 codesign -dv "$app" 2>&1 | grep -qF "TeamIdentifier=$TEAM_ID" || fail "Not signed by team $TEAM_ID."
 
-zip="build/Skillwatch-notarize.zip"
+zip="build/Skillori-notarize.zip"
 rm -f "$zip"
 ditto -c -k --keepParent "$app" "$zip"
 

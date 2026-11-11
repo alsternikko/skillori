@@ -47,7 +47,7 @@ Varje rad ska verifieras igen innan adapterregeln går till release. Sökvägar 
 
 ## 3. Installationsverktyg som lämnar proveniens
 
-| Verktyg | Skriver till | Proveniensdata | Värde för Skillwatch |
+| Verktyg | Skriver till | Proveniensdata | Värde för Skillori |
 | --- | --- | --- | --- |
 | **`npx skills`** (vercel-labs) | Kanonisk `~/.agents/skills/<namn>` + symlänkar till valda agenters rötter **3P L**; `--copy` ger kopior | `~/.agents/.skill-lock.json` (eller `$XDG_STATE_HOME/skills/`): source, sourceUrl, skillPath, **skillFolderHash = git-trädhash**, installedAt, updatedAt; nyare versioner även `ref`, `pluginName`, `installMode` m.fl. **3P L**. Projekt: `./skills-lock.json` med `computedHash` **3P** | **Högst.** Exakt baseline och billig uppströmskontroll (verifierat, se [beslut 0004](../beslut/0004-innehallshash-git-trad.md)). Lokala lockfilen (v3) saknar några av fälten i källkoden, så schemat varierar mellan versioner |
 | **openskills** | `.claude/skills`, `.agent/skills`, `~/.claude/skills` **3P** | Sidofil `<skill>/.openskills.json`: source, repoUrl, subpath, installedAt **3P** | Hög. Ger källa men ingen hash |

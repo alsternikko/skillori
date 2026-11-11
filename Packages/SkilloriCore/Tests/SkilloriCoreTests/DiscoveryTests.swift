@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SkillwatchCore
+@testable import SkilloriCore
 
 @Suite struct DiscoveryTests {
     /// A home directory shaped like the one observed on 2026-11-11, in miniature.

@@ -16,7 +16,7 @@ struct SettingsView: View {
                 Button("Add Project Folder…") { store.addProject() }
             }
             Section("Privacy") {
-                Text("Skillwatch reads skill folders on this Mac. It doesn't upload anything, and it doesn't run scripts from skills.")
+                Text("Skillori reads skill folders on this Mac. It doesn't upload anything, and it doesn't run scripts from skills.")
                     .foregroundStyle(.secondary)
             }
         }

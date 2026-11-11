@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import Observation
-import SkillwatchCore
+import SkilloriCore
 
 /// Holds the latest inventory and the user's chosen project folders.
 ///
@@ -56,7 +56,7 @@ final class InventoryStore {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = true
         panel.prompt = "Add Project"
-        panel.message = "Choose project folders. Skillwatch reads their skill folders only."
+        panel.message = "Choose project folders. Skillori reads their skill folders only."
         NSApp.activate()
         guard panel.runModal() == .OK else { return }
         let new = panel.urls.filter { url in !projects.contains { $0.standardizedFileURL == url.standardizedFileURL } }

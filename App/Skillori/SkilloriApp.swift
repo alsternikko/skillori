@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct SkillwatchApp: App {
+struct SkilloriApp: App {
     @State private var store = InventoryStore()
 
     var body: some Scene {
@@ -9,11 +9,11 @@ struct SkillwatchApp: App {
             MenuPanel()
                 .environment(store)
         } label: {
-            Label("Skillwatch", systemImage: store.needsAttention ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack")
+            Label("Skillori", systemImage: store.needsAttention ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack")
         }
         .menuBarExtraStyle(.window)
 
-        Window("Skillwatch Library", id: WindowID.library) {
+        Window("Skillori Library", id: WindowID.library) {
             LibraryView()
                 .environment(store)
                 .frame(minWidth: 820, minHeight: 480)

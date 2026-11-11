@@ -1,4 +1,4 @@
-import SkillwatchCore
+import SkilloriCore
 import SwiftUI
 
 enum LibraryFilter: String, CaseIterable, Identifiable {

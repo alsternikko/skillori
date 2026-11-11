@@ -2,12 +2,12 @@
 import AppKit
 import SwiftUI
 
-/// Debug builds only: `SKILLWATCH_SNAPSHOT_DIR=/some/dir` renders the main views to PNG files
+/// Debug builds only: `SKILLORI_SNAPSHOT_DIR=/some/dir` renders the main views to PNG files
 /// and quits. Lets us check the UI without screen recording permission.
 @MainActor
 enum DebugSnapshots {
     static func runIfRequested(store: InventoryStore) {
-        guard let dir = ProcessInfo.processInfo.environment["SKILLWATCH_SNAPSHOT_DIR"] else { return }
+        guard let dir = ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_DIR"] else { return }
         Task { @MainActor in
             while store.inventory == nil || store.isScanning { try? await Task.sleep(for: .milliseconds(100)) }
             let out = URL(fileURLWithPath: dir)

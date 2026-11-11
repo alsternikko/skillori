@@ -8,7 +8,7 @@ Detta är *observationer på en maskin*, inte dokumenterade kontrakt. Se [kompat
 
 ## 1. Sammanfattning
 
-- Skills finns i **minst nio olika agentmiljöer** på denna dator, inte två. Det bekräftar att Skillwatch måste vara agent-agnostisk.
+- Skills finns i **minst nio olika agentmiljöer** på denna dator, inte två. Det bekräftar att Skillori måste vara agent-agnostisk.
 - Den vanligaste installationsvägen här är **`npx skills`** (vercel-labs/skills). Den lägger en kanonisk kopia i `~/.agents/skills/` och **symlänkar** in den i varje agents egen katalog.
 - `~/.agents/.skill-lock.json` innehåller **källa och git-trädhash per skill**. Hashen är verifierad som identisk med både lokalt innehåll och GitHubs katalog-SHA. Det ger exakt proveniens och billig uppdateringsdetektion utan att klona något (se avsnitt 4).
 - Plugin-system (Claude Code, Cursor, Codex, Claude Desktop) lägger skills i **versionerade cachekataloger**. Marketplace-kloner innehåller många `SKILL.md` som **inte** är installerade och får inte räknas.
@@ -69,7 +69,7 @@ Format (en post):
 - `git write-tree` över den lokala katalogen (i ett isolerat temporärt git-index) ger **exakt** `skillFolderHash`.
 - `gh api repos/emilkowalski/skills/contents/skills` returnerar katalog-SHA:er. För `animate`, `emil-design-eng` m.fl. är de **identiska** med lock-filens hash.
 
-Konsekvenser för Skillwatch:
+Konsekvenser för Skillori:
 
 - **Lokal status (L vs B):** Beräkna git-trädhash för lokal katalog och jämför med `skillFolderHash` → `matchesBaseline` / `modified`. Kan göras i ren Swift (SHA-1 över git-blob/tree-format) utan git-binär och utan att köra något.
 - **Upstream (R vs B):** Ett enda API-anrop per källrepo och katalog ger alla skills trädhashar → `unchanged` / `candidateAvailable`. Ändringar utanför skillkatalogen påverkar inte hashen, vilket uppfyller acceptanskriterium 6 gratis.

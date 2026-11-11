@@ -1,4 +1,4 @@
-import SkillwatchCore
+import SkilloriCore
 import SwiftUI
 
 struct CoverageView: View {
@@ -8,7 +8,7 @@ struct CoverageView: View {
     var body: some View {
         List {
             Section {
-                Text("Skillwatch reads these locations and nothing else. Add project folders to include their skills.")
+                Text("Skillori reads these locations and nothing else. Add project folders to include their skills.")
                     .font(.callout).foregroundStyle(.secondary)
                 if let lock = store.inventory?.lockFile {
                     LabeledContent("npx skills lock file") { PathText(lock) }

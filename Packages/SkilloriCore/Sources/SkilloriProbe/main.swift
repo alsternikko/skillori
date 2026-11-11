@@ -1,8 +1,8 @@
 import Foundation
-import SkillwatchCore
+import SkilloriCore
 
-// Usage: skillwatch-probe [project-dir ...]
-// Read-only. Prints what Skillwatch would show, for checking adapter rules against a real machine.
+// Usage: skillori-probe [project-dir ...]
+// Read-only. Prints what Skillori would show, for checking adapter rules against a real machine.
 let projects = CommandLine.arguments.dropFirst().map { URL(fileURLWithPath: $0) }
 let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
                              projects: projects, environment: ProcessInfo.processInfo.environment)

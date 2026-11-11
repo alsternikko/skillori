@@ -10,7 +10,7 @@ Briefen nämner Claude Code och Cursor. Produktägaren har förtydligat att ambi
 
 Discovery byggs i tre lager som samverkar:
 
-1. **Formatet är det gemensamma.** En skill är en katalog med `SKILL.md` (Agent Skills-formatet). Skillwatch förstår formatet oberoende av agent.
+1. **Formatet är det gemensamma.** En skill är en katalog med `SKILL.md` (Agent Skills-formatet). Skillori förstår formatet oberoende av agent.
 2. **Adapterregister med deklarativa regler.** Varje agent/installationsverktyg beskrivs av en adapter: vilka rötter den läser (globalt och per projekt), vilka underkataloger som är aktiva respektive ska undantas (cache-arkiv, marketplace-kloner, tmp), vilken metadata som ger proveniens, och vilken version reglerna gäller. Adaptrar är så långt det går **data** (versionerad regelfil i appen), inte kod spridd i UI:t. Nya agenter ska kunna läggas till utan ändringar i kärnan.
 3. **Egna rötter.** Användaren kan lägga till valfri katalog. Skills där visas med rotens namn och tillskrivs ingen agent automatiskt.
 

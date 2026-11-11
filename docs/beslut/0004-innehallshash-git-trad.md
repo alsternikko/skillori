@@ -8,7 +8,7 @@ Briefen föreslår ett eget deterministiskt manifest-hash. Lokal inventering vis
 
 ## Beslut
 
-Skillwatch använder **git-trädhashen (SHA-1-objektformat)** för en skillkatalog som primär innehållsidentitet och implementerar den i ren Swift:
+Skillori använder **git-trädhashen (SHA-1-objektformat)** för en skillkatalog som primär innehållsidentitet och implementerar den i ren Swift:
 
 - blob: `sha1("blob <len>\0" + bytes)`
 - tree: poster sorterade enligt git-regler, `"<mode> <name>\0" + rå 20-byte-hash`, mode `100644`, `100755`, `120000` (symlänk, hash av länkmålets text) eller `40000`.

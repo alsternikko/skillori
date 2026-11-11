@@ -1,4 +1,4 @@
-# Skillwatch
+# Skillori
 
 > Know your skills. See what changed.
 
@@ -10,19 +10,20 @@ En liten macOS-menyradsapp som visar vilka AI-agent-skills du har (oavsett agent
 
 ```bash
 xcodegen generate
-xcodebuild -project Skillwatch.xcodeproj -scheme Skillwatch -configuration Release -derivedDataPath build/DerivedData build
+xcodebuild -project Skillori.xcodeproj -scheme Skillori -configuration Release -derivedDataPath build/DerivedData build
 ```
 
-Tester för kärnan: `swift test --package-path Packages/SkillwatchCore`. Notarisering: `scripts/notarize.sh` (kräver lokal `scripts/notarize.conf.local`).
+Tester för kärnan: `swift test --package-path Packages/SkilloriCore`. Notarisering: `scripts/notarize.sh` (kräver lokal `scripts/notarize.conf.local`).
 
 ## Dokumentation
 
 | Dokument | Innehåll |
 | --- | --- |
-| [Produktbrief](docs/Skillwatch-produktbrief.md) | Ursprunglig brief: mål, principer, statusmodell, etapper, acceptanskriterier |
+| [Produktbrief](docs/Skillwatch-produktbrief.md) | Ursprunglig brief (arbetsnamn Skillwatch): mål, principer, statusmodell, etapper, acceptanskriterier |
 | [Lokal inventering](docs/research/lokal-inventering-2026-11-11.md) | Vad som faktiskt finns på en riktig maskin |
 | [Kompatibilitetsmatris](docs/research/kompatibilitetsmatris.md) | Per agent: dokumenterade rötter, pluginmekanismer, proveniens |
 | [Spike](docs/research/spike-2026-11-11.md) | Resultat av teknisk spike: bygg, signering, notarisering, prestanda, fynd |
+| [Namn- och varumärkesbrief](docs/Skillori-namn-och-varumarkesbrief.md) | Namnet Skillori och origami-riktningen för visuellt uttryck |
 | [Beslut](docs/beslut/) | Arkitekturbeslut (ADR) |
 | [Backlog](docs/backlog.md) | Prioriterade nästa steg per etapp |
 

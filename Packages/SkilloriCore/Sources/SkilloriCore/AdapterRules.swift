@@ -35,7 +35,7 @@ public enum RootScope: String, Sendable {
 public enum Ownership: Sendable, Equatable {
     /// The user put it there (by hand or with an installer). May have a source to track.
     case user
-    /// A product manages it (plugin cache, built-in, synced). Skillwatch only reads it.
+    /// A product manages it (plugin cache, built-in, synced). Skillori only reads it.
     case managed(by: String)
 }
 

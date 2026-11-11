@@ -7,7 +7,7 @@ struct TempTree {
 
     init() throws {
         root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("skillwatch-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("skillori-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
@@ -43,7 +43,7 @@ struct TempTree {
 /// Runs the real git binary with no user or system configuration, only to produce reference
 /// hashes in tests.
 func referenceTreeHash(of directory: URL) throws -> String {
-    let gitDir = FileManager.default.temporaryDirectory.appendingPathComponent("skillwatch-git-\(UUID().uuidString)")
+    let gitDir = FileManager.default.temporaryDirectory.appendingPathComponent("skillori-git-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: gitDir) }
     let env = [
         "GIT_DIR": gitDir.path,

@@ -1,6 +1,6 @@
 import Foundation
 
-/// The parts of a `SKILL.md` front matter block that Skillwatch displays.
+/// The parts of a `SKILL.md` front matter block that Skillori displays.
 ///
 /// The file is untrusted data. This parser only reads simple `key: value` lines between the
 /// opening and closing `---` and never evaluates anything. Fields it does not understand are

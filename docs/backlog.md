@@ -7,14 +7,16 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 - ✅ Lokal inventering av skill-rötter och pluginmetadata ([rapport](research/lokal-inventering-2026-11-11.md))
 - ✅ Verifiera att `skillFolderHash` = git-trädhash = GitHubs katalog-SHA
 - ✅ Kompatibilitetsmatris från officiell dokumentation ([matris](research/kompatibilitetsmatris.md))
-- ✅ Arkitekturbeslut 0001–0004
+- ✅ Arkitekturbeslut 0001–0005 (0005: produktnamnet Skillori)
+- [ ] Visuella riktningar för Skillori: symbol, menyradsikon, appikon, bibliotek ([namnbrief §13](Skillori-namn-och-varumarkesbrief.md))
+- [ ] Registrera `skillori.app` och kontrollera varumärkesregister (produktägaren)
 - ✅ **Teknisk spike**: menyradsapp, discovery mot riktiga rötter, signering och notarisering ([rapport](research/spike-2026-11-11.md)). Kvar: TCC för `~/Documents`, Claude Desktop-rötter, manuell kontroll av panelen.
 - ✅ Grundläggande fixtures i tester (symlänkar, kopior, plugin-cache, föräldralös version, marketplace-klon, trasig länk, lockfil). Kvar: nästlade projektrötter, fler varianter av trasig front matter, symlänkloopar, fientliga fixtures (traversal, specialfiler).
 - [ ] Läs `npx skills`-källkoden: exakt mappning agent → katalog för alla 15+ agenter, lockfilens schema per version.
 
 ## Etapp 1 — Läsande inventering
 
-1. `SkillwatchCore`: `SKILL.md`-parser (frontmatter, tolerant mot fel, ingen exekvering).
+1. `SkilloriCore`: `SKILL.md`-parser (frontmatter, tolerant mot fel, ingen exekvering).
 2. Git-trädhash i Swift + fil-manifest (testat mot `git write-tree` på fixtures).
 3. Discovery-motor: rötter från adapterregler, gränser för djup/filer/storlek, symlänkupplösning med loopdetektion, fysisk deduplicering, undantag.
 4. Adapterregler v1: Claude Code, delad `~/.agents`, Cursor, Codex, Gemini CLI, OpenCode, Kiro, GitHub Copilot.

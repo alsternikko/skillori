@@ -8,7 +8,7 @@ struct MenuPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Skillwatch").font(.headline)
+                Text("Skillori").font(.headline)
                 Text(summary).font(.subheadline)
                 Text(lastScanned).font(.caption).foregroundStyle(.secondary)
             }
@@ -47,7 +47,7 @@ struct MenuPanel: View {
                     NSApp.activate()
                     openSettings()
                 }
-                PanelButton("Quit Skillwatch", systemImage: "power") { NSApp.terminate(nil) }
+                PanelButton("Quit Skillori", systemImage: "power") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
         }

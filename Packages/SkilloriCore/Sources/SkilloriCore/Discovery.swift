@@ -19,7 +19,7 @@ public enum Provenance: Sendable, Equatable {
 
     /// Recorded by `npx skills` in its lock file, with a baseline content hash.
     case skillsLock(source: String, sourceURL: String?, subpath: String?, baselineHash: String?, local: LocalState)
-    /// Owned by a product; Skillwatch can only point at the owner.
+    /// Owned by a product; Skillori can only point at the owner.
     case managed(by: String)
     case unknown
 }

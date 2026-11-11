@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SkillwatchCore
+@testable import SkilloriCore
 
 @Suite struct GitTreeHashTests {
     @Test func matchesGitForMixedContent() throws {

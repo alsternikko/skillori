@@ -6,7 +6,7 @@
 
 Appen ska kunna laddas ned av andra från en promosida och installeras utan krångel. App Store är inget krav. Produktägaren har ett Apple Developer-konto med Developer ID.
 
-Skillwatch behöver läsa många dolda kataloger i hemkatalogen (`~/.claude`, `~/.agents`, `~/.cursor`, `~/.codex`, `~/.gemini`, `~/.config/…`, `~/Library/Application Support/Claude`) och följa symlänkar mellan dem.
+Skillori behöver läsa många dolda kataloger i hemkatalogen (`~/.claude`, `~/.agents`, `~/.cursor`, `~/.codex`, `~/.gemini`, `~/.config/…`, `~/Library/Application Support/Claude`) och följa symlänkar mellan dem.
 
 ## Beslut
 

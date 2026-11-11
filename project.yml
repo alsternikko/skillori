@@ -1,14 +1,14 @@
 # XcodeGen spec. Generate the project with: xcodegen generate
 # The .xcodeproj is generated output and not committed.
-name: Skillwatch
+name: Skillori
 options:
   bundleIdPrefix: com.niklaskarlsson
   deploymentTarget:
     macOS: "15.0"
   createIntermediateGroups: true
 packages:
-  SkillwatchCore:
-    path: Packages/SkillwatchCore
+  SkilloriCore:
+    path: Packages/SkilloriCore
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -16,17 +16,17 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: 9N465MGNW2
 targets:
-  Skillwatch:
+  Skillori:
     type: application
     platform: macOS
     sources:
-      - App/Skillwatch
+      - App/Skillori
     dependencies:
-      - package: SkillwatchCore
+      - package: SkilloriCore
     info:
-      path: App/Skillwatch/Info.plist
+      path: App/Skillori/Info.plist
       properties:
-        CFBundleDisplayName: Skillwatch
+        CFBundleDisplayName: Skillori
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSUIElement: true
@@ -34,8 +34,8 @@ targets:
         NSHumanReadableCopyright: ""
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.niklaskarlsson.skillwatch
-        PRODUCT_NAME: Skillwatch
+        PRODUCT_BUNDLE_IDENTIFIER: com.niklaskarlsson.skillori
+        PRODUCT_NAME: Skillori
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
         CODE_SIGN_STYLE: Manual
