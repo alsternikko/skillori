@@ -8,7 +8,11 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 - ✅ Verifiera att `skillFolderHash` = git-trädhash = GitHubs katalog-SHA
 - ✅ Kompatibilitetsmatris från officiell dokumentation ([matris](research/kompatibilitetsmatris.md))
 - ✅ Arkitekturbeslut 0001–0005 (0005: produktnamnet Skillori)
-- [ ] Visuella riktningar för Skillori: symbol, menyradsikon, appikon, bibliotek ([namnbrief §13](Skillori-namn-och-varumarkesbrief.md))
+- ✅ Tre första visuella riktningar ([sammanfattning](design/visuella-riktningar-2026-11-11.md)). Underkända av produktägaren: når inte önskad nivå.
+- ✅ Designbaseline från Mobbin ([baseline](design/mobbin-baseline-2026-11-11.md))
+- ✅ Karaktärskälla: produktägaren lutar mest mot **instrument/precision** (2026-11-11, se [baseline §1](design/mobbin-baseline-2026-11-11.md))
+- ✅ UI-grund utredd: native SwiftUI/AppKit med eget komponentlager `SkilloriUI` ([rapport](design/ui-bibliotek-utforskning.md))
+- [ ] Produktägaren samlar visuella referenser med inriktning instrument/precision; därefter ny visuell riktning
 - [ ] Registrera `skillori.app` och kontrollera varumärkesregister (produktägaren)
 - ✅ **Teknisk spike**: menyradsapp, discovery mot riktiga rötter, signering och notarisering ([rapport](research/spike-2026-11-11.md)). Kvar: TCC för `~/Documents`, Claude Desktop-rötter, manuell kontroll av panelen.
 - ✅ Grundläggande fixtures i tester (symlänkar, kopior, plugin-cache, föräldralös version, marketplace-klon, trasig länk, lockfil). Kvar: nästlade projektrötter, fler varianter av trasig front matter, symlänkloopar, fientliga fixtures (traversal, specialfiler).

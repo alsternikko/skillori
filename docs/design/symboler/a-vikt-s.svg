@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Skillori, riktning A: en remsa vikt fyra gånger till ett S.
+       Mallbild för menyraden: lodräta veck heltäckande, vågräta band 42 %. -->
+  <g fill="#000">
+    <path d="M4 3H20V7H8Z" opacity=".42"/>
+    <path d="M4 3L8 7V10L4 14Z"/>
+    <path d="M4 14L8 10H20L16 14Z" opacity=".42"/>
+    <path d="M16 14L20 10V21L16 17Z"/>
+    <path d="M16 17L20 21H4V17Z" opacity=".42"/>
+  </g>
+</svg>

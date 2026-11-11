@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Skillori, riktning C: vikt rävhuvud. Mallbild: vänster halva och höger öra heltäckande, resten 42 %. -->
+  <g fill="#000">
+    <path d="M2 8H12V22Z"/>
+    <path d="M12 8H22L12 22Z" opacity=".42"/>
+    <path d="M2 8L4.5 2L9.5 8Z" opacity=".42"/>
+    <path d="M14.5 8L19.5 2L22 8Z"/>
+  </g>
+</svg>

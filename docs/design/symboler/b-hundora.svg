@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Skillori, riktning B: ark med vikt hörn. Mallbild: arket heltäckande, hörnet 42 %. -->
+  <g fill="#000">
+    <path fill-rule="evenodd" d="M5 2H12V9H19V22H5Z M8 13H16V14.75H8Z M8 16.75H13.5V18.5H8Z"/>
+    <path d="M12 2L19 9H12Z" opacity=".42"/>
+  </g>
+</svg>

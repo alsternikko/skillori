@@ -24,6 +24,9 @@ Tester för kärnan: `swift test --package-path Packages/SkilloriCore`. Notarise
 | [Kompatibilitetsmatris](docs/research/kompatibilitetsmatris.md) | Per agent: dokumenterade rötter, pluginmekanismer, proveniens |
 | [Spike](docs/research/spike-2026-11-11.md) | Resultat av teknisk spike: bygg, signering, notarisering, prestanda, fynd |
 | [Namn- och varumärkesbrief](docs/Skillori-namn-och-varumarkesbrief.md) | Namnet Skillori och origami-riktningen för visuellt uttryck |
+| [Visuella riktningar](docs/design/visuella-riktningar-2026-11-11.md) | Första tre riktningarna (underkända, behålls som historik) |
+| [Mobbin-baseline](docs/design/mobbin-baseline-2026-11-11.md) | Designprinciper och mönster från relevanta appar; vald lutning: instrument/precision |
+| [UI-bibliotek](docs/design/ui-bibliotek-utforskning.md) | UI-grund: native SwiftUI/AppKit med eget komponentlager `SkilloriUI` |
 | [Beslut](docs/beslut/) | Arkitekturbeslut (ADR) |
 | [Backlog](docs/backlog.md) | Prioriterade nästa steg per etapp |
 
