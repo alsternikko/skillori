@@ -1,6 +1,6 @@
 # 0002 — Distribution utanför App Store, utan sandbox
 
-**Status:** Förslag · 2026-11-11 (verifieras i teknisk spike)
+**Status:** Accepterat · 2026-11-11 (bekräftat i [spike](../research/spike-2026-11-11.md))
 
 ## Kontext
 

@@ -1,6 +1,6 @@
 # Backlog
 
-Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillwatch-produktbrief.md). Det som är levererat markeras ✅. Inget är levererat i appen ännu.
+Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillwatch-produktbrief.md). Det som är levererat markeras ✅. Spike-versionen av appen finns. Den är läsande och visar inventering, källa och lokal status.
 
 ## Etapp 0 — Verifiera integrationskontrakt
 
@@ -8,8 +8,8 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 - ✅ Verifiera att `skillFolderHash` = git-trädhash = GitHubs katalog-SHA
 - ✅ Kompatibilitetsmatris från officiell dokumentation ([matris](research/kompatibilitetsmatris.md))
 - ✅ Arkitekturbeslut 0001–0004
-- [ ] **Teknisk spike** (Xcode-projekt): `MenuBarExtra`-panel + `Window`, mappväljare, läsning av `~/.claude` och `~/Library/Application Support/Claude` utan sandbox, Developer ID-signering och notarisering av en tom build. Bekräfta macOS 15 som lägsta version.
-- [ ] Syntetiska fixtures: global/projekt/nästlad/symlänkad/delad/pluginägd/trasig `SKILL.md`, lockfil med matchande och avvikande hash, marketplace-klon som *inte* ska räknas.
+- ✅ **Teknisk spike**: menyradsapp, discovery mot riktiga rötter, signering och notarisering ([rapport](research/spike-2026-11-11.md)). Kvar: TCC för `~/Documents`, Claude Desktop-rötter, manuell kontroll av panelen.
+- ✅ Grundläggande fixtures i tester (symlänkar, kopior, plugin-cache, föräldralös version, marketplace-klon, trasig länk, lockfil). Kvar: nästlade projektrötter, fler varianter av trasig front matter, symlänkloopar, fientliga fixtures (traversal, specialfiler).
 - [ ] Läs `npx skills`-källkoden: exakt mappning agent → katalog för alla 15+ agenter, lockfilens schema per version.
 
 ## Etapp 1 — Läsande inventering
@@ -20,9 +20,12 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 4. Adapterregler v1: Claude Code, delad `~/.agents`, Cursor, Codex, Gemini CLI, OpenCode, Kiro, GitHub Copilot.
 5. Proveniensadapter: `npx skills`-lockfil → källa + baseline-hash, `matchesBaseline`/`modified` lokalt.
 6. Proveniensadaptrar läsande: Claude Code `installed_plugins.json`, Cursor plugin-cache, Codex `config.toml` → "Managed by …".
-7. UI: menyradspanel (sammanfattning, senaste inventering), biblioteksfönster med sök/filter, detaljvy (sökväg, alias, agentkopplingar, källa, evidens), "Reveal in Finder", Coverage-vy.
-8. Inställningar: projektmappar, egna rötter, undantag.
-9. Filbevakning (FSEvents) med debounce + periodisk avstämning.
+7. **Gruppera på distributionsenhet** (plugin) och visa egna skills först. Hanterat innehåll är 90 % av alla installationer (spikfynd 2).
+8. Begränsa agentmärken till agenter som finns installerade (spikfynd 3). Läs Codex `config.toml` för aktiverade plugins (spikfynd 4).
+9. Markera "same name, different copy" med innehållsjämförelse (spikfynd 5).
+10. UI: menyradspanel (sammanfattning, senaste inventering), biblioteksfönster med sök/filter, detaljvy (sökväg, alias, agentkopplingar, källa, evidens), "Reveal in Finder", Coverage-vy.
+11. Inställningar: projektmappar, egna rötter, undantag.
+12. Filbevakning (FSEvents) med debounce + periodisk avstämning.
 
 ## Etapp 2 — Bevakning, diff och notiser (första kompletta MVP)
 
