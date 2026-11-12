@@ -1,0 +1,126 @@
+#if DEBUG
+import AppKit
+
+/// Debug builds only: `SKILLORI_SELFTEST=/some/file` drives the panel from inside the app
+/// and writes one PASS/FAIL line per check. It sends real key events to the panel window.
+/// It cannot produce a real mouse click from outside the app; that needs Accessibility access.
+@MainActor
+enum DebugSelfTest {
+    static func runIfRequested(store: InventoryStore, panel: StatusPanelController, windows: WindowRouter) {
+        guard let path = ProcessInfo.processInfo.environment["SKILLORI_SELFTEST"] else { return }
+        Task { @MainActor in
+            var lines: [String] = []
+            @MainActor func check(_ name: String, _ ok: Bool, _ note: String = "") {
+                lines.append("\(ok ? "PASS" : "FAIL")  \(name)\(note.isEmpty ? "" : "  (\(note))")")
+                try? lines.joined(separator: "\n").appending("\n").write(toFile: path, atomically: true, encoding: .utf8)
+            }
+            @MainActor func pause(_ ms: Int) async { try? await Task.sleep(for: .milliseconds(ms)) }
+            @MainActor func key(_ chars: String, code: UInt16, command: Bool) {
+                guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                                   modifierFlags: command ? .command : [],
+                                                   timestamp: ProcessInfo.processInfo.systemUptime,
+                                                   windowNumber: panel.panelWindow.windowNumber, context: nil,
+                                                   characters: chars, charactersIgnoringModifiers: chars,
+                                                   isARepeat: false, keyCode: code) else { return }
+                NSApp.sendEvent(event)
+            }
+
+            while store.inventory == nil || store.isScanning { await pause(100) }
+            // The system places the menu bar item a moment after launch.
+            for _ in 0..<50 where (panel.statusButton?.window?.frame.minY ?? 0) <= 0 { await pause(100) }
+
+            check("menu bar item has the mark", panel.statusButton?.image != nil)
+
+            panel.open()
+            await pause(400)
+            let frame = panel.panelWindow.frame
+            check("panel opens", panel.isOpen)
+            check("panel takes keyboard focus", panel.panelWindow.isKeyWindow)
+            check("panel is fully opaque after opening", panel.panelWindow.alphaValue == 1, "alpha \(panel.panelWindow.alphaValue)")
+            check("content is back at full size after opening",
+                  panel.panelWindow.contentView?.subviews.first?.layer.map { CATransform3DIsIdentity($0.transform) } ?? false)
+            check("panel is 332 pt wide", abs(frame.width - 332) < 0.5, "\(frame.width) × \(frame.height)")
+            if let button = panel.statusButton, let window = button.window {
+                let anchor = window.convertToScreen(button.convert(button.bounds, to: nil))
+                check("panel hangs under the menu bar item", abs(frame.maxY - (anchor.minY - 6)) < 1
+                      && frame.minX <= anchor.midX && frame.maxX >= anchor.midX,
+                      "panel \(frame), item \(anchor), screen \(window.screen?.visibleFrame ?? .zero)")
+            }
+
+            let before = store.inventory?.scannedAt
+            key("r", code: 15, command: true)
+            var rescanned = false
+            for _ in 0..<60 where !rescanned {
+                await pause(100)
+                rescanned = store.inventory?.scannedAt != before
+            }
+            check("⌘R reads again", rescanned)
+            check("panel stays open after ⌘R", panel.isOpen)
+
+            key("\u{1B}", code: 53, command: false)
+            await pause(300)
+            check("Escape closes the panel", !panel.isOpen)
+
+            panel.open()
+            await pause(300)
+            key(",", code: 43, command: true)
+            await pause(500)
+            check("⌘, opens Settings", windows.settings?.isVisible == true)
+            check("panel closes when Settings opens", !panel.isOpen)
+            windows.settings?.close()
+
+            panel.open()
+            await pause(300)
+            windows.showLibrary()
+            await pause(500)
+            check("panel closes when another window takes focus", !panel.isOpen)
+            check("Library window opens", windows.library?.isVisible == true)
+            windows.library?.close()
+
+            panel.open()
+            await pause(300)
+            panel.open()
+            await pause(200)
+            check("opening twice keeps one panel", panel.isOpen)
+            panel.close()
+            check("close() closes", !panel.isOpen)
+            await pause(300)
+            check("window is gone after the fade-out", !panel.panelWindow.isVisible)
+            panel.open()
+            panel.close()
+            panel.open()
+            await pause(400)
+            check("reopening during the fade-out leaves the panel open and opaque",
+                  panel.isOpen && panel.panelWindow.isVisible && panel.panelWindow.alphaValue == 1)
+            panel.close(animated: false)
+            check("immediate close removes the window at once", !panel.panelWindow.isVisible)
+
+            let menu = panel.makeContextMenu()
+            let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+            check("right-click menu has Library, Settings, Quit",
+                  titles == ["Open Library…", "Settings…", "Quit Skillori"])
+            if let item = menu.items.first(where: { $0.title == "Settings…" }), let action = item.action {
+                NSApp.sendAction(action, to: item.target, from: item)
+                await pause(400)
+                check("menu item Settings… opens Settings", windows.settings?.isVisible == true)
+                windows.settings?.close()
+            }
+            if let item = menu.items.first(where: { $0.title == "Open Library…" }), let action = item.action {
+                NSApp.sendAction(action, to: item.target, from: item)
+                await pause(400)
+                check("menu item Open Library… opens the Library", windows.library?.isVisible == true)
+                windows.library?.close()
+            }
+            let quit = menu.items.first { $0.title == "Quit Skillori" }
+            check("menu item Quit targets the app", quit?.action == #selector(NSApplication.terminate(_:)))
+
+            panel.open()
+            await pause(300)
+            check("about to send ⌘Q (process must exit after this line)", panel.isOpen)
+            key("q", code: 12, command: true)
+            await pause(1500)
+            check("⌘Q quits", false, "still running")
+        }
+    }
+}
+#endif

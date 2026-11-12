@@ -15,14 +15,12 @@ final class InventoryStore {
     private(set) var projects: [URL]
 
     private static let projectsKey = "projectPaths"
+    private static let minimumScanDisplay: TimeInterval = 0.45
 
     init() {
         let paths = UserDefaults.standard.stringArray(forKey: Self.projectsKey) ?? []
         projects = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
         Task { await rescan() }
-        #if DEBUG
-        DebugSnapshots.runIfRequested(store: self)
-        #endif
     }
 
     var needsAttention: Bool { localChangeCount > 0 }
@@ -41,12 +39,18 @@ final class InventoryStore {
     func rescan() async {
         guard !isScanning else { return }
         isScanning = true
+        let started = Date()
         let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
                                      projects: projects,
                                      environment: ProcessInfo.processInfo.environment)
         // Disk work stays off the main actor.
         let result = await Task.detached(priority: .utility) { engine.scan() }.value
         inventory = result
+        // A read takes about 150 ms. Hold the "reading" state a little longer so it can be seen.
+        let shown = Date().timeIntervalSince(started)
+        if shown < Self.minimumScanDisplay {
+            try? await Task.sleep(for: .seconds(Self.minimumScanDisplay - shown))
+        }
         isScanning = false
     }
 

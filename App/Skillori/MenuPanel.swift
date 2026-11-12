@@ -1,111 +1,187 @@
+import SkilloriCore
+import SkilloriUI
 import SwiftUI
+
+/// What the panel can ask the app to do. The panel lives in an AppKit window, so it gets
+/// these instead of SwiftUI's scene actions.
+struct PanelActions {
+    var openLibrary: () -> Void = {}
+    var openSettings: () -> Void = {}
+    var addFolder: () -> Void = {}
+    var rescan: () -> Void = {}
+}
+
+/// Everything the panel shows, as plain values. The live model comes from the inventory;
+/// the samples in `PanelModel+Samples` are the three states in the design sketch.
+struct PanelModel {
+    enum Row: Identifiable {
+        /// A named thing with a mono line under it and mono data to the right.
+        case item(title: String, detail: String, data: String)
+        /// One line of text with mono data to the right.
+        case line(text: String, data: String, muted: Bool)
+        /// One muted line with a link to the right.
+        case link(text: String, label: String, command: Command)
+
+        var id: String {
+            switch self {
+            case let .item(title, detail, _): "item-\(title)-\(detail)"
+            case let .line(text, _, _): "line-\(text)"
+            case let .link(text, _, _): "link-\(text)"
+            }
+        }
+    }
+
+    enum Command { case library, settings, addFolder, rescan }
+
+    struct Button: Identifiable {
+        let title: String
+        let prominent: Bool
+        let command: Command
+        var id: String { title }
+    }
+
+    var tone: Tone
+    var label: String
+    var stamp: String
+    var number: String
+    var dimmed = false
+    var lead: String
+    var note: String
+    var rows: [Row]
+    var buttons: [Button]
+    var hint: String
+    var hintCommand: Command = .rescan
+    var hintEnabled = true
+}
 
 struct MenuPanel: View {
     @Environment(InventoryStore.self) private var store
-    @Environment(\.openWindow) private var openWindow
-    @Environment(\.openSettings) private var openSettings
+    var actions = PanelActions()
+    /// Set in debug snapshots to show a fixed state instead of the inventory.
+    var fixedModel: PanelModel?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Skillori").font(.headline)
-                Text(summary).font(.subheadline)
-                Text(lastScanned).font(.caption).foregroundStyle(.secondary)
+        let model = fixedModel ?? PanelModel.live(from: store)
+        GlassPanel {
+            HeroBlock(tone: model.tone, label: model.label, stamp: model.stamp, number: model.number,
+                      dimmed: model.dimmed, lead: model.lead, note: model.note)
+            if !model.rows.isEmpty {
+                GlassList(behind: model.tone.background) {
+                    ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
+                        rowView(row, isLast: index == model.rows.count - 1)
+                    }
+                }
             }
-
-            if let inventory = store.inventory {
-                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                    StatRow(label: "Tracked source", value: store.trackedCount, systemImage: "checkmark.seal")
-                    StatRow(label: "Local changes", value: store.localChangeCount, systemImage: "pencil.circle",
-                            highlight: store.localChangeCount > 0)
-                    StatRow(label: "Source unknown", value: store.unknownCount, systemImage: "questionmark.circle")
-                    StatRow(label: "Managed by an app", value: store.managedCount, systemImage: "shippingbox")
+            HStack(spacing: 6) {
+                ForEach(model.buttons) { button in
+                    Button(button.title) { run(button.command) }
+                        .buttonStyle(PillButtonStyle(prominent: button.prominent))
                 }
-                .font(.callout)
-                Text("\(inventory.bindingCount) locations · \(inventory.roots.filter { $0.state == .found }.count) roots")
-                    .font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                Button { run(model.hintCommand) } label: { SwappingText(model.hint) }
+                    .buttonStyle(HintButtonStyle())
+                    .keyboardShortcut("r")
+                    .disabled(!model.hintEnabled)
             }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 2) {
-                PanelButton("Open Library…", systemImage: "books.vertical") {
-                    NSApp.activate()
-                    openWindow(id: WindowID.library)
-                }
-                PanelButton(store.isScanning ? "Scanning…" : "Scan Now", systemImage: "arrow.clockwise") {
-                    Task { await store.rescan() }
-                }
-                .disabled(store.isScanning)
-                PanelButton("Add Project Folder…", systemImage: "folder.badge.plus") { store.addProject() }
+            .padding(EdgeInsets(top: 10, leading: 4, bottom: 4, trailing: 6))
+        }
+        .background {
+            // Keyboard commands that have no visible control in the panel.
+            Group {
+                Button("Settings") { actions.openSettings() }.keyboardShortcut(",")
+                Button("Quit") { NSApp.terminate(nil) }.keyboardShortcut("q")
             }
+            .opacity(0)
+            .accessibilityHidden(true)
+        }
+    }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 2) {
-                PanelButton("Settings…", systemImage: "gearshape") {
-                    NSApp.activate()
-                    openSettings()
+    @ViewBuilder
+    private func rowView(_ row: PanelModel.Row, isLast: Bool) -> some View {
+        switch row {
+        case let .item(title, detail, data):
+            ListRow(isLast: isLast) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(TypeRole.sans(13, .medium)).lineLimit(1)
+                    DataText(detail).foregroundStyle(Palette.ink2)
                 }
-                PanelButton("Quit Skillori", systemImage: "power") { NSApp.terminate(nil) }
-                    .keyboardShortcut("q")
+            } trailing: {
+                DataText(data).foregroundStyle(Palette.ink2)
+            }
+        case let .line(text, data, muted):
+            ListRow(isLast: isLast) {
+                Text(text).foregroundStyle(muted ? Palette.ink2 : Palette.ink).lineLimit(1)
+            } trailing: {
+                DataText(data).foregroundStyle(Palette.ink2)
+            }
+        case let .link(text, label, command):
+            ListRow(isLast: isLast) {
+                Text(text).foregroundStyle(Palette.ink2).lineLimit(1)
+            } trailing: {
+                Button(label) { run(command) }.buttonStyle(HintButtonStyle(underlined: true))
             }
         }
-        .padding(14)
-        .frame(width: 280)
     }
 
-    private var summary: String {
-        guard let inventory = store.inventory else { return "Scanning…" }
-        let n = inventory.installations.count
-        return "\(n) skill\(n == 1 ? "" : "s") found"
+    private func run(_ command: PanelModel.Command) {
+        switch command {
+        case .library: actions.openLibrary()
+        case .settings: actions.openSettings()
+        case .addFolder: actions.addFolder()
+        case .rescan: actions.rescan()
+        }
     }
+}
 
-    private var lastScanned: String {
-        guard let inventory = store.inventory else { return " " }
+extension PanelModel {
+    /// The panel for what the app can truthfully say today: a local reading. Skillori does
+    /// not ask sources about changes yet (backlog, etapp 2), so this never claims "in sync".
+    @MainActor
+    static func live(from store: InventoryStore) -> PanelModel {
+        guard let inventory = store.inventory else {
+            return PanelModel(tone: .quiet, label: "No reading", stamp: "Reading now",
+                              number: "--", dimmed: true,
+                              lead: "Reading this Mac", note: "Looking in the skill folders Skillori knows.",
+                              rows: [], buttons: [Button(title: "Library", prominent: false, command: .library)],
+                              hint: "Reading…", hintEnabled: false)
+        }
+
+        let tracked = store.trackedCount
+        let unknown = store.unknownCount
+        let managed = store.managedCount
+        let changed = store.localChangeCount
+        let own = tracked + unknown
         let time = inventory.scannedAt.formatted(date: .omitted, time: .shortened)
-        return "Last scanned \(time) · \(Int(inventory.duration * 1000)) ms"
-    }
-}
+        let folders = inventory.roots.filter { $0.state == .found }.count
 
-private struct StatRow: View {
-    let label: String
-    let value: Int
-    let systemImage: String
-    var highlight = false
-
-    var body: some View {
-        GridRow {
-            Label(label, systemImage: systemImage)
-                .foregroundStyle(highlight ? Color.orange : Color.primary)
-            Text("\(value)").monospacedDigit().gridColumnAlignment(.trailing)
+        var rows: [Row] = []
+        if changed > 0 {
+            rows.append(.line(text: "\(changed) changed on this Mac", data: "SINCE INSTALL", muted: false))
         }
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct PanelButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    init(_ title: String, systemImage: String, action: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = systemImage
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 6)
-                .background(hovering ? Color.primary.opacity(0.08) : .clear, in: .rect(cornerRadius: 5))
-                .contentShape(.rect)
+        if tracked > 0 {
+            rows.append(.line(text: "\(tracked) \(tracked == 1 ? "has" : "have") a known source",
+                              data: "\(folders) FOLDERS", muted: false))
         }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        if unknown > 0 {
+            rows.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
+                              label: "Show", command: .library))
+        }
+        if own == 0 {
+            rows.append(.link(text: "Skills in a project folder?", label: "Add folder", command: .addFolder))
+        }
+
+        return PanelModel(
+            tone: own == 0 ? .quiet : .rest,
+            label: "On this Mac",
+            stamp: "Read \(time)",
+            number: "\(own)",
+            lead: own == 1 ? "skill installed by you" : "skills installed by you",
+            note: managed > 0 ? "\(managed) more are managed by apps" : "Read from \(folders) folders",
+            rows: rows,
+            buttons: [Button(title: "Library", prominent: true, command: .library),
+                      Button(title: "Settings", prominent: false, command: .settings)],
+            hint: store.isScanning ? "Reading…" : "Read again ⌘R",
+            hintEnabled: !store.isScanning
+        )
     }
 }

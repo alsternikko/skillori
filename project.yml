@@ -9,6 +9,8 @@ options:
 packages:
   SkilloriCore:
     path: Packages/SkilloriCore
+  SkilloriUI:
+    path: Packages/SkilloriUI
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -23,6 +25,7 @@ targets:
       - App/Skillori
     dependencies:
       - package: SkilloriCore
+      - package: SkilloriUI
     info:
       path: App/Skillori/Info.plist
       properties:
