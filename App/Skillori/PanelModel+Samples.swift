@@ -31,5 +31,28 @@ extension PanelModel {
         buttons: [Button(title: "Try again", prominent: true, command: .rescan),
                   Button(title: "Library", prominent: false, command: .library)],
         hint: "⌘R")
+
+    // The states in artboard 11 that the panel shows.
+    static let sampleNoReading = PanelModel(
+        tone: .quiet, label: "No reading", stamp: "Reading now", number: "--", dimmed: true,
+        lead: "Reading this Mac", note: "Looking in the skill folders Skillori knows.",
+        rows: [], buttons: [Button(title: "Library", prominent: false, command: .library)],
+        hint: "Reading…", hintEnabled: false)
+
+    static let sampleNothingFound = PanelModel(
+        tone: .quiet, label: "On this Mac", stamp: "Read 14:32", number: "0",
+        lead: "skills on this Mac", note: "Looked in 55 folders.",
+        rows: [.link(text: "Skills in a project folder?", label: "Add folder", command: .addFolder)],
+        buttons: [Button(title: "Library", prominent: true, command: .library),
+                  Button(title: "Settings", prominent: false, command: .settings)],
+        hint: "Read again ⌘R")
+
+    static let sampleNoAccess = PanelModel(
+        tone: .attention, label: "No access", stamp: "Read 14:32", number: "1",
+        lead: "folder could not be read", note: "Its skills are missing from the count.",
+        rows: [.item(title: "client-app", detail: "~/Documents/client-app", data: "NO ACCESS")],
+        buttons: [Button(title: "Open Privacy Settings", prominent: true, command: .privacySettings),
+                  Button(title: "Library", prominent: false, command: .library)],
+        hint: "⌘R")
 }
 #endif

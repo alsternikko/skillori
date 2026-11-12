@@ -189,7 +189,7 @@ struct InstallationDetail: View {
             .foregroundStyle(Tone.rest.secondary)
             HStack(alignment: .lastTextBaseline, spacing: 12) {
                 DotNumber(String(format: "%02d", mine.count), size: 52)
-                Text("of \(all.count) agents on this Mac")
+                Text("of \(all.count) agents Skillori knows")
                     .font(TypeRole.sans(13))
                     .foregroundStyle(Tone.rest.secondary)
             }

@@ -119,10 +119,16 @@ struct SettingsView: View {
 
     private var general: some View {
         LabeledCard("General") {
-            SettingRow(isLast: true) {
+            SettingRow {
                 Text("Appearance")
             } trailing: {
                 SegmentedChoice([(.system, "System"), (.light, "Light"), (.dark, "Dark")], selection: $appearance)
+            }
+            SettingRow(isLast: true) {
+                Text("First start")
+            } trailing: {
+                Button("Show again") { NotificationCenter.default.post(name: .showFirstStart, object: nil) }
+                    .buttonStyle(PillButtonStyle())
             }
         }
         .onChange(of: appearance) { _, new in new.apply() }

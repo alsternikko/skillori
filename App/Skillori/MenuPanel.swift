@@ -9,6 +9,7 @@ struct PanelActions {
     var openSettings: () -> Void = {}
     var addFolder: () -> Void = {}
     var rescan: () -> Void = {}
+    var openPrivacySettings: () -> Void = {}
 }
 
 /// Everything the panel shows, as plain values. The live model comes from the inventory;
@@ -31,7 +32,7 @@ struct PanelModel {
         }
     }
 
-    enum Command { case library, settings, addFolder, rescan }
+    enum Command { case library, settings, addFolder, rescan, privacySettings }
 
     struct Button: Identifiable {
         let title: String
@@ -129,6 +130,7 @@ struct MenuPanel: View {
         case .settings: actions.openSettings()
         case .addFolder: actions.addFolder()
         case .rescan: actions.rescan()
+        case .privacySettings: actions.openPrivacySettings()
         }
     }
 }
@@ -144,6 +146,24 @@ extension PanelModel {
                               lead: "Reading this Mac", note: "Looking in the skill folders Skillori knows.",
                               rows: [], buttons: [Button(title: "Library", prominent: false, command: .library)],
                               hint: "Reading…", hintEnabled: false)
+        }
+
+        // A folder that cannot be read comes first: the count below it would look complete and not be.
+        let unreadable = inventory.roots.filter { if case .unreadable = $0.state { true } else { false } }
+        if !unreadable.isEmpty {
+            let time = inventory.scannedAt.formatted(date: .omitted, time: .shortened)
+            return PanelModel(
+                tone: .attention, label: "No access", stamp: "Read \(time)",
+                number: "\(unreadable.count)",
+                lead: unreadable.count == 1 ? "folder could not be read" : "folders could not be read",
+                note: "Its skills are missing from the count.",
+                rows: unreadable.prefix(3).map {
+                    .item(title: ($0.path as NSString).lastPathComponent,
+                          detail: ($0.path as NSString).abbreviatingWithTildeInPath, data: "NO ACCESS")
+                },
+                buttons: [Button(title: "Open Privacy Settings", prominent: true, command: .privacySettings),
+                          Button(title: "Library", prominent: false, command: .library)],
+                hint: store.isScanning ? "Reading…" : "⌘R", hintEnabled: !store.isScanning)
         }
 
         let tracked = store.trackedCount
@@ -175,8 +195,8 @@ extension PanelModel {
             label: "On this Mac",
             stamp: "Read \(time)",
             number: "\(own)",
-            lead: own == 1 ? "skill installed by you" : "skills installed by you",
-            note: managed > 0 ? "\(managed) more are managed by apps" : "Read from \(folders) folders",
+            lead: own == 0 ? "skills on this Mac" : own == 1 ? "skill installed by you" : "skills installed by you",
+            note: managed > 0 ? "\(managed) more are managed by apps" : "Looked in \(folders) folders.",
             rows: rows,
             buttons: [Button(title: "Library", prominent: true, command: .library),
                       Button(title: "Settings", prominent: false, command: .settings)],

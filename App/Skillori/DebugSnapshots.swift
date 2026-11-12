@@ -17,11 +17,19 @@ enum DebugSnapshots {
                 ("panel-updates", .sampleUpdates, .light), ("panel-in-sync", .sampleInSync, .light),
                 ("panel-no-contact", .sampleNoContact, .light), ("panel-updates-dark", .sampleUpdates, .dark),
                 ("panel-in-sync-dark", .sampleInSync, .dark),
+                ("state-no-reading", .sampleNoReading, .light), ("state-nothing-found", .sampleNothingFound, .light),
+                ("state-no-access", .sampleNoAccess, .light),
             ]
             for (name, model, scheme) in states {
                 render(PanelBackdrop { MenuPanel(fixedModel: model).frame(width: StatusPanelController.panelWidth) }
                     .environment(store).environment(\.colorScheme, scheme),
                        size: CGSize(width: 420, height: 470), to: out.appendingPathComponent("\(name).png"))
+            }
+            for (step, scheme, name) in [(1, ColorScheme.light, "first-start-1"), (2, .light, "first-start-2"),
+                                         (3, .light, "first-start-3"), (2, .dark, "first-start-2-dark")] {
+                render(PanelBackdrop { FirstStartView(step: step) }
+                    .environment(store).environment(\.colorScheme, scheme),
+                       size: CGSize(width: 400, height: 580), to: out.appendingPathComponent("\(name).png"))
             }
             if ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_OPEN_PANEL"] != nil {
                 statusPanel?.open()

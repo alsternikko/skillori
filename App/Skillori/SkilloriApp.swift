@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = InventoryStore()
     private(set) var windows: WindowRouter?
     private var statusPanel: StatusPanelController?
+    private var firstStart: FirstStartController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SkilloriFonts.register()
@@ -28,6 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let windows = WindowRouter(store: store)
         self.windows = windows
         statusPanel = StatusPanelController(store: store, windows: windows)
+        let firstStart = FirstStartController(store: store, windows: windows)
+        self.firstStart = firstStart
+        NotificationCenter.default.addObserver(forName: .showFirstStart, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.firstStart?.show() }
+        }
+        let env = ProcessInfo.processInfo.environment
+        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil { firstStart.showIfNeeded() }
         #if DEBUG
         DebugSnapshots.runIfRequested(store: store, statusPanel: statusPanel)
         if let statusPanel { DebugSelfTest.runIfRequested(store: store, panel: statusPanel, windows: windows) }

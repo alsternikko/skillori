@@ -31,7 +31,13 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                 openLibrary: { [weak self] in self?.close(animated: false); self?.windows.showLibrary() },
                 openSettings: { [weak self] in self?.close(animated: false); self?.windows.showSettings() },
                 addFolder: { [weak self] in self?.close(animated: false); self?.store.addProject() },
-                rescan: { [weak self] in Task { await self?.store.rescan() } }
+                rescan: { [weak self] in Task { await self?.store.rescan() } },
+                openPrivacySettings: { [weak self] in
+                    self?.close(animated: false)
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             ))
             .environment(store)
             .frame(width: Self.panelWidth)

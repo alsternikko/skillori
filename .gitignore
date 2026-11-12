@@ -13,3 +13,6 @@ Skillori.xcodeproj/
 
 # Local signing config (personal details)
 scripts/*.conf.local
+
+# Other companies' logos: brand guidelines not read yet, kept out of the repo
+App/Skillori/AgentLogos/*.png

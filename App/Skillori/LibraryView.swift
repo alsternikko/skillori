@@ -243,13 +243,19 @@ struct LibraryView: View {
 
     @ViewBuilder private var emptyState: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(search.isEmpty ? "Nothing here" : "No skill matches “\(search)”")
+            let nothingAtAll = search.isEmpty && (store.inventory?.installations.isEmpty ?? false)
+            Text(nothingAtAll ? "No skills on this Mac yet"
+                 : search.isEmpty ? "Nothing here" : "No skill matches “\(search)”")
                 .font(TypeRole.sans(15, .medium))
-            Text(search.isEmpty
-                 ? "No skill on this Mac fits this group."
+            Text(nothingAtAll ? "Skillori only reads the folders it knows about. Skills in a project folder?"
+                 : search.isEmpty ? "No skill on this Mac fits this group."
                  : "Searched names, descriptions, sources and paths in \(count(filter)) skills.")
                 .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
-            if !search.isEmpty {
+            if nothingAtAll {
+                Button("Add folder") { store.addProject() }
+                    .buttonStyle(PillButtonStyle(prominent: true))
+                    .padding(.top, 10)
+            } else if !search.isEmpty {
                 Button("Clear search") { search = "" }
                     .buttonStyle(PillButtonStyle(prominent: true))
                     .padding(.top, 10)
