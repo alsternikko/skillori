@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         SkilloriFonts.register()
+        AppearanceSetting.current.apply()
         let windows = WindowRouter(store: store)
         self.windows = windows
         statusPanel = StatusPanelController(store: store, windows: windows)
@@ -54,9 +55,9 @@ final class WindowRouter {
 
     func showSettings() {
         if settings == nil {
-            settings = makeWindow(title: "Settings", size: NSSize(width: 520, height: 420),
-                                  minSize: nil, resizable: false,
-                                  content: SettingsView().environment(store))
+            settings = makeWindow(title: "Settings", size: NSSize(width: 640, height: 420),
+                                  minSize: nil, resizable: false, ownChrome: true,
+                                  content: SettingsView(ownChrome: true).environment(store))
         }
         present(settings)
     }

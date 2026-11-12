@@ -438,3 +438,93 @@ public struct FrostedSheet: View {
         .overlay(shape.strokeBorder(.white.opacity(scheme == .dark ? 0.1 : 0.6), lineWidth: 1))
     }
 }
+
+/// A full-round segmented choice in mono capitals. The chosen segment is a raised card.
+public struct SegmentedChoice<Value: Hashable>: View {
+    let options: [(value: Value, label: String)]
+    @Binding var selection: Value
+
+    public init(_ options: [(value: Value, label: String)], selection: Binding<Value>) {
+        self.options = options
+        _selection = selection
+    }
+
+    public var body: some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.value) { option in
+                let chosen = option.value == selection
+                Button { selection = option.value } label: {
+                    Text(option.label.uppercased())
+                        .font(TypeRole.mono(10.5, .medium))
+                        .tracking(0.42)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .foregroundStyle(chosen ? Palette.ink : Palette.ink2)
+                        .background(chosen ? Palette.card : .clear, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .fixedSize()
+        .background(Palette.ink.opacity(0.07), in: Capsule())
+        .animation(Motion.hover, value: selection)
+    }
+}
+
+/// A card with a mono label row on top, for grouped settings and facts.
+public struct LabeledCard<Content: View>: View {
+    let label: String
+    let note: String?
+    let content: Content
+
+    public init(_ label: String, note: String? = nil, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.note = note
+        self.content = content()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                LabelText(label)
+                Spacer(minLength: 8)
+                if let note { LabelText(note) }
+            }
+            .foregroundStyle(Palette.ink2)
+            .padding(.bottom, 4)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(EdgeInsets(top: 16, leading: 20, bottom: 8, trailing: 20))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+}
+
+/// A settings row: content on the left, a control or fact on the right, hairline under it.
+public struct SettingRow<Leading: View, Trailing: View>: View {
+    let isLast: Bool
+    let leading: Leading
+    let trailing: Trailing
+
+    public init(isLast: Bool = false, @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+        self.isLast = isLast
+        self.leading = leading()
+        self.trailing = trailing()
+    }
+
+    public var body: some View {
+        HStack(spacing: 12) {
+            leading.frame(maxWidth: .infinity, alignment: .leading)
+            trailing
+        }
+        .font(TypeRole.sans(13))
+        .padding(.vertical, 10)
+        .frame(minHeight: 40)
+        .overlay(alignment: .bottom) { if !isLast { Palette.line.frame(height: 1) } }
+    }
+}
