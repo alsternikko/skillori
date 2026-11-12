@@ -234,3 +234,207 @@ public struct SwappingText: View {
         .animation(Motion.swap, value: text)
     }
 }
+
+/// A tile with a label, one dot number and a caption. Used as a filter: the chosen tile is
+/// the resting block, the others are cards unless they carry a tone of their own.
+public struct StatTile: View {
+    let label: String
+    let number: String
+    let caption: String
+    let tone: Tone?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    public init(label: String, number: String, caption: String, tone: Tone? = nil, isSelected: Bool,
+                action: @escaping () -> Void) {
+        self.label = label
+        self.number = number
+        self.caption = caption
+        self.tone = tone
+        self.isSelected = isSelected
+        self.action = action
+    }
+
+    public var body: some View {
+        let shown: Tone? = isSelected ? .rest : tone
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    LabelText(label)
+                    Spacer(minLength: 4)
+                    if isSelected { LabelText("Shown") }
+                }
+                .foregroundStyle(shown?.secondary ?? Palette.ink2)
+                DotNumber(number, size: 44)
+                Text(caption)
+                    .font(TypeRole.sans(12))
+                    .foregroundStyle(shown?.secondary ?? Palette.ink2)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .foregroundStyle(shown?.foreground ?? Palette.ink)
+            .background(shown?.background ?? Palette.card, in: shape)
+            .overlay(shape.strokeBorder(Palette.ink.opacity(hovering && !isSelected ? 0.14 : 0), lineWidth: 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(TilePressStyle())
+        .animation(Motion.hover, value: hovering)
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(number) \(caption)")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 20, style: .continuous) }
+
+    private struct TilePressStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                .animation(Motion.press, value: configuration.isPressed)
+        }
+    }
+}
+
+/// A status in mono capitals on a full-round chip. The word carries the meaning; colour only
+/// marks the two states that ask for attention.
+public struct StatusChip: View {
+    public enum Kind: Sendable { case neutral, new, attention, outline }
+    let text: String
+    let kind: Kind
+
+    public init(_ text: String, kind: Kind = .neutral) {
+        self.text = text
+        self.kind = kind
+    }
+
+    public var body: some View {
+        Text(text.uppercased())
+            .font(TypeRole.mono(9.5))
+            .tracking(0.57)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundStyle(kind == .outline ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.inkFixed))
+            .background(fill, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color(hex: 0xA3A3A8).opacity(kind == .outline ? 0.7 : 0), lineWidth: 1))
+            .fixedSize()
+    }
+
+    private var fill: Color {
+        switch kind {
+        case .neutral: Color(hex: 0xE9E9EC)
+        case .new: Palette.lime
+        case .attention: Palette.lilac
+        case .outline: .clear
+        }
+    }
+}
+
+/// A row of thin ticks, one per thing, followed by the count. For "how many agents".
+public struct TickCount: View {
+    let count: Int
+    public init(_ count: Int) { self.count = count }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 3) {
+                ForEach(0..<min(count, 10), id: \.self) { _ in
+                    Rectangle().frame(width: 1, height: 8)
+                }
+            }
+            .frame(width: 38, alignment: .leading)
+            DataText("\(count)")
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(count)")
+    }
+}
+
+/// The dark floating bar that appears for the selected item.
+public struct FloatingBar<Content: View>: View {
+    let content: Content
+    public init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    public var body: some View {
+        HStack(spacing: 6) { content }
+            .padding(EdgeInsets(top: 6, leading: 18, bottom: 6, trailing: 6))
+            .foregroundStyle(.white)
+            .background {
+                Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
+                Capsule().fill(Color(hex: 0x28282A, opacity: 0.72))
+            }
+            .overlay(Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 1))
+            .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+    }
+}
+
+/// Pill buttons for dark surfaces such as `FloatingBar`.
+public struct DarkPillButtonStyle: ButtonStyle {
+    let prominent: Bool
+    public init(prominent: Bool = false) { self.prominent = prominent }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        DarkPillBody(configuration: configuration, prominent: prominent)
+    }
+
+    private struct DarkPillBody: View {
+        let configuration: Configuration
+        let prominent: Bool
+        @State private var hovering = false
+
+        var body: some View {
+            configuration.label
+                .font(TypeRole.mono(10.5, .medium))
+                .tracking(0.42)
+                .textCase(.uppercase)
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .foregroundStyle(prominent ? Palette.inkFixed : .white)
+                .background(prominent ? Color.white : Color.white.opacity(hovering ? 0.1 : 0), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(prominent ? 0 : 0.4), lineWidth: 1))
+                .opacity(prominent && hovering ? 0.9 : 1)
+                .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(Motion.press, value: configuration.isPressed)
+                .contentShape(Capsule())
+                .animation(Motion.hover, value: hovering)
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// The frosted surface used where a light sheet overlaps a solid block: the block's colour,
+/// seen through the sheet, fading into the sheet. See `GlassList` for why this is drawn.
+public struct FrostedSheet: View {
+    @Environment(\.colorScheme) private var scheme
+    let behind: Color
+    let cornerRadius: CGFloat
+    let overlap: CGFloat
+
+    public init(behind: Color, cornerRadius: CGFloat = Radius.block, overlap: CGFloat = 28) {
+        self.behind = behind
+        self.cornerRadius = cornerRadius
+        self.overlap = overlap
+    }
+
+    public var body: some View {
+        let base = scheme == .dark ? Color(hex: 0x2A2A2D) : Color(hex: 0xFCFCFD)
+        let cover = scheme == .dark ? 0.72 : 0.66
+        let frosted = behind.mix(with: base, by: cover)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        ZStack(alignment: .top) {
+            base.opacity(0.92)
+            LinearGradient(stops: [.init(color: frosted, location: 0),
+                                   .init(color: frosted, location: 0.35),
+                                   .init(color: base.opacity(0), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: overlap * 1.6)
+        }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(.white.opacity(scheme == .dark ? 0.1 : 0.6), lineWidth: 1))
+    }
+}

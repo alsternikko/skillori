@@ -45,8 +45,8 @@ final class WindowRouter {
 
     func showLibrary() {
         if library == nil {
-            library = makeWindow(title: "Skillori Library", size: NSSize(width: 1040, height: 640),
-                                 minSize: NSSize(width: 820, height: 480), resizable: true,
+            library = makeWindow(title: "Skillori Library", size: NSSize(width: 1120, height: 760),
+                                 minSize: NSSize(width: 900, height: 520), resizable: true, ownChrome: true,
                                  content: LibraryView().environment(store))
         }
         present(library)
@@ -67,11 +67,21 @@ final class WindowRouter {
     }
 
     private func makeWindow(title: String, size: NSSize, minSize: NSSize?, resizable: Bool,
-                            content: some View) -> NSWindow {
+                            ownChrome: Bool = false, content: some View) -> NSWindow {
         var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
         if resizable { style.insert(.resizable) }
+        if ownChrome { style.insert(.fullSizeContentView) }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: style,
                               backing: .buffered, defer: false)
+        if ownChrome {
+            // The view draws its own top bar. An empty unified toolbar gives the taller title
+            // bar that centres the window buttons on that bar.
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.toolbar = NSToolbar()
+            window.toolbarStyle = .unified
+            window.backgroundColor = NSColor(Palette.panel)
+        }
         window.title = title
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: content)

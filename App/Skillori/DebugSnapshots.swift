@@ -27,13 +27,25 @@ enum DebugSnapshots {
                 statusPanel?.open()
                 try? await Task.sleep(for: .seconds(6))
             }
-            render(LibraryView().environment(store), size: CGSize(width: 1040, height: 640), to: out.appendingPathComponent("library.png"))
-            render(LibraryView(initialFilter: .coverage).environment(store), size: CGSize(width: 1040, height: 640),
+            let lib = CGSize(width: 1120, height: 800)
+            let installs = store.inventory?.installations ?? []
+            let tracked = installs.first { if case .skillsLock = $0.provenance { true } else { false } }
+            render(LibraryView().environment(store), size: lib, to: out.appendingPathComponent("library.png"))
+            render(LibraryView(initialSelection: tracked?.id).environment(store), size: lib,
+                   to: out.appendingPathComponent("library-selected.png"))
+            render(LibraryView(initialSelection: tracked?.id).environment(store).environment(\.colorScheme, .dark),
+                   size: lib, to: out.appendingPathComponent("library-dark.png"))
+            render(LibraryView(initialFilter: .managed).environment(store), size: lib,
+                   to: out.appendingPathComponent("library-managed.png"))
+            render(LibraryView(initialFilter: .coverage).environment(store), size: lib,
                    to: out.appendingPathComponent("coverage.png"))
-            if let tracked = store.inventory?.installations.first(where: { if case .skillsLock = $0.provenance { true } else { false } }) {
-                render(LibraryView(initialSelection: tracked.id).environment(store), size: CGSize(width: 1040, height: 640),
-                       to: out.appendingPathComponent("detail.png"))
-            }
+            render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store), size: lib,
+                   to: out.appendingPathComponent("detail.png"))
+            render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store)
+                .environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("detail-dark.png"))
+            let unknown = installs.first { $0.provenance == .unknown }
+            render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
+                   to: out.appendingPathComponent("detail-unknown.png"))
             NSApp.terminate(nil)
         }
     }

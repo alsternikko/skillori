@@ -32,6 +32,10 @@ public struct Installation: Sendable, Identifiable {
     public let frontmatter: SkillFrontmatter
     public var bindings: [AgentBinding]
     public var provenance: Provenance
+    /// When the installer first recorded this skill, if it left a record.
+    public var installedAt: Date? = nil
+    /// When the installer last changed it, if it left a record.
+    public var updatedAt: Date? = nil
 
     public var displayName: String { frontmatter.name ?? directoryName }
     public var agents: [Agent] { Array(Set(bindings.flatMap(\.agents))).sorted() }
@@ -221,9 +225,17 @@ public struct DiscoveryEngine: Sendable {
             installation.provenance = .skillsLock(source: entry.source ?? name, sourceURL: entry.sourceUrl,
                                                   subpath: entry.repositorySubpath,
                                                   baselineHash: entry.skillFolderHash, local: local)
+            installation.installedAt = entry.installedAt.flatMap(Self.parseDate)
+            installation.updatedAt = entry.updatedAt.flatMap(Self.parseDate)
             builder.installations[key] = installation
         }
         return url
+    }
+
+    private static func parseDate(_ text: String) -> Date? {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
     }
 
     private func hasMarker(_ marker: String, near root: URL) -> Bool {
