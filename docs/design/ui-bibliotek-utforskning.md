@@ -1,13 +1,13 @@
 # UI-bibliotek för Skillori — utforskning och rekommendation
 
-**Datum:** 11 november 2026 (uppdaterad samma dag med Mobbin-baselinen)
+**Datum:** 11 november 2026 (uppdaterad samma dag med Mobbin-baselinen och produktägarens svar)
 **Status:** Underlag för beslut. Inga beroenden är tillagda och ingen kod är ändrad.
 **Underlag:** [Produktbrief](../Skillwatch-produktbrief.md) §5–6 och §14, [namn- och varumärkesbrief](../Skillori-namn-och-varumarkesbrief.md), [beslut 0003](../beslut/0003-teknikstack.md), [spike](../research/spike-2026-11-11.md), [Mobbin-baseline](mobbin-baseline-2026-11-11.md) och koden i `App/Skillori/`.
 **Arbetssätt:** Skillerna `pick-ui-library` och `emil-design-eng`.
 
 ## Sammanfattning
 
-**Rekommendation:** Använd Apples egna ramverk som grund, alltså SwiftUI med AppKit där det behövs, så som beslut 0003 redan säger. Bygg ovanpå det ett eget komponentlager, `SkilloriUI`, med tokens för typografi, täthet, rörelse och statusvokabulär. Lägg inte till något tredjepartspaket nu. Fyra paket står på vänt med tydliga villkor för när de behövs. Inget hybridspår nu.
+**Rekommendation:** Använd Apples egna ramverk som grund, alltså SwiftUI med AppKit där det behövs, så som beslut 0003 redan säger. Bygg ovanpå det ett eget komponentlager, `SkilloriUI`, med tokens för typografi, täthet, rörelse och statusvokabulär. Lägg inte till något tredjepartspaket nu. Tre paket står på vänt med tydliga villkor för när de behövs. Inget hybridspår nu.
 
 **Skälet i korthet:** Inget SwiftUI-paket ger ett bättre eget uttryck än det Apple redan levererar. Uttrycket bärs av egna komponenter, rörelse och typografi, inte av ett komponentpaket. Tredjepartskit som SwiftUIX och Pow ger mest bredd och effekter som inte passar en diskret app. Det enda område där webben är klart starkare är diffvyn med syntaxmarkering. Där ska native prövas först.
 
@@ -15,9 +15,15 @@
 
 - **Karaktären flyttar till egna vyer.** Baselinen lägger karaktären i kärnobjekten: panelens tillstånd, proveniensens tidslinje och diffens sammanfattning. Ingen av dem är en Apple-kontroll. Därför väger begränsningen i SwiftUI:s listor mindre än jag först bedömde, men `SkilloriUI` växer från ett tunt lager till appens viktigaste del.
 - **Panelen behöver fönsterkontroll tidigare.** Hälsokontrollen fälls ut på plats och ändrar panelens höjd. MenuBarExtraAccess, eller ett eget `NSPanel`, blir troligen nödvändigt redan i etapp 1.
-- **Rive tillkommer på vänt.** Det behövs om produktägaren väljer figur eller maskot som karaktärskälla.
+- **Rive prövades som tillägg.** Det hade behövts för en figur eller maskot. Efter produktägarens svar är det struket, se nedan.
 
-Bedömningen av hybridspåret står kvar och stärks snarare. Alla mönster i baselinen är sammansatta vyer som native bär bra, och en framtida widget kräver native.
+Bedömningen av hybridspåret står kvar och stärks snarare. Alla mönster i baselinen är sammansatta vyer som native bär bra.
+
+**Produktägarens svar (11 november):**
+
+- **Karaktärskälla: lutar åt instrument/precision.** Det är den källa native bär bäst, helt utan tillägg (B). Rive behövs inte och flyttas till *avstå*. Komponentlagret prioriterar instrumentdelarna: `PanelHero` som en avläsning, `Readout`, `RevisionChip`, `TickRuler` och `RevisionScale`. Se 3.3.
+- **Konstellationen visar agenternas logotyper.** Det kräver inget paket. Logotyperna läggs in som bildtillgångar. Varje logotyp är dock ett varumärke med egna regler, och de behöver läsas per leverantör före release. Om en leverantör inte tillåter omfärgning (B, inte kontrollerat) krockar det med instrumentets monokroma disciplin. Konstellationen blir då det enda stället i appen med andras färger.
+- **Widget är inget mål.** Menyradspanelen fyller den rollen. Frågan om App Sandbox för ett widgettillägg faller bort.
 
 **Om `pick-ui-library`:** Skillen förutsätter React och webben rakt igenom. Varje bibliotek i dess lista (Base UI, cmdk, Sonner, Motion, NumberFlow, shiki, Virtuoso, zustand med flera) kräver en webbvy för att kunna användas i Skillori. Jag har följt skillens arbetssätt: identifiera uppgiften, kontrollera vad som redan är installerat, rekommendera ett val och säga till när valet ligger utanför listan. **Alla native-rekommendationer nedan ligger utanför skillens kuraterade lista.**
 
@@ -40,7 +46,7 @@ Behoven kommer från briefens §5–6 och §14, spikens fynd, Mobbin-baselinen o
 
 | Yta | Behov | Etapp | Native byggsten | Egen komponent |
 | --- | --- | --- | --- | --- |
-| **Menyradspanel** | Läses på en sekund. *Ett* tillstånd och en nästa handling, i stället för fyra siffror. Hälsokontroll som fälls ut på plats. "Last checked". Snabb att öppna och stänga | 1 | `MenuBarExtra(.window)` | **Ja:** hjälteobjekt, hälsokontroll, panelknappar |
+| **Menyradspanel** | Läses på en sekund. *Ett* tillstånd och en nästa handling, i stället för fyra siffror. Hälsokontroll som fälls ut på plats. Exakt "Last checked". Snabb att öppna och stänga. Fyller också en widgets roll | 1 | `MenuBarExtra(.window)` | **Ja:** hjälteobjekt som avläsning, hälsokontroll, panelknappar |
 | **Bibliotek** | Sök, filter på agent, projekt, källa, status och lokala ändringar. Plugins grupperade och utfällbara, egna skills först. 309 rader idag | 1 | `NavigationSplitView`, `List`/`OutlineGroup` eller `Table` med `DisclosureTableRow`, `.searchable` med tokens | Rad för distributionsenhet, filtertokens |
 | **Detaljvy** | Proveniens som en tidslinje från ursprung till nu. Därunder verklig sökväg, alias, agentkopplingar, bevakningspolicy och "Reveal in Finder" | 1–2 | `ScrollView`, `LabeledContent`, `.inspector` | **Ja:** tidslinje |
 | **Uppdateringar** | "Ny version upptäckt" skilt från release notes. Alltid uttalat vad som går att ångra | 2–3 | `Text`, `GroupBox` | **Ja:** uppdateringskort, ångra-rad |
@@ -49,7 +55,7 @@ Behoven kommer från briefens §5–6 och §14, spikens fynd, Mobbin-baselinen o
 | **Coverage** | Rötter, undantag, oläsbara platser, senaste inventering | 1 | `List` med sektioner (finns) | Nej |
 | **Inställningar** | Projektmappar, egna rötter, undantag, bevakning, notiser, start vid inloggning | 1–2 | `Settings`-scen, `TabView`, `Form`, `SMAppService` | Nej |
 | **"Link source…"** | Repo-URL, underkatalog, ref eller policy, hämtat innehåll bredvid lokalt före bekräftelse, etiketten "Linked by you" | 2 | `.sheet`, `Form`, `TextField`, `Picker` | Återanvänder diffvyn |
-| **Onboarding och behörigheter** | En konstellation av agenter runt Skillori, sedan tre löften (läser bara lokalt, laddar inte upp något, kör inga script), sedan första skanningen. Notistillstånd när nyttan syns, ingen Full Disk Access | 1–2 | `Window`-scen, `Layout`, `NSOpenPanel`, `UNUserNotificationCenter` | **Ja:** konstellation, löften |
+| **Onboarding och behörigheter** | En konstellation av agenternas logotyper runt Skillori, sedan tre löften (läser bara lokalt, laddar inte upp något, kör inga script), sedan första skanningen. Notistillstånd när nyttan syns, ingen Full Disk Access | 1–2 | `Window`-scen, `Layout`, `NSOpenPanel`, `UNUserNotificationCenter` | **Ja:** konstellation, löften |
 | **Lugna lägen** | Personlighet när inget behöver göras ("Nothing changed since Tuesday"), aldrig i varningar och fel | 1 | `ContentUnavailableView` är för anonym | **Ja:** lugnt läge |
 | **Notiser** | Deduplicerade, "Review" öppnar appen, sekretessläge, fungerar utan systemnotiser | 2 | `UserNotifications` | Nej |
 | **Statusmärken** | Status uttrycks inte bara med färg. Accentfärg hålls isär från statusfärger. Osäkerhet visas lika tydligt som goda nyheter | 1 | SF Symbols, `Text` | **Ja:** märke med form, ikon och text |
@@ -57,7 +63,8 @@ Behoven kommer från briefens §5–6 och §14, spikens fynd, Mobbin-baselinen o
 | **VoiceOver** | Etiketter, grupperade element, rotor för status. Tidslinjen och skalan läses begripligt | 1 | `.accessibilityLabel`, `.accessibilityElement(children:)`, `.accessibilityRotor`, `.accessibilityAdjustableAction` | För egna komponenter |
 | **Reducerad rörelse** | Färre och mjukare animationer, aldrig information som bara syns i en animation | 1 | `\.accessibilityReduceMotion` | Rörelsetokens som läser inställningen |
 | **Tvärgående** | Ljust och mörkt läge, typografi, täthet, rörelse, två utseenden (macOS 15 och 26+) | 1 | Systemfärger, SF Pro, `controlSize` | **Ja:** tokens |
-| *Senare: widget* | Ett tal, en rad, en figur (baselinen 2.7) | – | WidgetKit | Återanvänder hjälteobjektet |
+
+En widget för skrivbordet (baselinen 2.7) är inget mål enligt produktägaren. Menyradspanelen fyller den rollen.
 
 ---
 
@@ -106,7 +113,7 @@ Versioner och status från GitHub API (**V**). Kolumnen *Bedömning* är **B**. 
 | [MenuBarExtraAccess](https://github.com/orchetect/MenuBarExtraAccess) | 1.3.1 (2026-08-05) | MIT | 10.15 | Öppna och stänga panelen via kod, nå `NSStatusItem` och panelens `NSWindow` | **På vänt, troligen etapp 1.** Hälsokontrollen ändrar panelens höjd |
 | [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) | 3.1.0 (2026-09-11) | MIT | 10.15 | Användarvalt globalt kortkommando med inspelningskontroll | **På vänt.** Om produktägaren vill ha ett globalt kortkommando |
 | [Textual](https://github.com/gonzalezreal/textual) | 0.5.0 (2026-06-15) | MIT | 15 | Rendering av Markdown och formaterad text i SwiftUI med markering, kodblock och syntaxmarkering | **På vänt.** Kandidat för renderad `SKILL.md`. Före 1.0, så exakt version måste pinnas |
-| [Rive](https://github.com/rive-app/rive-ios) (`RiveRuntime`) | 6.29.0 (2026-10-30) | MIT | 13.1 | Spelar upp interaktiva vektoranimationer med tillståndsmaskiner, gjorda i Rives editor | **På vänt.** Bara om figur eller maskot väljs. Levereras som färdigbyggt binärt XCFramework (V) |
+| [Rive](https://github.com/rive-app/rive-ios) (`RiveRuntime`) | 6.29.0 (2026-10-30) | MIT | 13.1 | Spelar upp interaktiva vektoranimationer med tillståndsmaskiner, gjorda i Rives editor | **Avstå.** Behövdes bara för figur eller maskot, och produktägaren lutar åt instrument/precision. Levereras som färdigbyggt binärt XCFramework (V) |
 | [Lottie](https://github.com/airbnb/lottie-ios) | 4.6.1 (2026-06-13) | Apache-2.0 | 10.15 | Spelar upp animationer exporterade från After Effects | Avstå. Gjort för uppspelning. Rives tillståndsmaskiner passar en figur som reagerar på tillstånd bättre |
 | [swift-markdown-ui](https://github.com/gonzalezreal/swift-markdown-ui) | 2.4.1 (2024-10-13) | MIT | 12 | Markdown-rendering | **Avstå.** README: "MarkdownUI is in maintenance mode", utvecklingen sker i Textual |
 | [swift-markdown](https://github.com/swiftlang/swift-markdown) | 0.9.0 (2026-09-21) | Apache-2.0 | – | Markdown-parser (ingen vy) | Avstå tills vidare. `AttributedString(markdown:)` räcker för enkel text |
@@ -162,7 +169,6 @@ Ett fullt stackbyte till Tauri eller Electron utvärderas inte här. Briefen §1
 | **Täthet** | `controlSize`, radhöjd, kolumner i `Table`. Begränsad av stängda liststilar (V) | Som A | Full kontroll i webbvyn (B) |
 | Tangentbord, VoiceOver, reducerad rörelse | Gratis i `List`/`Table`/`Form`. Egna komponenter kräver eget arbete, men med native API:er (B) | Varierar per paket (B) | Fokus mellan native och webb och VoiceOver i webbvy kräver eget arbete och test (B) |
 | macOS 15 och 26+ | Följer systemet automatiskt i båda (V för Liquid Glass-nyckeln) | Kit kan ligga efter nya systemutseenden (B) | Webbvyn följer inte Liquid Glass alls (B) |
-| Widget senare | WidgetKit, samma SwiftUI-komponenter (B) | Som A | Webbvyn kan inte användas i en widget (B) |
 | Opålitligt innehåll (briefen §11) | Text i `Text`/`AttributedString` körs aldrig (B) | Som A | Kräver strikt CSP, ingen JavaScript från innehåll och noggrann escaping (B) |
 | Resurser | En process, ca 90 MB RSS idag (V, spiken) | Marginellt mer | Egen WebContent-process och ett JS-paket i appen. Inte mätt (B) |
 | Beroenderisk | Inga externa beroenden | Flera breda paket, ett utan release på två år (V) | npm-kedja, byggsteg och två verktygskedjor (B) |
@@ -171,10 +177,10 @@ Ett fullt stackbyte till Tauri eller Electron utvärderas inte här. Briefen §1
 ### 3.2 Var native begränsar uttrycket
 
 1. **Listans ram följer systemet (V).** Markering, indrag och utfällningspilar går inte att göra egna. Baselinens princip 2, "karaktären bor i kärnan", lägger dock karaktären i panelens tillstånd, proveniensens tidslinje och diffens sammanfattning. Alla tre är egna vyer där listans begränsning inte gäller. **Begränsningen väger därför mindre än jag först bedömde (B).** Biblioteket får vara lugnt och native. Att bygga listan själv med `ScrollView` och `LazyVStack` kräver egen tangentbordsnavigering, typsökning, flerval och VoiceOver-tabellsemantik. Jag avråder fortfarande från det.
-2. **Två systemutseenden (V).** Samma kod ser olika ut på macOS 15 och 26+. Karaktärskällan *objekt/material* är mest utsatt: ett eget material i panelen möter systemets glas. *Typografi* och *instrument* påverkas minst (B).
+2. **Två systemutseenden (V).** Samma kod ser olika ut på macOS 15 och 26+. Karaktärskällan *objekt/material* är mest utsatt: ett eget material i panelen möter systemets glas. *Typografi* och *instrument* påverkas minst (B). Det talar för produktägarens lutning.
 3. **Panelens storlek (B, inte prövat).** Hälsokontrollen fälls ut på plats och ändrar panelens höjd. `MenuBarExtra` saknar API för panelens fönster (V, enligt MenuBarExtraAccess README). Om höjdändringen hoppar i stället för att glida krävs MenuBarExtraAccess eller ett eget `NSPanel`.
 4. **Ingen färdig diffvy (V).** Den blir egen kod. Sida vid sida är det dyraste läget. Sammanfattningen först minskar behovet av den fulla diffen (B).
-5. **Ingen editor för figurer (B).** En figur som ritas i kod med `Shape` och `KeyframeAnimator` fungerar för enkla tillstånd. En figur som en illustratör ska rita och ge många tillstånd kräver Rive.
+5. **Ingen editor för figurer (B).** En figur som ritas i kod med `Shape` och `KeyframeAnimator` fungerar för enkla tillstånd. En figur som en illustratör ska rita och ge många tillstånd kräver Rive. Inte aktuellt så länge instrument/precision står sig.
 
 ### 3.3 Mobbin-baselinen mot native
 
@@ -183,7 +189,7 @@ Ett fullt stackbyte till Tauri eller Electron utvärderas inte här. Briefen §1
 | Källa | Bär SwiftUI/AppKit det? | Hur | Nya komponenter |
 | --- | --- | --- | --- |
 | **Objekt/material** | Bra | Former, gradienter, `MeshGradient` (15), skuggor, `.rotation3DEffect` för veck, Metal-shaders (14) för papperets ljus. Materialet på ett ställe: panelens hjälteobjekt och detaljvyns huvud. Kostnaden är designarbete, inte bibliotek. Glaset på macOS 26+ är systemets ram, vårt objekt ligger i innehållet | `PanelHero`, `FoldedSurface` |
-| **Instrument/precision** | Mycket bra | SF Mono, `.monospacedDigit()`, `.fontWidth`, tickmarkeringar i `Canvas` (12), snäppning med `.scrollTargetBehavior` (14), haptik med `.sensoryFeedback` (14), `Gauge` (13). Skalan nås med piltangenter och exponeras för VoiceOver med `.accessibilityAdjustableAction` | `RevisionScale`, `TickRuler`, `RevisionChip` |
+| **Instrument/precision** (produktägarens lutning) | Mycket bra | SF Mono, `.monospacedDigit()`, `.fontWidth`, tickmarkeringar i `Canvas` (12), snäppning med `.scrollTargetBehavior` (14), haptik med `.sensoryFeedback` (14), `Gauge` (13). Skalan nås med piltangenter och exponeras för VoiceOver med `.accessibilityAdjustableAction` | `RevisionScale`, `TickRuler`, `RevisionChip` |
 | **Figur/maskot** | Delvis | Enkla figurer ritade i kod med `PhaseAnimator`/`KeyframeAnimator` (14). En tecknad figur med många tillstånd kräver Rive 6.29.0. Figuren ryms inte i menyradens 16 px-mallbild (namnbriefen §8.1). Den lever i panelen och i lugna lägen | `Figure` med tillstånd, värd i `CalmState` och `PanelHero` |
 | **Typografi/redaktionellt** | Mycket bra | Inbäddade typsnitt, `.fontWidth`, `.fontDesign(.serif)`, `.tracking`, `TextRenderer` (15) för animerad text. Monokrom disciplin är lätt med semantiska tokens. Systemets ram (verktygsfält, sidofält, menyer, inställningar) behåller systemtypsnittet. Det redaktionella greppet lever i innehållsytorna | Typroll `display`, `DisplayNumber` |
 
@@ -196,11 +202,19 @@ Ett fullt stackbyte till Tauri eller Electron utvärderas inte här. Briefen §1
 | **Vad som går att ångra** (2.3) | Bra | Mest innehåll och struktur. Tre lägen: "Nothing changes until you approve" (etapp 2, inga skrivningar), "You can undo until …" (etapp 3, backup), "Can't be undone here. Managed by …" | `UpdateCard`, `ReversibilityNote` |
 | **Revisionsskala** (2.3, Raycast) | Bra | Vågrät skala där varje tickmarkering är en revision (baseline, lokal, kandidat). Följer pekaren direkt, snäpper med fjäder, haptik vid snäpp, piltangenter | `RevisionScale` |
 | **Diff med sammanfattning först** (2.4) | Bra för sammanfattning och inline. Delvis för sida vid sida | Sammanfattning: filer, +/− rader, script och körbara filer markerade. Fillista med fällbara filer och "Mark as viewed". Inline först. Sida vid sida kräver parning av block och mer arbete | `DiffSummary`, `FileChangeList`, `DiffView` (lägena inline och split) |
-| **Konstellation i onboarding** (2.5) | Bra | Radiell layout med `Layout` (13). Linjer som ritas fram med `trim`. Noderna tänds efter vad första skanningen faktiskt hittar, så att bilden är sann. Därefter tre löften | `SourceConstellation`, `RadialLayout`, `PromiseList` |
+| **Konstellation i onboarding** (2.5) | Bra | Radiell layout med `Layout` (13). Linjer som ritas fram med `trim`. Noderna är agenternas logotyper som bildtillgångar i asset-katalogen (PDF eller SVG), inte SF Symbols. De tänds efter vad första skanningen faktiskt hittar, så att bilden är sann. Agenter utan godkänd logotyp visas med namn. Därefter tre löften | `SourceConstellation`, `RadialLayout`, `AgentMark`, `PromiseList` |
 | **Personlighet bara i lugnet** (2.6) | Bra | Regeln kan byggas in i API:t: `CalmState` tar bara lugna tillstånd. Varningar och fel använder en annan, saklig komponent. `ContentUnavailableView` behålls för tomma sökresultat | `CalmState` |
-| **Widget** (2.7, senare) | Bara native | WidgetKit med samma komponenter. Ett widgettillägg kräver enligt min kännedom App Sandbox och får data via en App Group som appen skriver till (B, inte verifierat) | Återanvänder `PanelHero` |
+| **Widget** (2.7) | Inte aktuellt | Produktägaren: inget mål. Menyradspanelen fyller rollen | – |
 
-**Slutsats (B):** Alla fyra karaktärskällor och alla mönster går att bära native. Tre av källorna går utan tillägg. Figur/maskot är den enda som kan motivera ett paket. Inget mönster motiverar en webbvy.
+**Slutsats (B):** Alla fyra karaktärskällor och alla mönster går att bära native. Tre av källorna går utan tillägg. Figur/maskot är den enda som kan motivera ett paket, och den är inte vald. Inget mönster motiverar en webbvy.
+
+**Vad instrument/precision betyder i praktiken (B).** Det här är följder för komponenterna, inte en vald visuell riktning. Färg, symbol och typsnitt är fortfarande öppna.
+
+- **Panelen blir en avläsning.** `PanelHero` visar ett exakt värde eller tillstånd med tabellsiffror, en skala eller mätare (`Gauge` eller en egen skala i `Canvas`), och exakta tider ("Last checked 14:02") i stället för ungefärliga.
+- **Hashar, revisioner och tider blir synliga instrument** (baselinen princip 6) i stället för undangömd metadata. Det kräver en typroll för `hash` och en komponent för exakta värden.
+- **Rörelsen blir torr och exakt.** Fjädrar utan studs, snäpp mot tickmarkeringar med haptik och siffror som byts med `.numericText`. Det stämmer med `emil-design-eng`: ett professionellt verktyg ska vara snabbt och skarpt.
+- **Personligheten i lugna lägen kommer från precisionen själv**, t.ex. "Nothing changed since Tue 14:02 · 309 skills · 6 locations", inte från en figur.
+- **Origami och instrument kan mötas** i raka, exakta linjer: veck och tickmarkeringar har samma formspråk. Det är ett förslag att pröva i arbetet med den visuella riktningen, inget beslut.
 
 ---
 
@@ -229,21 +243,24 @@ Ett fullt stackbyte till Tauri eller Electron utvärderas inte här. Briefen §1
 
 En mapp eller ett lokalt paket i appen. Bygg tokens först, så att den visuella riktning som ännu inte är vald kan läggas in utan att röra vyerna. Med baselinen är detta appens viktigaste del, inte ett tunt lager.
 
+**Byggordning med instrumentlutningen:** tokens → `Readout`, `RevisionChip` och `TickRuler` → `PanelHero` och hälsokontrollen → `ProvenanceTimeline` → `RevisionScale` → diffen. Instrumentdelarna kommer tidigt eftersom de bär karaktären och återanvänds i flera ytor.
+
 **Grund**
 
 | Komponent | Innehåll |
 | --- | --- |
-| **Tokens** | Typroller, inte storlekar: `display`, `title`, `rowName`, `meta`, `path`, `hash`. Avstånd, radhöjd och täthet. Rörelse: `snappy`, `fold`, `none`, som läser reducerad rörelse. En semantisk statuspalett skild från accentfärgen |
+| **Tokens** | Typroller, inte storlekar: `display`, `title`, `rowName`, `meta`, `path`, `hash`, `readout` (tabellsiffror). Avstånd, radhöjd och täthet. Rörelse: `snappy`, `fold`, `snap`, `none`, som läser reducerad rörelse. En semantisk statuspalett skild från accentfärgen |
+| **`Readout`** | Ett exakt värde med enhet och tid, i monospace eller tabellsiffror. Används i panelen, detaljvyn och diffens sammanfattning |
 | **`StatusBadge` v2** | Varje status har egen ikonform, egen text och färg. Läses i gråskala och av VoiceOver |
 | **`FoldDisclosure`** | `DisclosureGroupStyle` för hälsokontroll, plugin-grupper och utfällda detaljer. Bär origamiidén där den betyder något |
-| **`FoldedSurface`** | Ytan med veck och papperets två sidor. Används på ett eller två ställen |
+| `FoldedSurface` | Ytan med veck och papperets två sidor. Valfri med instrumentlutningen, används högst på ett eller två ställen |
 | `PathText`, `RevisionChip` | Sökväg och hash eller revision i monospace. `PathText` finns redan och flyttas in |
 
 **Panel**
 
 | Komponent | Innehåll |
 | --- | --- |
-| **`PanelHero`** | Hjälteobjektet. Ett tillstånd i ord ("2 skills changed upstream", "All accounted for in 6 locations") och ett objekt, instrument, en figur eller ett stort tal som reagerar. Styrs av en enda `PanelState` (calm, changed, attention, checking, failed). Kan senare återanvändas i en widget |
+| **`PanelHero`** | Hjälteobjektet som en avläsning. Ett tillstånd i ord ("2 skills changed upstream", "All accounted for in 6 locations"), ett exakt värde och en skala eller mätare som reagerar. Styrs av en enda `PanelState` (calm, changed, attention, checking, failed) |
 | **`HealthCheckList` och `HealthCheckItem`** | Punkter med statusmarkör som fälls ut på plats med sin åtgärd. Ersätter dagens rutnät med fyra siffror |
 | `NextActionButton`, `PanelButton`, `PanelSection` | Panelens egna kontroller med tryckläge |
 | `FreshnessLabel` | "Last checked …" med inaktualitet, aldrig "Up to date" utan grund |
@@ -269,7 +286,8 @@ En mapp eller ett lokalt paket i appen. Bygg tokens först, så att den visuella
 
 | Komponent | Innehåll |
 | --- | --- |
-| **`SourceConstellation`** och `RadialLayout` | Agenterna runt Skillori, tända efter första skanningen |
+| **`SourceConstellation`** och `RadialLayout` | Agenternas logotyper runt Skillori, tända efter första skanningen |
+| `AgentMark` | En agents logotyp som bildtillgång, med namnet som reserv och som VoiceOver-etikett. Samlar reglerna per leverantör på ett ställe |
 | `PromiseList`, `OnboardingStep` | Tre löften, sedan en åtgärd |
 | **`CalmState`** | Personlighet i lugna lägen. Tar bara lugna tillstånd, så att personlighet inte kan hamna i ett fel |
 
@@ -280,11 +298,12 @@ En mapp eller ett lokalt paket i appen. Bygg tokens först, så att den visuella
 | MenuBarExtraAccess 1.3.1 | **Prova tidigt i etapp 1.** Om panelens höjd hoppar när hälsokontrollen fälls ut, eller om panelen måste öppnas via kod. Om paketet inte räcker är nästa steg eget `NSStatusItem` med `NSPanel` |
 | KeyboardShortcuts 3.1.0 | Produktägaren vill ha ett globalt kortkommando för panelen |
 | Textual 0.5.0 | Detaljvyn ska visa `SKILL.md` renderad, eller diffvyn ska få syntaxmarkering. Pinna exakt version |
-| Rive 6.29.0 | Produktägaren väljer figur/maskot som karaktärskälla och en illustratör ska ge figuren flera tillstånd. Binärt XCFramework: granska ursprung, licens och notarisering innan det läggs till |
+
+Rive 6.29.0 är struket efter produktägarens lutning mot instrument/precision. Det blir aktuellt igen bara om figur/maskot väljs.
 
 ### 4.4 Hybridspåret
 
-**Inte nu, och baselinen ändrar inte den bedömningen.** Alla mönster i baselinen är sammansatta vyer som native bär bra. En framtida widget kräver native. Det enda konkreta skälet för hybrid är fortfarande diffvyn: syntaxmarkering för många språk, diff på ordnivå och sida vid sida i stora filer, där webbens diffbibliotek är starkare än något native-paket (B). Att baselinen börjar med sammanfattningen minskar det skälet, eftersom den fulla diffen blir andrahandsvyn.
+**Inte nu, och baselinen ändrar inte den bedömningen.** Alla mönster i baselinen är sammansatta vyer som native bär bra. Det enda konkreta skälet för hybrid är fortfarande diffvyn: syntaxmarkering för många språk, diff på ordnivå och sida vid sida i stora filer, där webbens diffbibliotek är starkare än något native-paket (B). Att baselinen börjar med sammanfattningen minskar det skälet, eftersom den fulla diffen blir andrahandsvyn.
 
 Kostnaderna står kvar:
 
@@ -312,12 +331,12 @@ Principerna översatta till Skillori. Värdena är startpunkter (B).
 | Dra i revisionsskalan | Ibland | Följer pekaren direkt. Snäpper med en kort fjäder och haptik. Piltangenter: hoppar utan animation |
 | Vika fram ursprung och ändringar i detaljvyn | Ibland | Här får vikningen synas: ≤ 250 ms, ease-out, fäst vid kanten den viks från. Reducerad rörelse: toning |
 | Räknare i panelen ändras | Sällan | `.contentTransition(.numericText…)` |
-| Lugnt läge och figurens tomgång | Sällan sedd länge | Mycket diskret och långsam, pausad när panelen är stängd. Reducerad rörelse: stilla |
+| Lugnt läge | Sällan sedd länge | Ingen tomgångsrörelse. Precisionen räcker som personlighet |
 | Ny uppdatering hittad | Sällan | En diskret symbolrörelse, en gång |
 | Tryck på egna knappar | Ofta | Tryckläge 100–160 ms, skala 0,97 eller tonad bakgrund |
 | Onboarding med konstellationen | En gång | Får ha glädje: noder som tänds med 30–80 ms förskjutning och linjer som ritas fram. Kan hoppas över. Reducerad rörelse: slutbilden direkt |
 
-Regler: aldrig studs i arbetsytor, aldrig skala från noll, utgång snabbare än ingång, ingen personlighet i varningar och fel, och ingen status som bara syns i en animation (namnbriefen §9).
+Regler: aldrig studs (instrumentlutningen gör det till en regel överallt utom i onboarding), aldrig skala från noll, utgång snabbare än ingång, ingen personlighet i varningar och fel, och ingen status som bara syns i en animation (namnbriefen §9).
 
 ### 4.6 Vad nuvarande kod säger om komponentlagret
 
@@ -349,23 +368,31 @@ Det här är observationer i den befintliga koden, inte ändringar.
 | Egna komponenter (skala, tidslinje, hälsokontroll) saknar inbyggd tillgänglighet | Tangentbord och VoiceOver fungerar sämre än i `List` | Krav per komponent: fokus, piltangenter, en VoiceOver-etikett per steg, test med VoiceOver före varje leverans |
 | Personlighet läcker in i varningar | Bryter baselinens princip 7 | Bygg in regeln i `CalmState`-API:t |
 | Tidslinjen ser säkrare ut än evidensen | Bryter briefens krav på ärlig proveniens | Okända steg ritas som avbrott. "Linked by you" och "Inferred" får egna markörer |
-| Agenternas logotyper i konstellationen | Varumärken som tillhör andra | Namn eller monogram tills användningsvillkoren är kontrollerade |
-| Rive är ett binärt XCFramework (V) | Kod vi inte bygger själva i en notariserad app | Granska innan det läggs till. Bara om figur/maskot väljs |
+| Agenternas logotyper i konstellationen (produktägarens val) | Varumärken som tillhör andra. Kan antyda samarbete. Regler om färg och storlek kan krocka med instrumentets monokroma disciplin | Läs varumärkesriktlinjerna för varje leverantör före release (inte gjort). Följ dem även om det innebär originalfärger. Inga ord som antyder samarbete. `AgentMark` visar namnet för agenter utan godkänd logotyp |
+| Instrumentuttrycket blir kallt eller likt andra utvecklarverktyg (B) | Appen blir korrekt men anonym, det baselinen varnar för | Karaktären i precisionsdetaljerna och i ett eget typografiskt grepp. Pröva origamikopplingen i veck och tickmarkeringar |
 | Diffvyn är egen kod | Prestanda för stora filer okänd. Sida vid sida är dyrast | Sammanfattning och inline först. Lat rendering, gränser enligt briefen §15, mätning med fixtures |
 | Textual är före 1.0 (V) | API-ändringar | Pinna exakt version |
 | STTextView är GPL eller kommersiell (V) | Licensbrott om det används av misstag | Avstå |
 | Hybrid med opålitligt innehåll | Injektion i webbvyn | Bara via eget ADR med säkerhetsgranskning |
 
+### Besvarade 11 november
+
+| Fråga | Svar | Följd |
+| --- | --- | --- |
+| Karaktärskälla (baselinen §1) | Lutar åt instrument/precision | Native bär den utan tillägg. Rive struket. Instrumentkomponenterna byggs tidigt |
+| Logotyper eller namn i konstellationen | Logotyper | Bildtillgångar via `AgentMark`. Varumärkesriktlinjer måste läsas per leverantör |
+| Widget | Inget mål. Menyradsappen räcker | Widgeten är struken ur behovslistan. Ingen sandlådefråga för ett widgettillägg |
+
 ### Öppna frågor till produktägaren
 
-1. **Karaktärskälla** (baselinen §1). Objekt/material, instrument/precision, figur/maskot eller typografi/redaktionellt? Figur/maskot är den enda som kan kräva ett paket (Rive). Objekt/material kräver mest designarbete mot glaset på macOS 26+. *Delvis besvarad 2026-11-11: produktägaren lutar mest mot instrument/precision. Enligt 3.3 bär native den källan mycket bra och utan tillägg. Rive behövs då inte.*
+1. **Bekräfta instrument/precision** som karaktärskälla när referenserna är samlade. Svaret är en lutning, och paketvalet bygger på den.
 2. **Lägsta macOS-version.** Ska den höjas från 15 till 26, så att appen bara har ett systemutseende och kan använda Liquid Glass och SF Symbols "Draw" fullt ut? Beslut 0003 tillåter en höjning om något centralt kräver det.
 3. **Globalt kortkommando** för panelen? Det avgör om KeyboardShortcuts behövs.
 4. **Diffen i etapp 2.** Räcker sammanfattning och inline, eller krävs sida vid sida och syntaxmarkering? Det avgör om Textual eller Highlightr behövs och om hybrid alls blir en fråga.
 5. **Renderad `SKILL.md`** i detaljvyn, eller bara metadata och rå text?
-6. **Eget typsnitt** eller SF? Särskilt aktuellt om typografi/redaktionellt väljs. Ett inbäddat typsnitt kräver en licens för inbäddning i appen.
-7. **Agenternas logotyper** i konstellationen, eller bara namn?
-8. **Widget** på skrivbordet och i Notification Center. Senare mål eller inte alls? Ett widgettillägg påverkar sandlådefrågan i beslut 0002.
+6. **Eget typsnitt** eller SF? Med instrumentlutningen gäller det främst ett monospace- eller tabellsnitt för värden och hashar. Ett inbäddat typsnitt kräver en licens för inbäddning i appen.
+7. **Logotyper även i biblioteket?** Ska agentmärkena på raderna också bli logotyper, eller bara konstellationen? Det påverkar hur mycket andras färg som syns i arbetsytan.
+8. **Vem läser varumärkesriktlinjerna** för agenternas logotyper, och när? Det bör göras före release.
 
 ---
 
