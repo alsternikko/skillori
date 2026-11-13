@@ -7,7 +7,7 @@ Logos for agents that have no app on this Mac to take an icon from. `AgentMark` 
 |---|---|
 | `agent-codex.png` | Icon of OpenAI's verified extension "Codex – OpenAI's coding agent", VS Code Marketplace |
 | `agent-gemini-cli.png` | geminicli.com, `/icon.png` |
-| `agent-opencode.png` | opencode.ai, `/apple-touch-icon-v3.png` |
+| `agent-opencode.png` | opencode.ai/brand, `opencode-avatar-dark-1024.png` (the official padded square), fetched 2026-11-13 |
 | `agent-kiro.png` | kiro.dev, `/apple-icon.png` |
 
 Fetched 2026-11-12, scaled to 256 px and given rounded corners. Nothing else is changed.

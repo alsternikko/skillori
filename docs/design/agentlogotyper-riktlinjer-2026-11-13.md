@@ -103,4 +103,4 @@ Produktägarens svar på de fyra punkterna:
 
 Det här är ett medvetet val att bära risken, inte en ny bedömning av reglerna. Bedömningarna i tabellen ovan står kvar: Kiros logotyp strider mot AWS skrivna regler, och OpenAI och Google har vägar för tillstånd som inte är använda. Om en leverantör hör av sig är åtgärden att byta den logotypen mot brickan med två bokstäver, som redan finns som reserv i appen.
 
-Kvar att göra, oberoende av besluten: byta OpenCodes fil mot deras officiella kvadratiska version.
+OpenCodes fil byttes samma dag mot deras officiella kvadratiska version (`opencode-avatar-dark-1024.png` från opencode.ai/brand), nedskalad och med samma rundade hörn som de andra brickorna.
