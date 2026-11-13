@@ -339,3 +339,16 @@ Bilder: `native/utan-glas-*-2026-11-13.png`.
 - **Hörn:** `Radius` är 16 panel, 10 block, 8 rad, 6 kontroller, 4 etiketter. Knappar, etiketter, sökfält och segmentväljare är kantiga.
 
 Skillnader mot canvasen: skalan visas i appen bara i panelens viloläge, eftersom de andra lägena på ark 01 hör till etapp 2. Sökvägsraden i detaljvyn visar bara skillens namn, inte källan. Panelens block är fortfarande kolsvart när en skill har ändrats lokalt; det lila blocket på ark 12 är inte byggt.
+
+### Statusarna på canvasen (13 november, senare)
+
+Efter att uppdateringskontrollen och "Link source" byggdes i appen ritades canvasen om så att den visar samma statusar som appen. Bilderna i `v4/` är uppdaterade.
+
+- **05:** de tio statusarna med form, ord och betydelse: Up to date, Update available, Differs from source, Held back, Changed here, Check failed, Can't check, Not checked, No source och Managed. De gamla (In sync, Local changes, Source unknown, Linked by you, Pinned, Old result) är borta.
+- **02 Bibliotek:** sex brickor (Yours, Updates, Up to date, Held back, Not verified, Managed), etiketterna med form, och den fasta raden med Details, Copy update command och Hold back.
+- **01 Panel:** de tre lägen appen har: en källa har något nytt (lime), inget nytt, och kontrollen avstängd. Läget "ingen kontakt" som eget lila block finns inte kvar på arket; appen visar det som en tidsstämpel ("No contact · last 14:20").
+- **03 Detalj:** meningen om vad statusen betyder, knapparna Copy update command, See what changed och Hold back, och raderna Source now och Checked på typskylten.
+- **08 Märket:** menyraden har fyra lägen: vila, uppdatering (lime platta), kräver dig (lila platta) och ingen aktuell avläsning. Lila vinner när båda gäller.
+- **13 Link source (nytt):** dialogen efter Find, de tre sorternas träff och vilken status en länkad skill får.
+
+Kvar som tänkt men inte byggt: ark 04 (granska ändringar), revisionsskalan på ark 03, och det mesta på ark 10 (inställningar) utöver av/på för kontrollen.
