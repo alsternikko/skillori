@@ -32,7 +32,7 @@ struct PanelModel {
         }
     }
 
-    enum Command { case library, settings, addFolder, rescan, privacySettings }
+    enum Command { case library, settings, addFolder, rescan, privacySettings, enableChecks }
 
     struct Button: Identifiable {
         let title: String
@@ -144,6 +144,7 @@ struct MenuPanel: View {
         case .addFolder: actions.addFolder()
         case .rescan: actions.rescan()
         case .privacySettings: actions.openPrivacySettings()
+        case .enableChecks: store.checksEnabled = true
         }
     }
 }
@@ -186,19 +187,68 @@ extension PanelModel {
         let own = tracked + unknown
         let time = inventory.scannedAt.formatted(date: .omitted, time: .shortened)
         let folders = inventory.roots.filter { $0.state == .found }.count
+        let busy = store.isScanning || store.isChecking
+        let hint = store.isScanning ? "Reading…" : store.isChecking ? "Checking…"
+            : store.checksEnabled ? "Check now ⌘R" : "Read again ⌘R"
+        let buttons = [Button(title: "Library", prominent: true, command: .library),
+                       Button(title: "Settings", prominent: false, command: .settings)]
+
+        // Rows that say the same thing whatever the block shows.
+        var tail: [Row] = []
+        if store.heldCount > 0 {
+            tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
+        }
+        if store.cantCheckCount > 0 {
+            tail.append(.line(text: "\(store.cantCheckCount) can't be checked", data: "NO ANSWER", muted: true))
+        }
+        if unknown > 0 {
+            tail.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
+                              label: "Show", command: .library))
+        }
+
+        // Something new at a source is the first thing the panel says.
+        let updates = store.updates
+        if store.checksEnabled, !updates.isEmpty {
+            var rows: [Row] = updates.prefix(3).map { installation in
+                var data = ""
+                var source = ""
+                if case .skillsLock(let name, _, _, let baseline, _) = installation.provenance,
+                   case .updateAvailable(let upstream) = store.status(for: installation) {
+                    source = name
+                    data = "\((baseline ?? "").prefix(7)) → \(upstream.prefix(7))"
+                }
+                return .item(title: installation.displayName, detail: source, data: data)
+            }
+            if updates.count > 3 {
+                rows.append(.line(text: "\(updates.count - 3) more", data: "", muted: true))
+            }
+            return PanelModel(
+                tone: .new, label: "Updates", stamp: store.checkStamp,
+                number: "\(updates.count)",
+                lead: updates.count == 1 ? "skill has changed at its source" : "skills have changed at their source",
+                note: "of the \(tracked) with a known source",
+                scale: ScaleReading(part: updates.count, whole: tracked,
+                                    partLabel: "\(updates.count) changed", wholeLabel: "\(tracked) tracked"),
+                rows: rows + tail, buttons: buttons, hint: hint, hintEnabled: !busy)
+        }
 
         var rows: [Row] = []
         if changed > 0 {
             rows.append(.line(text: "\(changed) changed on this Mac", data: "SINCE INSTALL", muted: false))
         }
-        if tracked > 0 {
+        if store.checksEnabled {
+            if store.upToDateCount > 0 {
+                rows.append(.line(text: "\(store.upToDateCount) up to date", data: store.checkStamp.uppercased(), muted: false))
+            } else if tracked > 0 {
+                rows.append(.line(text: "\(tracked) \(tracked == 1 ? "has" : "have") a known source",
+                                  data: store.checkStamp.uppercased(), muted: false))
+            }
+        } else if tracked > 0 {
             rows.append(.line(text: "\(tracked) \(tracked == 1 ? "has" : "have") a known source",
                               data: "\(folders) FOLDERS", muted: false))
+            rows.append(.link(text: "Update checks are off", label: "Turn on", command: .enableChecks))
         }
-        if unknown > 0 {
-            rows.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
-                              label: "Show", command: .library))
-        }
+        rows += tail
         if own == 0 {
             rows.append(.link(text: "Skills in a project folder?", label: "Add folder", command: .addFolder))
         }
@@ -214,10 +264,9 @@ extension PanelModel {
                 ? ScaleReading(part: own, whole: own + managed, partLabel: "\(own) yours", wholeLabel: "\(own + managed) on this Mac")
                 : nil,
             rows: rows,
-            buttons: [Button(title: "Library", prominent: true, command: .library),
-                      Button(title: "Settings", prominent: false, command: .settings)],
-            hint: store.isScanning ? "Reading…" : "Read again ⌘R",
-            hintEnabled: !store.isScanning
+            buttons: buttons,
+            hint: hint,
+            hintEnabled: !busy
         )
     }
 }

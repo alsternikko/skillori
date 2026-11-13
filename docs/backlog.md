@@ -35,12 +35,12 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 
 ## Etapp 2 — Bevakning, diff och notiser (första kompletta MVP)
 
-1. GitHub-källadapter: katalog-SHA via REST, ETag-cache, rate limit/backoff, offline/stale-status.
-2. Uppdateringskontroll för lockfil-skills (R vs B) och plugin-commit-SHA:er där möjligt.
+1. GitHub-källadapter: katalog-SHA via REST, ETag-cache, rate limit/backoff, offline/stale-status. **Delvis ✅ (13 november):** en fråga per källa utan konto (`UpstreamCheck.swift`), svar "not found", "asked to wait" och "no contact" hålls isär, och ett gammalt svar behålls med sitt eget datum när källan inte svarar. Kvar: ETag-cache (ett prov gav fullt svar i stället för "oförändrat"), backoff efter rate limit, token för privata källor.
+2. Uppdateringskontroll för lockfil-skills (R vs B) och plugin-commit-SHA:er där möjligt. **✅ för lockfil-skills (13 november):** statusarna Up to date, Update available, Held back, Changed here, Can't check, Not checked, No source och Managed visas i bibliotek, detaljvy, panel och menyikon. "Hold back" och "Release" finns, liksom "Copy update command" (`npx skills update <namn>`). Kontrollen är avstängd tills användaren slår på den, enligt briefen §5. Kvar: plugins, och att bekräfta att kommandot träffar den globala installationen utan `-g`.
 3. "Link source…" för okända skills: repo-URL, underkatalog, ref/policy. Försök innehållsmatchning mot historik.
 4. Diffvy (filnivå + textdiff, markering av scripts/exekveringsbit).
-5. SQLite/GRDB-lagring: policy, kandidater, notishistorik, check runs.
-6. Schemaläggning (var 6:e timme, paus, efter sömn), deduplicerade notiser, sekretessläge.
+5. SQLite/GRDB-lagring: policy, kandidater, notishistorik, check runs. Tills vidare ligger källsvar och "held back" i en JSON-fil (`~/Library/Application Support/Skillori/sources.json`).
+6. Schemaläggning (var 6:e timme, paus, efter sömn), deduplicerade notiser, sekretessläge. **Delvis ✅:** var 6:e timme medan appen körs och vid "Check now". Kvar: notiser, paus, kontroll efter sömn.
 7. Sparkle + DMG-pipeline + promosida (kan gå parallellt).
 
 ## Etapp 3 — Begränsade säkra uppdateringar

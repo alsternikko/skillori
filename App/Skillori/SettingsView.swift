@@ -152,15 +152,26 @@ struct SettingsView: View {
     }
 
     private var checking: some View {
-        LabeledCard("Checking for changes", note: "Not built yet") {
-            Text("Skillori reads this Mac and nothing else. Asking sources whether a skill has changed, and telling you about it, comes in a later version.")
-                .font(TypeRole.sans(12))
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundStyle(Palette.ink2)
-                .padding(.top, 6)
-                .padding(.bottom, 8)
+        LabeledCard("Checking for changes", note: store.checkStamp) {
+            SettingRow {
+                Text("Ask sources if a skill has changed")
+            } trailing: {
+                SegmentedChoice([(false, "Off"), (true, "On")],
+                                selection: Binding(get: { store.checksEnabled }, set: { store.checksEnabled = $0 }))
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Asks github.com about each source, every 6 hours while Skillori runs. It sends the source's name and nothing about you or your files. No account. Skillori never updates a skill itself.")
+                    .font(TypeRole.sans(12))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(Palette.ink2)
+                Button(store.isChecking ? "Checking…" : "Check now") { Task { await store.checkSources(force: true) } }
+                    .buttonStyle(PillButtonStyle())
+                    .disabled(!store.checksEnabled || store.isChecking)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
         }
     }
 

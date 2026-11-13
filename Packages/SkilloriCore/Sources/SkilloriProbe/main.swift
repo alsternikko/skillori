@@ -1,9 +1,12 @@
 import Foundation
 import SkilloriCore
 
-// Usage: skillori-probe [project-dir ...]
+// Usage: skillori-probe [--check-sources] [project-dir ...]
 // Read-only. Prints what Skillori would show, for checking adapter rules against a real machine.
-let projects = CommandLine.arguments.dropFirst().map { URL(fileURLWithPath: $0) }
+// With --check-sources it also asks each tracked skill's source whether it has changed. That is
+// the only thing here that uses the network.
+let checkSources = CommandLine.arguments.contains("--check-sources")
+let projects = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
 let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
                              projects: projects, environment: ProcessInfo.processInfo.environment)
 let inventory = engine.scan()
@@ -41,3 +44,25 @@ print("\nRoots found:")
 for r in inventory.roots where r.state == .found { print("  \(r.skillCount)\t\(r.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))") }
 print("Inactive roots: \(inventory.roots.filter { $0.state == .inactive }.count) · missing literal roots: \(inventory.roots.filter { $0.state == .missing }.count)")
 for d in inventory.diagnostics { print("  ! \(d.message): \(d.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))") }
+
+if checkSources {
+    var questions: [UpstreamQuestion] = []
+    for inst in inventory.installations {
+        guard case .skillsLock(let source, let url, let subpath, let baseline, _) = inst.provenance else { continue }
+        questions.append(UpstreamQuestion(key: inst.displayName,
+                                          source: UpstreamSource(source: source, sourceURL: url, ref: inst.sourceRef),
+                                          subpath: subpath, baseline: baseline))
+    }
+    let answers = await UpstreamChecker.check(questions)
+    print("\nSources asked: \(Set(questions.compactMap(\.source)).count)")
+    for question in questions.sorted(by: { $0.key < $1.key }) {
+        let text: String
+        switch answers[question.key] {
+        case .upToDate: text = "up to date"
+        case .updateAvailable(let hash): text = "UPDATE AVAILABLE · source now \(hash.prefix(7))"
+        case .cannotCheck(let reason): text = "CAN'T CHECK · \(reason.rawValue)"
+        case nil: text = "no answer"
+        }
+        print("  \(question.key) [\(question.source?.name ?? "?")] — \(text)")
+    }
+}

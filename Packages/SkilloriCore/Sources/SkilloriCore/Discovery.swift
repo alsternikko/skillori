@@ -36,6 +36,8 @@ public struct Installation: Sendable, Identifiable {
     public var installedAt: Date? = nil
     /// When the installer last changed it, if it left a record.
     public var updatedAt: Date? = nil
+    /// The branch or tag the installer recorded, if any. Nil means the source's default branch.
+    public var sourceRef: String? = nil
 
     public var displayName: String { frontmatter.name ?? directoryName }
     public var agents: [Agent] { Array(Set(bindings.flatMap(\.agents))).sorted() }
@@ -227,6 +229,7 @@ public struct DiscoveryEngine: Sendable {
                                                   baselineHash: entry.skillFolderHash, local: local)
             installation.installedAt = entry.installedAt.flatMap(Self.parseDate)
             installation.updatedAt = entry.updatedAt.flatMap(Self.parseDate)
+            installation.sourceRef = entry.ref
             builder.installations[key] = installation
         }
         return url

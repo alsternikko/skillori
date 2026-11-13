@@ -6,6 +6,7 @@ import SwiftUI
 /// One skill, as a page: what it is, what is known about its source, who can see it and
 /// where it lives. Everything shown is read from disk or from the installer's record.
 struct InstallationDetail: View {
+    @Environment(InventoryStore.self) private var store
     let installation: Installation
     var number = 1
     var total = 1
@@ -63,6 +64,7 @@ struct InstallationDetail: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     LabelText("Skill · \(scope) · \(status.word)")
+                        .accessibilityLabel("Skill, \(scope), \(status.word)")
                     Spacer(minLength: 8)
                     LabelText(String(format: "No %03d of %03d", number, total))
                 }
@@ -82,12 +84,34 @@ struct InstallationDetail: View {
                         .frame(maxWidth: 560, alignment: .leading)
                         .padding(.top, 8)
                 }
+                // What the status means for this skill, in one sentence.
+                Text(status.sentence)
+                    .font(TypeRole.sans(13, .medium))
+                    .padding(.top, 14)
                 // The actions sit in the block they act on, under a hairline.
-                tone.foreground.opacity(0.18).frame(height: 1).padding(.top, 18)
+                tone.foreground.opacity(0.18).frame(height: 1).padding(.top, 14)
                 HStack(spacing: 6) {
-                    if let link = sourceLink {
-                        Button("Open source") { NSWorkspace.shared.open(link) }
+                    let history = store.upstreamSource(for: installation)?.historyURL(subpath: subpath)
+                    switch status {
+                    case .updateAvailable:
+                        CopyUpdateCommandButton(installation: installation, tone: tone)
+                        if let history {
+                            Button("See what changed") { NSWorkspace.shared.open(history) }
+                                .buttonStyle(PillButtonStyle(on: tone))
+                        }
+                        Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: tone))
+                    case .heldBack(let moved):
+                        Button("Release") { store.release(installation) }
                             .buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                        if moved, let history {
+                            Button("See what changed") { NSWorkspace.shared.open(history) }
+                                .buttonStyle(PillButtonStyle(on: tone))
+                        }
+                    default:
+                        if let link = sourceLink {
+                            Button("Open source") { NSWorkspace.shared.open(link) }
+                                .buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                        }
                     }
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
@@ -97,6 +121,10 @@ struct InstallationDetail: View {
                         NSWorkspace.shared.open(URL(fileURLWithPath: installation.canonicalPath).appendingPathComponent("SKILL.md"))
                     }
                     .buttonStyle(PillButtonStyle(on: tone))
+                    Spacer(minLength: 8)
+                    if let reading = store.reading(for: installation) {
+                        LabelText("Checked \(InventoryStore.stamp(reading.checkedAt))").foregroundStyle(tone.secondary)
+                    }
                 }
                 .padding(.top, 12)
             }
@@ -112,21 +140,17 @@ struct InstallationDetail: View {
         return projects.isEmpty ? "Personal" : projects.sorted().joined(separator: ", ")
     }
 
-    private var status: (word: String, tone: Tone) {
-        switch installation.provenance {
-        case .skillsLock(_, _, _, _, .matchesBaseline): ("Tracked", .rest)
-        case .skillsLock(_, _, _, _, .modified): ("Changed here", .new)
-        case .skillsLock(_, _, _, _, .hashFailed): ("Check failed", .attention)
-        case .managed: ("Managed", .quiet)
-        case .unknown: ("Source unknown", .quiet)
-        }
-    }
+    private var status: SkillStatus { store.status(for: installation) }
 
     private var tone: Tone { status.tone }
 
+    private var subpath: String? {
+        guard case .skillsLock(_, _, let subpath, _, _) = installation.provenance else { return nil }
+        return subpath
+    }
+
     private var sourceLink: URL? {
-        guard case .skillsLock(_, let url?, _, _, _) = installation.provenance else { return nil }
-        return URL(string: url.replacingOccurrences(of: ".git", with: ""))
+        store.upstreamSource(for: installation)?.webURL(subpath: subpath)
     }
 
     // MARK: Type plate
@@ -145,11 +169,26 @@ struct InstallationDetail: View {
                 }
                 PlateRow("Path in source") { value(subpath ?? "top level") }
                 PlateRow("Installed by") { value("npx skills") }
-                PlateRow("Local copy", isLast: true) {
+                PlateRow("Local copy") {
                     switch local {
                     case .matchesBaseline: value("matches baseline")
                     case .modified(let hash): value("changed", faint: String(hash.prefix(8)))
                     case .hashFailed: value("could not be checked")
+                    }
+                }
+                PlateRow("Source now") {
+                    switch store.reading(for: installation)?.state {
+                    case .upToDate: value("same as installed")
+                    case .updateAvailable(let upstream): value(String(upstream.prefix(8)), faint: "changed")
+                    case .cannotCheck(let reason): value(reason.short, muted: true)
+                    case nil: value(store.checksEnabled ? "not asked yet" : "checks are off", muted: true)
+                    }
+                }
+                PlateRow("Checked", isLast: true) {
+                    if let reading = store.reading(for: installation) {
+                        value(InventoryStore.stamp(reading.checkedAt))
+                    } else {
+                        value("never", muted: true)
                     }
                 }
             case .managed(let owner):
@@ -290,7 +329,19 @@ struct InstallationDetail: View {
                 case .hashFailed: steps.append((stamp(readAt), "Read, could not be checked", true))
                 }
             }
-            steps.append(("not yet", "Source asked for changes", false))
+            if let reading = store.reading(for: installation) {
+                let what = switch reading.state {
+                case .upToDate: "Source asked, no changes"
+                case .updateAvailable: "Source asked, it has changed"
+                case .cannotCheck(let reason): "Source asked, \(reason.short)"
+                }
+                steps.append((stamp(reading.checkedAt), what, true))
+            } else {
+                steps.append(("not yet", "Source asked for changes", false))
+            }
+            if let key = store.sourceKey(for: installation), let since = store.held[key] {
+                steps.append((stamp(since), "Held back by you", true))
+            }
         case .managed(let owner):
             steps.append(("no date", "Installed by \(owner)", false))
             if let readAt { steps.append((stamp(readAt), "Read on this Mac", true)) }

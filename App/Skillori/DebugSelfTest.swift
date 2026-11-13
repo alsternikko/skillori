@@ -73,7 +73,7 @@ enum DebugSelfTest {
                 view.cacheDisplay(in: view.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".settings.png"))
             }
-            check("Settings window fits its content", settingsHeight > 300 && settingsHeight < 640, "height \(settingsHeight)")
+            check("Settings window fits its content", settingsHeight > 300 && settingsHeight < 720, "height \(settingsHeight)")
             windows.settings?.close()
 
             panel.open()
@@ -83,6 +83,8 @@ enum DebugSelfTest {
             check("panel closes when another window takes focus", !panel.isOpen)
             check("Library window opens", windows.library?.isVisible == true)
             windows.library?.close()
+            // Closing a window moves focus; let that settle so it cannot close the panel opened next.
+            await pause(400)
 
             panel.open()
             await pause(300)

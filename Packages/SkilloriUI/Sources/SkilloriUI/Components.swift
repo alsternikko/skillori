@@ -378,14 +378,17 @@ public struct StatusChip: View {
     public enum Kind: Sendable { case neutral, new, attention, outline }
     let text: String
     let kind: Kind
+    let mark: String?
 
-    public init(_ text: String, kind: Kind = .neutral) {
+    /// `mark` is a small shape shown before the word, so the status does not rest on colour.
+    public init(_ text: String, kind: Kind = .neutral, mark: String? = nil) {
         self.text = text
         self.kind = kind
+        self.mark = mark
     }
 
     public var body: some View {
-        Text(text.uppercased())
+        Text((mark.map { $0 + " " } ?? "") + text.uppercased())
             .font(TypeRole.mono(9.5))
             .tracking(0.57)
             .lineLimit(1)

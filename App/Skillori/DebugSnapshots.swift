@@ -11,6 +11,9 @@ enum DebugSnapshots {
         guard let dir = ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_DIR"] else { return }
         Task { @MainActor in
             while store.inventory == nil || store.isScanning { try? await Task.sleep(for: .milliseconds(100)) }
+            // Give the source answers (sample ones in pictures) a moment to land.
+            try? await Task.sleep(for: .milliseconds(400))
+            while store.isChecking { try? await Task.sleep(for: .milliseconds(100)) }
             let out = URL(fileURLWithPath: dir)
             let states: [(String, PanelModel?, ColorScheme)] = [
                 ("panel-live", nil, .light), ("panel-live-dark", nil, .dark),
@@ -23,7 +26,7 @@ enum DebugSnapshots {
             for (name, model, scheme) in states {
                 render(PanelBackdrop { MenuPanel(fixedModel: model).frame(width: StatusPanelController.panelWidth) }
                     .environment(store).environment(\.colorScheme, scheme),
-                       size: CGSize(width: 420, height: 470), to: out.appendingPathComponent("\(name).png"))
+                       size: CGSize(width: 420, height: 560), to: out.appendingPathComponent("\(name).png"))
             }
             for (step, scheme, name) in [(1, ColorScheme.light, "first-start-1"), (2, .light, "first-start-2"),
                                          (3, .light, "first-start-3"), (2, .dark, "first-start-2-dark")] {
@@ -51,10 +54,10 @@ enum DebugSnapshots {
                    to: out.appendingPathComponent("detail.png"))
             render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store)
                 .environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("detail-dark.png"))
-            render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 580),
+            render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 680),
                    to: out.appendingPathComponent("settings.png"))
             render(SettingsView(ownChrome: true).environment(store).environment(\.colorScheme, .dark),
-                   size: CGSize(width: 640, height: 580), to: out.appendingPathComponent("settings-dark.png"))
+                   size: CGSize(width: 640, height: 680), to: out.appendingPathComponent("settings-dark.png"))
             let unknown = installs.first { $0.provenance == .unknown }
             render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
                    to: out.appendingPathComponent("detail-unknown.png"))
@@ -64,7 +67,7 @@ enum DebugSnapshots {
                 try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
                     .write(to: out.appendingPathComponent("app-icon-1024.png"))
             }
-            render(MarkSheet(), size: CGSize(width: 1040, height: 460), to: out.appendingPathComponent("mark.png"))
+            render(MarkSheet(), size: CGSize(width: 1280, height: 460), to: out.appendingPathComponent("mark.png"))
             NSApp.terminate(nil)
         }
     }
@@ -125,7 +128,7 @@ private struct MarkSheet: View {
 
     private func bar(light: Bool, scale: CGFloat) -> some View {
         HStack(spacing: 8 * scale) {
-            ForEach([SkilloriMark.MenuBarState.rest, .attention, .stale], id: \.self) { state in
+            ForEach([SkilloriMark.MenuBarState.rest, .new, .attention, .stale], id: \.self) { state in
                 // The image the menu bar really gets; template states take the bar's colour.
                 Image(nsImage: SkilloriMark.menuBarImage(state, side: 22 * scale))
                     .foregroundStyle(light ? Color.white : Color.black)

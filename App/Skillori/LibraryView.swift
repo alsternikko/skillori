@@ -5,23 +5,28 @@ import SwiftUI
 
 enum LibraryFilter: String, CaseIterable, Identifiable {
     case yours
-    case tracked
-    case localChanges
-    case unknown
+    /// The source has changed.
+    case updates
+    case upToDate
+    /// Kept on the installed version by the reader.
+    case heldBack
+    /// Nobody can say whether these are current: no source, no answer, or not asked.
+    case unverified
     case managed
     /// Not a list of skills: shows which folders were read.
     case coverage
 
     var id: String { rawValue }
 
-    func includes(_ installation: Installation) -> Bool {
-        switch (self, installation.provenance) {
-        case (.yours, .skillsLock), (.yours, .unknown): true
-        case (.tracked, .skillsLock): true
-        case (.localChanges, .skillsLock(_, _, _, _, .modified)): true
-        case (.unknown, .unknown): true
-        case (.managed, .managed): true
-        default: false
+    func includes(_ status: SkillStatus) -> Bool {
+        switch self {
+        case .yours: status != .managed
+        case .updates: if case .updateAvailable = status { true } else { false }
+        case .upToDate: status == .upToDate
+        case .heldBack: if case .heldBack = status { true } else { false }
+        case .unverified: status.isUnverified
+        case .managed: status == .managed
+        case .coverage: false
         }
     }
 }
@@ -60,6 +65,7 @@ struct LibraryView: View {
                                    onBack: { showsDetail = false },
                                    onStep: { step in _ = move(step, in: rows) })
             } else {
+                if !store.checksEnabled, store.trackedCount > 0 { checksOffNotice }
                 tiles
                 listCard
             }
@@ -107,12 +113,13 @@ struct LibraryView: View {
             LabelText(stamp).foregroundStyle(Palette.ink2)
             Button("Folders") { filter = filter == .coverage ? .yours : .coverage }
                 .buttonStyle(PillButtonStyle(prominent: filter == .coverage))
-            Button { Task { await store.rescan() } } label: {
-                SwappingText(store.isScanning ? "Reading…" : "Read again")
+            Button { Task { await store.refresh() } } label: {
+                SwappingText(store.isScanning ? "Reading…" : store.isChecking ? "Checking…"
+                    : store.checksEnabled ? "Check now" : "Read again")
             }
             .buttonStyle(PillButtonStyle())
             .keyboardShortcut("r")
-            .disabled(store.isScanning)
+            .disabled(store.isScanning || store.isChecking)
         }
         .padding(.leading, 78)
         .padding(.trailing, 8)
@@ -124,7 +131,28 @@ struct LibraryView: View {
 
     private var stamp: String {
         guard let inventory = store.inventory else { return "Reading now" }
-        return "Read \(inventory.scannedAt.formatted(date: .omitted, time: .shortened))"
+        guard store.checksEnabled else {
+            return "Read \(inventory.scannedAt.formatted(date: .omitted, time: .shortened))"
+        }
+        return store.checkStamp
+    }
+
+    /// Shown until the reader has decided: the app's main job needs their yes.
+    private var checksOffNotice: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Update checks are off").font(TypeRole.sans(13, .medium))
+                Text("Skillori can ask each source whether a skill has changed. It sends the source's name and nothing about you or your files.")
+                    .font(TypeRole.sans(12))
+                    .foregroundStyle(Tone.quiet.secondary)
+            }
+            Spacer(minLength: 12)
+            Button("Turn on") { store.checksEnabled = true }
+                .buttonStyle(PillButtonStyle(prominent: true, on: .quiet))
+        }
+        .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 12))
+        .foregroundStyle(Tone.quiet.foreground)
+        .background(Tone.quiet.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 
     // MARK: Tiles
@@ -132,9 +160,10 @@ struct LibraryView: View {
     private var tiles: some View {
         HStack(spacing: 6) {
             tile(.yours, "Yours", "installed by you")
-            tile(.tracked, "Known source", "can be followed")
-            tile(.localChanges, "Changed here", "differ from install", tone: count(.localChanges) > 0 ? .new : nil)
-            tile(.unknown, "Unknown", "no known source")
+            tile(.updates, "Updates", "newer at the source", tone: count(.updates) > 0 ? .new : nil)
+            tile(.upToDate, "Up to date", "match their source")
+            tile(.heldBack, "Held back", "kept by you")
+            tile(.unverified, "Not verified", "can't be checked")
             tile(.managed, "Managed", "owned by apps")
         }
     }
@@ -145,7 +174,7 @@ struct LibraryView: View {
     }
 
     private func count(_ item: LibraryFilter) -> Int {
-        store.inventory?.installations.filter(item.includes).count ?? 0
+        store.inventory?.installations.filter { item.includes(store.status(for: $0)) }.count ?? 0
     }
 
     // MARK: List
@@ -206,12 +235,14 @@ struct LibraryView: View {
                                 sectionHeader("Managed by apps · \(count(.managed))",
                                               note: "Read-only here. Each app updates its own.")
                             }
-                            GroupRow(group: group, isOpen: open, isLast: lastInSection, hasCursor: groupCursor == group.id)
+                            GroupRow(group: group, statuses: group.items.map(store.status(for:)),
+                                     isOpen: open, isLast: lastInSection, hasCursor: groupCursor == group.id)
                                 .id(group.id)
                                 .onTapGesture { toggle(group, among: groups) }
                             if open {
                                 ForEach(group.items) { installation in
                                     InstallationRow(installation: installation,
+                                                    status: store.status(for: installation),
                                                     copies: copies[installation.displayName] ?? 1,
                                                     isSelected: installation.id == selection,
                                                     trunk: !lastInSection,
@@ -394,30 +425,35 @@ struct LibraryView: View {
     // MARK: Selection
 
     private func actionBar(_ installation: Installation) -> some View {
-        StatusLine {
+        let status = store.status(for: installation)
+        return StatusLine {
             Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
-            DataText(barNote(installation))
+            Text(status.sentence)
+                .font(TypeRole.sans(12))
                 .foregroundStyle(Tone.rest.secondary)
+                .lineLimit(1)
                 .padding(.leading, 6)
             Spacer(minLength: 10)
             Button(showsDetail ? "Hide details" : "Details") { showsDetail.toggle() }
                 .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
-            if case .skillsLock(_, let url?, _, _, _) = installation.provenance, let link = URL(string: url) {
-                Button("Open source") { NSWorkspace.shared.open(link) }
+            switch status {
+            case .updateAvailable:
+                CopyUpdateCommandButton(installation: installation, prominent: false, tone: .rest)
+                Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: .rest))
+            case .heldBack:
+                Button("Release") { store.release(installation) }.buttonStyle(PillButtonStyle(on: .rest))
+            default:
+                if let link = store.upstreamSource(for: installation)?.webURL() {
+                    Button("Open source") { NSWorkspace.shared.open(link) }
+                        .buttonStyle(PillButtonStyle(on: .rest))
+                } else {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
+                    }
                     .buttonStyle(PillButtonStyle(on: .rest))
-            } else {
-                Button("Show in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
                 }
-                .buttonStyle(PillButtonStyle(on: .rest))
             }
         }
-    }
-
-    private func barNote(_ installation: Installation) -> String {
-        if case .skillsLock(_, _, _, _, .modified) = installation.provenance { return "CHANGED SINCE INSTALL" }
-        let n = installation.bindings.count
-        return "\(n) LOCATION\(n == 1 ? "" : "S")"
     }
 
     private var agentsOnThisMac: [Agent] {
@@ -426,7 +462,7 @@ struct LibraryView: View {
 
     private var visible: [Installation] {
         let all = store.inventory?.installations ?? []
-        let filtered = all.filter { filter.includes($0) || (filter == .yours && isManaged($0)) }
+        let filtered = all.filter { filter.includes(store.status(for: $0)) || (filter == .yours && isManaged($0)) }
             .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         guard !search.isEmpty else { return filtered }
         return filtered.filter { installation in
@@ -504,6 +540,8 @@ private struct TreeGuide: Shape {
 /// plus or minus that opens it one level further.
 private struct GroupRow: View {
     let group: SkillGroup
+    /// The status of each skill in the group.
+    let statuses: [SkillStatus]
     let isOpen: Bool
     let isLast: Bool
     let hasCursor: Bool
@@ -562,12 +600,28 @@ private struct GroupRow: View {
         }
     }
 
+    /// What the branch says about its skills: the state that most needs a look comes first.
     @ViewBuilder private var chip: some View {
+        let updates = statuses.filter { if case .updateAvailable = $0 { true } else { false } }.count
+        let held = statuses.filter { if case .heldBack = $0 { true } else { false } }.count
+        let cant = statuses.filter { if case .cantCheck = $0 { true } else { false } }.count
         switch group.kind {
-        case .source where group.changed > 0: StatusChip("\(group.changed) changed here", kind: .new)
-        case .source: StatusChip("Tracked")
-        case .unknown: StatusChip("Source unknown", kind: .outline)
-        case .managed: StatusChip("Managed")
+        case .unknown: StatusBadge(status: .noSource)
+        case .managed: StatusBadge(status: .managed)
+        case .source:
+            if updates > 0 {
+                StatusChip("\(updates) update\(updates == 1 ? "" : "s")", kind: .new, mark: "▲")
+            } else if group.changed > 0 {
+                StatusChip("\(group.changed) changed here", kind: .attention, mark: "◐")
+            } else if cant > 0 {
+                StatusChip("Can't check", kind: .outline, mark: "✕")
+            } else if held > 0 {
+                StatusChip("\(held) held back", mark: "◆")
+            } else if statuses.contains(.notChecked) {
+                StatusBadge(status: .notChecked)
+            } else {
+                StatusBadge(status: .upToDate)
+            }
         }
     }
 }
@@ -577,11 +631,12 @@ private enum Column {
     static let source: CGFloat = 190
     static let revision: CGFloat = 160
     static let agents: CGFloat = 96
-    static let status: CGFloat = 150
+    static let status: CGFloat = 158
 }
 
 private struct InstallationRow: View {
     let installation: Installation
+    let status: SkillStatus
     let copies: Int
     let isSelected: Bool
     /// The branch this skill hangs from has more branches below it.
@@ -624,7 +679,7 @@ private struct InstallationRow: View {
                 .foregroundStyle(strong)
                 .frame(width: Column.agents, alignment: .leading)
                 .help(installation.agents.map(\.displayName).joined(separator: ", "))
-            StatusBadge(provenance: installation.provenance)
+            StatusBadge(status: status)
                 .frame(width: Column.status, alignment: .leading)
         }
         .foregroundStyle(strong)
@@ -648,27 +703,17 @@ private struct InstallationRow: View {
     }
 
     private var revision: (text: String, known: Bool) {
-        switch installation.provenance {
+        if case .updateAvailable(let upstream) = status,
+           case .skillsLock(_, _, _, let baseline?, _) = installation.provenance {
+            return ("\(baseline.prefix(7)) → \(upstream.prefix(7))", true)
+        }
+        return switch installation.provenance {
         case .skillsLock(_, _, _, let baseline?, .modified(let local)):
             ("\(baseline.prefix(7)) → \(local.prefix(7))", true)
         case .skillsLock(_, _, _, let baseline?, _): (String(baseline.prefix(7)), true)
         case .skillsLock: ("no baseline", false)
         case .managed: ("set by the app", false)
         case .unknown: ("no baseline", false)
-        }
-    }
-}
-
-struct StatusBadge: View {
-    let provenance: Provenance
-
-    var body: some View {
-        switch provenance {
-        case .skillsLock(_, _, _, _, .matchesBaseline): StatusChip("Tracked")
-        case .skillsLock(_, _, _, _, .modified): StatusChip("Changed here", kind: .new)
-        case .skillsLock(_, _, _, _, .hashFailed): StatusChip("Check failed", kind: .attention)
-        case .managed: StatusChip("Managed")
-        case .unknown: StatusChip("Source unknown", kind: .outline)
         }
     }
 }

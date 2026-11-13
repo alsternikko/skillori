@@ -31,7 +31,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                 openLibrary: { [weak self] in self?.close(animated: false); self?.windows.showLibrary() },
                 openSettings: { [weak self] in self?.close(animated: false); self?.windows.showSettings() },
                 addFolder: { [weak self] in self?.close(animated: false); self?.store.addProject() },
-                rescan: { [weak self] in Task { await self?.store.rescan() } },
+                rescan: { [weak self] in Task { await self?.store.refresh() } },
                 openPrivacySettings: { [weak self] in
                     self?.close(animated: false)
                     if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders") {
@@ -59,8 +59,14 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     private func observeStore() {
         withObservationTracking {
-            statusItem.button?.image = SkilloriMark.menuBarImage(store.needsAttention ? .attention : .rest)
-            statusItem.button?.setAccessibilityLabel(store.needsAttention ? "Skillori, local changes" : "Skillori")
+            // Lilac for what needs the reader, lime for something new at a source, plain otherwise.
+            let updates = store.checksEnabled ? store.updateCount : 0
+            let state: SkilloriMark.MenuBarState = store.needsAttention ? .attention : updates > 0 ? .new : .rest
+            statusItem.button?.image = SkilloriMark.menuBarImage(state)
+            statusItem.button?.setAccessibilityLabel(
+                store.needsAttention ? "Skillori, local changes"
+                    : updates > 0 ? "Skillori, \(updates) update\(updates == 1 ? "" : "s")" : "Skillori")
+            _ = store.isChecking
             _ = store.inventory?.scannedAt
             _ = store.isScanning
         } onChange: { [weak self] in
