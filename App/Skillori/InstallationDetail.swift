@@ -33,7 +33,7 @@ struct InstallationDetail: View {
             }
         }
         .scrollIndicators(.never)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -46,8 +46,21 @@ struct InstallationDetail: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 6) {
+            // Where this is, and the way back.
+            HStack(spacing: 8) {
+                Button(action: onBack) {
+                    Text("← LIBRARY").font(TypeRole.mono(11.5, .medium)).foregroundStyle(Palette.ink)
+                }
+                .buttonStyle(.plain)
+                DataText("/").foregroundStyle(Palette.ink3)
+                DataText(installation.displayName).foregroundStyle(Palette.ink2).lineLimit(1)
+                Spacer(minLength: 8)
+            }
+            .frame(height: 30)
+            .padding(.horizontal, 10)
+
+            VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     LabelText("Skill · \(scope) · \(status.word)")
                     Spacer(minLength: 8)
@@ -58,7 +71,7 @@ struct InstallationDetail: View {
                     .font(TypeRole.sans(30, .medium))
                     .tracking(-0.6)
                     .lineLimit(1)
-                    .padding(.top, 8)
+                    .padding(.top, 14)
                     .textSelection(.enabled)
                 if let description = installation.frontmatter.description {
                     Text(description)
@@ -67,35 +80,30 @@ struct InstallationDetail: View {
                         .lineLimit(4)
                         .foregroundStyle(tone.foreground.opacity(0.76))
                         .frame(maxWidth: 560, alignment: .leading)
+                        .padding(.top, 8)
                 }
+                // The actions sit in the block they act on, under a hairline.
+                tone.foreground.opacity(0.18).frame(height: 1).padding(.top, 18)
+                HStack(spacing: 6) {
+                    if let link = sourceLink {
+                        Button("Open source") { NSWorkspace.shared.open(link) }
+                            .buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                    }
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
+                    }
+                    .buttonStyle(PillButtonStyle(prominent: sourceLink == nil, on: tone))
+                    Button("Open SKILL.md") {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: installation.canonicalPath).appendingPathComponent("SKILL.md"))
+                    }
+                    .buttonStyle(PillButtonStyle(on: tone))
+                }
+                .padding(.top, 12)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(EdgeInsets(top: 18, leading: 20, bottom: 46, trailing: 20))
+            .padding(EdgeInsets(top: 16, leading: 20, bottom: 14, trailing: 20))
             .foregroundStyle(tone.foreground)
-            .background(tone.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-            HStack(spacing: 6) {
-                Button("← Library", action: onBack).buttonStyle(PillButtonStyle())
-                if let link = sourceLink {
-                    Button("Open source") { NSWorkspace.shared.open(link) }.buttonStyle(PillButtonStyle(prominent: true))
-                }
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
-                }
-                .buttonStyle(PillButtonStyle(prominent: sourceLink == nil))
-                Button("Open SKILL.md") {
-                    NSWorkspace.shared.open(URL(fileURLWithPath: installation.canonicalPath).appendingPathComponent("SKILL.md"))
-                }
-                .buttonStyle(PillButtonStyle())
-                Spacer(minLength: 8)
-                if let readAt {
-                    LabelText("Read \(readAt.formatted(date: .omitted, time: .shortened))").foregroundStyle(Palette.ink2)
-                }
-            }
-            .padding(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 12))
-            .background(FrostedSheet(behind: tone.background, cornerRadius: 18))
-            .padding(.horizontal, 14)
-            .padding(.top, -28)
+            .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
         }
     }
 
@@ -220,7 +228,7 @@ struct InstallationDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 18, trailing: 20))
         .foregroundStyle(Tone.rest.foreground)
-        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 
     // MARK: Record
@@ -371,7 +379,7 @@ private struct DetailCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 10, trailing: 20))
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 }
 

@@ -1,6 +1,6 @@
 # Visuell riktning "Readout" — 12 november 2026
 
-**Status:** Omgång 3 är ritad i sin helhet och sedan byggd i appen. Appen är facit. Canvasen är uppdaterad 13 november med märket version 2 (artboard 01, 02, 08, 09 och 10) och biblioteket som träd (artboard 02); övriga ark är oförändrade och visar fortfarande etapp 2 som den är tänkt, inte som den är byggd. Se [Byggt i appen efter skisserna](#byggt-i-appen-efter-skisserna-13-november).
+**Status:** Omgång 4 är ritad på canvasen 13 november: glaset är borttaget och alla ark är omritade efter en renare instrumentstil, se [Omgång 4](#omgång-4--utan-glas-13-november). Omgång 4 är också byggd i appen samma dag, på produktägarens "Ja, bygg". Appen är facit där den och canvasen skiljer sig.
 **Canvas:** [Skillori – visuell riktning Readout](https://claude.ai/artifact/E4o4Z5GrzN1heWNrRM58ov) (privat tills den delas). Elva artboards.
 **Bilder i repot:** [`readout-2026-11-12/v3/`](readout-2026-11-12/v3/). Tidigare omgångar finns i `v1/` och `v2/`.
 **Underlag:** [Pinterest-referenserna](pinterest-referenser-2026-11-12.md), [typografin](typografi-2026-11-12.md), [Mobbin-baselinen](mobbin-baseline-2026-11-11.md), [UI-grunden](ui-bibliotek-utforskning.md).
@@ -299,3 +299,43 @@ Skalan med en tick per skill från omgång 1 och 2 finns inte längre i panelen.
 - Rörelse är inte specificerad.
 - Märket är inte kontrollerat mot varumärkesregister, och inte finjusterat optiskt.
 - Exempeldata bygger på inventeringen från 11 november. "2 changed upstream", revisionsnummer och andra hashar än `e79b9cc0` är påhittade för skissen.
+
+## Omgång 4 — utan glas (13 november)
+
+Produktägaren ville pröva att ta bort den suddiga plattan som ligger över ett block eller annat innehåll, och gå tillbaka till en mer renodlat teknisk stil: instrument, precision, terminal. En studie ritades först (ark 12), och på "Ja, rita om" ritades ark 01–11 om efter samma regler. Bilderna ligger i `readout-2026-11-12/v4/`. Omgång 3 med glas finns kvar i `v3/`.
+
+| Del | Omgång 3 | Omgång 4 |
+| --- | --- | --- |
+| Material | Ett lager glas | Inget. Alla ytor är ogenomskinliga. |
+| Överlapp | Listan glider in över blocket | Delarna staplas, med en hårlinje eller 6 pt emellan |
+| Panel och fönster | 80 % täckning med oskärpa | Solid botten med en ram på 1 px |
+| Listor | Rader på ett glaskort | Trädlinjer direkt på botten |
+| Åtgärder | Svävande rad | En rad inne i blocket de gäller, eller en fast rad i fönstret |
+| Hörn | 28 · 22 · piller | 16 panel · 10 kort · 8 rad · 6 kontroller · 4 etiketter |
+| Avläsning | Bara talet | Talet och en skala som visar vad det är en andel av |
+
+Oförändrat: punktsiffrorna, gråskalan, kolsvart, lime, lila, märket, Inter och Geist Mono, och regeln att färg ligger på hela block.
+
+Tre delar är förslag från den som ritade och inte följder av att glaset togs bort: de stramare hörnen, skalan under det stora talet och tangenterna som små rutor. De kan väljas bort var för sig.
+
+Per ark:
+
+- **01 Panel:** raderna ligger på panelens botten med trädlinjer. Varje block har en skala under talet. Menyraden visar märket som mallbild.
+- **02 Bibliotek och 04 Granska:** den svävande raden är en fast rad längst ned i fönstret respektive mellan fillistan och anteckningarna. Båda arken blev 52 px högre.
+- **03 Detalj:** tillbaka-länken är en sökvägsrad överst, och knapparna ligger i blocket under en hårlinje.
+- **05 Färg och material och 08 Märket:** glasreglerna och kortet "solid and glass" är ersatta.
+- **07 Mörkt, 09 Första start, 10 Inställningar, 11 Lägen, 06 Typografi:** samma regler; bakgrundsformerna som fanns för att visa oskärpan är borta.
+- **12:** sammanställningen av vad som ändrades.
+
+### Byggt i appen (13 november)
+
+Bilder: `native/utan-glas-*-2026-11-13.png`.
+
+- **Fönster och panel:** panelfönstret har ingen oskärpa längre (`PanelWindow`). Ytan är solid med en ram på 1 pt (`PanelSurface`).
+- **Panelen:** raderna ligger på panelens botten med trädlinjer (`PlainList`, `ListRow(tree:)`). Blocket har en skala när det finns något att jämföra med: dina skills av alla på datorn (`ScaleBar`). `⌘R` ritas som en tangent (`KeyCap`).
+- **Detaljvyn:** sökvägsrad överst med vägen tillbaka; knapparna ligger i blocket under en hårlinje och tar blockets egen färg (`PillButtonStyle(on:)`).
+- **Biblioteket:** raden för vald skill är en fast rad under listan (`StatusLine`), inte ovanpå den.
+- **Första start:** samma panelyta, listan under blocket utan överlapp.
+- **Hörn:** `Radius` är 16 panel, 10 block, 8 rad, 6 kontroller, 4 etiketter. Knappar, etiketter, sökfält och segmentväljare är kantiga.
+
+Skillnader mot canvasen: skalan visas i appen bara i panelens viloläge, eftersom de andra lägena på ark 01 hör till etapp 2. Sökvägsraden i detaljvyn visar bara skillens namn, inte källan. Panelens block är fortfarande kolsvart när en skill har ändrats lokalt; det lila blocket på ark 12 är inte byggt.

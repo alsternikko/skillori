@@ -100,7 +100,7 @@ struct LibraryView: View {
             .padding(.horizontal, 12)
             .frame(height: 30)
             .frame(maxWidth: 360)
-            .background(Palette.card, in: Capsule())
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
 
             Spacer(minLength: 8)
 
@@ -151,7 +151,7 @@ struct LibraryView: View {
     // MARK: List
 
     private var listCard: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 6) {
             Group {
                 if filter == .coverage {
                     CoverageView()
@@ -160,16 +160,15 @@ struct LibraryView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
 
+            // The selected skill's actions are a fixed row under the list, never over it.
             if filter != .coverage, let installation = selected {
-                actionBar(installation)
-                    .padding(.bottom, 14)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 8)))
+                actionBar(installation).transition(.opacity)
             }
         }
-        .animation(Motion.swap, value: selected?.id)
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .animation(reduceMotion ? nil : Motion.swap, value: selected?.id)
     }
 
     private var table: some View {
@@ -395,25 +394,24 @@ struct LibraryView: View {
     // MARK: Selection
 
     private func actionBar(_ installation: Installation) -> some View {
-        FloatingBar {
+        StatusLine {
             Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
             DataText(barNote(installation))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(Tone.rest.secondary)
                 .padding(.leading, 6)
-                .padding(.trailing, 10)
+            Spacer(minLength: 10)
             Button(showsDetail ? "Hide details" : "Details") { showsDetail.toggle() }
-                .buttonStyle(DarkPillButtonStyle(prominent: true))
+                .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
             if case .skillsLock(_, let url?, _, _, _) = installation.provenance, let link = URL(string: url) {
                 Button("Open source") { NSWorkspace.shared.open(link) }
-                    .buttonStyle(DarkPillButtonStyle())
+                    .buttonStyle(PillButtonStyle(on: .rest))
             } else {
                 Button("Show in Finder") {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
                 }
-                .buttonStyle(DarkPillButtonStyle())
+                .buttonStyle(PillButtonStyle(on: .rest))
             }
         }
-        .frame(maxWidth: 560)
     }
 
     private func barNote(_ installation: Installation) -> String {

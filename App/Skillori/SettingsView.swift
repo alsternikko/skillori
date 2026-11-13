@@ -189,7 +189,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20))
         .foregroundStyle(Tone.rest.foreground)
-        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 
     private var version: String {

@@ -33,5 +33,5 @@ Inte kontrollerat: köpbarhet och pris hos registrar, varumärkesregister (EUIPO
 ## Konsekvenser
 
 - Nästa steg är visuella riktningar för symbol, menyradsikon och appikon. Vikningen ska ha en funktion i UI:t, till exempel plugin-grupper som vecklas ut (spikfynd 2).
-- Projektmappen heter fortfarande `skillwatch` på disk. Den döps om av produktägaren när ingen session arbetar i den.
+- Projektmappen döptes om från `skillwatch` till `skillori` den 13 november 2026. Repot på GitHub heter `skillori`. Produktbriefen behåller sitt filnamn och arbetsnamnet Skillwatch i texten, eftersom den är ett historiskt underlag.
 - Användarinställningar från spikbygget (UserDefaults under det gamla bundle-ID:t) följer inte med. Det är acceptabelt eftersom ingen release har gjorts.

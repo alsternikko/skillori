@@ -23,9 +23,13 @@ public enum Palette {
 }
 
 public enum Radius {
-    public static let panel: CGFloat = 28
-    public static let block: CGFloat = 22
-    public static let row: CGFloat = 12
+    public static let panel: CGFloat = 16
+    public static let block: CGFloat = 10
+    public static let row: CGFloat = 8
+    /// Buttons, fields and segmented controls.
+    public static let control: CGFloat = 6
+    /// Status chips and key caps.
+    public static let chip: CGFloat = 4
 }
 
 /// What a block says. Colour carries the state, so text on it stays black or white.

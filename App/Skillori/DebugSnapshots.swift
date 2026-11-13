@@ -84,16 +84,13 @@ enum DebugSnapshots {
     }
 }
 
-/// Stand-in for the desktop behind the panel, with the sketch's shapes. Snapshots cannot
-/// capture the window's real blur, so this shows the tint over flat colour only.
+/// Stand-in for the desktop behind the panel.
 private struct PanelBackdrop<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
     @ViewBuilder var content: Content
     var body: some View {
         ZStack(alignment: .top) {
-            scheme == .dark ? Color(hex: 0x0E0E0F) : Color(hex: 0xD4D4D9)
-            Circle().fill(Palette.lime).frame(width: 300).offset(x: 190, y: -170)
-            Circle().fill(Palette.charcoal).frame(width: 360).offset(x: -210, y: 300)
+            scheme == .dark ? Color(hex: 0x0E0E0F) : Color(hex: 0xE6E6E8)
             content.padding(.top, 28)
         }
         .clipped()

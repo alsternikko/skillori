@@ -6,13 +6,13 @@ import SwiftUI
 /// Owns the menu bar item and the floating panel under it.
 ///
 /// The panel is our own borderless window rather than `MenuBarExtra(.window)`, because the
-/// design needs a 28 pt corner radius, a tinted blur of the desktop and no system chrome.
+/// design needs its own corner radius and frame and no system chrome.
 @MainActor
 final class StatusPanelController: NSObject, NSWindowDelegate {
     private let store: InventoryStore
     private let windows: WindowRouter
     private let statusItem: NSStatusItem
-    private let panel: GlassPanelWindow
+    private let panel: PanelWindow
     private let host: NSHostingView<AnyView>
     private var outsideClickMonitor: Any?
 
@@ -22,7 +22,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         self.store = store
         self.windows = windows
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        panel = GlassPanelWindow(cornerRadius: Radius.panel)
+        panel = PanelWindow()
         host = NSHostingView(rootView: AnyView(EmptyView()))
         super.init()
 
@@ -245,11 +245,12 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     func panelDidCancel() { close(animated: false) }
 }
 
-/// A borderless, rounded window that blurs what is behind it.
-final class GlassPanelWindow: NSPanel {
-    private let effect = NSVisualEffectView()
+/// A borderless window with no chrome of its own. The view inside draws the rounded, solid
+/// surface; the window is clear around it so the corners and the shadow follow that shape.
+final class PanelWindow: NSPanel {
+    private let container = NSView()
 
-    init(cornerRadius: CGFloat) {
+    init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 332, height: 300),
                    styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                    backing: .buffered, defer: true)
@@ -261,22 +262,18 @@ final class GlassPanelWindow: NSPanel {
         isMovable = false
         hidesOnDeactivate = false
         animationBehavior = .none
-
-        effect.material = .popover
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.maskImage = Self.mask(cornerRadius: cornerRadius)
-        contentView = effect
+        container.wantsLayer = true
+        contentView = container
     }
 
     func setContent(_ view: NSView) {
         view.translatesAutoresizingMaskIntoConstraints = false
-        effect.addSubview(view)
+        container.addSubview(view)
         NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            view.topAnchor.constraint(equalTo: effect.topAnchor),
-            view.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
     }
 
@@ -285,18 +282,6 @@ final class GlassPanelWindow: NSPanel {
     var onCancel: (() -> Void)?
 
     override func cancelOperation(_ sender: Any?) { onCancel?() }
-
-    private static func mask(cornerRadius r: CGFloat) -> NSImage {
-        let edge = r * 2 + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
-        image.resizingMode = .stretch
-        return image
-    }
 }
 
 /// Timing for the panel. It opens often, so everything is short and nothing bounces.

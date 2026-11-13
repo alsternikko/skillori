@@ -48,6 +48,7 @@ struct PanelModel {
     var dimmed = false
     var lead: String
     var note: String
+    var scale: ScaleReading?
     var rows: [Row]
     var buttons: [Button]
     var hint: String
@@ -63,11 +64,11 @@ struct MenuPanel: View {
 
     var body: some View {
         let model = fixedModel ?? PanelModel.live(from: store)
-        GlassPanel {
+        PanelSurface {
             HeroBlock(tone: model.tone, label: model.label, stamp: model.stamp, number: model.number,
-                      dimmed: model.dimmed, lead: model.lead, note: model.note)
+                      dimmed: model.dimmed, lead: model.lead, note: model.note, scale: model.scale)
             if !model.rows.isEmpty {
-                GlassList(behind: model.tone.background) {
+                PlainList {
                     ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
                         rowView(row, isLast: index == model.rows.count - 1)
                     }
@@ -79,7 +80,19 @@ struct MenuPanel: View {
                         .buttonStyle(PillButtonStyle(prominent: button.prominent))
                 }
                 Spacer(minLength: 8)
-                Button { run(model.hintCommand) } label: { SwappingText(model.hint) }
+                Button { run(model.hintCommand) } label: {
+                    // The shortcut is drawn as a key, the words before it as text.
+                    let key = "⌘R"
+                    if model.hint.hasSuffix(key) {
+                        HStack(spacing: 6) {
+                            let words = model.hint.dropLast(key.count).trimmingCharacters(in: .whitespaces)
+                            if !words.isEmpty { SwappingText(words) }
+                            KeyCap(key)
+                        }
+                    } else {
+                        SwappingText(model.hint)
+                    }
+                }
                     .buttonStyle(HintButtonStyle())
                     .keyboardShortcut("r")
                     .disabled(!model.hintEnabled)
@@ -101,7 +114,7 @@ struct MenuPanel: View {
     private func rowView(_ row: PanelModel.Row, isLast: Bool) -> some View {
         switch row {
         case let .item(title, detail, data):
-            ListRow(isLast: isLast) {
+            ListRow(isLast: isLast, tree: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(title).font(TypeRole.sans(13, .medium)).lineLimit(1)
                     DataText(detail).foregroundStyle(Palette.ink2)
@@ -110,13 +123,13 @@ struct MenuPanel: View {
                 DataText(data).foregroundStyle(Palette.ink2)
             }
         case let .line(text, data, muted):
-            ListRow(isLast: isLast) {
+            ListRow(isLast: isLast, tree: true) {
                 Text(text).foregroundStyle(muted ? Palette.ink2 : Palette.ink).lineLimit(1)
             } trailing: {
                 DataText(data).foregroundStyle(Palette.ink2)
             }
         case let .link(text, label, command):
-            ListRow(isLast: isLast) {
+            ListRow(isLast: isLast, tree: true) {
                 Text(text).foregroundStyle(Palette.ink2).lineLimit(1)
             } trailing: {
                 Button(label) { run(command) }.buttonStyle(HintButtonStyle(underlined: true))
@@ -197,6 +210,9 @@ extension PanelModel {
             number: "\(own)",
             lead: own == 0 ? "skills on this Mac" : own == 1 ? "skill installed by you" : "skills installed by you",
             note: managed > 0 ? "\(managed) more are managed by apps" : "Looked in \(folders) folders.",
+            scale: own > 0 && managed > 0
+                ? ScaleReading(part: own, whole: own + managed, partLabel: "\(own) yours", wholeLabel: "\(own + managed) on this Mac")
+                : nil,
             rows: rows,
             buttons: [Button(title: "Library", prominent: true, command: .library),
                       Button(title: "Settings", prominent: false, command: .settings)],

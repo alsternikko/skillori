@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The panel's outer surface: a tint over whatever is behind it, with a hairline highlight.
-/// The blur itself comes from the window (see the app's `GlassPanelWindow`).
-public struct GlassPanel<Content: View>: View {
+/// The outer surface of the menu bar panel and of first start: solid ground with a 1 pt frame.
+/// Nothing in the app is translucent.
+public struct PanelSurface<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
     let content: Content
 
@@ -11,14 +11,80 @@ public struct GlassPanel<Content: View>: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .padding(6)
-            .background(tint, in: shape)
-            .overlay(shape.strokeBorder(.white.opacity(scheme == .dark ? 0.12 : 0.5), lineWidth: 1))
+            .background(Palette.panel, in: shape)
+            .overlay(shape.strokeBorder(scheme == .dark ? Color.white.opacity(0.12) : Palette.ink.opacity(0.14), lineWidth: 1))
             .foregroundStyle(Palette.ink)
     }
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.panel, style: .continuous) }
-    private var tint: Color {
-        scheme == .dark ? Color(hex: 0x19191B, opacity: 0.8) : Color(hex: 0xF4F4F6, opacity: 0.8)
+}
+
+/// What a number is a share of: `part` out of `whole`, with a caption at each end.
+public struct ScaleReading: Sendable {
+    public let part: Int
+    public let whole: Int
+    public let partLabel: String
+    public let wholeLabel: String
+
+    public init(part: Int, whole: Int, partLabel: String, wholeLabel: String) {
+        self.part = part
+        self.whole = whole
+        self.partLabel = partLabel
+        self.wholeLabel = wholeLabel
+    }
+}
+
+/// A ruler with ten divisions. The share is a heavier stroke from the left, ending in a marker.
+public struct ScaleBar: View {
+    let reading: ScaleReading
+    public init(_ reading: ScaleReading) { self.reading = reading }
+
+    public var body: some View {
+        VStack(spacing: 4) {
+            Canvas { context, size in
+                let base = size.height - 0.5
+                var ruler = Path()
+                for step in 0...10 {
+                    let x = (size.width - 1) * CGFloat(step) / 10 + 0.5
+                    ruler.move(to: CGPoint(x: x, y: base - 8))
+                    ruler.addLine(to: CGPoint(x: x, y: base))
+                }
+                ruler.move(to: CGPoint(x: 0, y: base))
+                ruler.addLine(to: CGPoint(x: size.width, y: base))
+                context.stroke(ruler, with: .foreground, lineWidth: 1)
+                context.opacity = 1
+            }
+            .opacity(0.4)
+            .overlay(alignment: .bottomLeading) {
+                GeometryReader { proxy in
+                    let x = max(1.5, proxy.size.width * share)
+                    Path { path in
+                        path.move(to: CGPoint(x: 0, y: proxy.size.height - 1.5))
+                        path.addLine(to: CGPoint(x: x, y: proxy.size.height - 1.5))
+                    }
+                    .stroke(lineWidth: 3)
+                    Path { path in
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: proxy.size.height))
+                    }
+                    .stroke(lineWidth: 1.5)
+                }
+            }
+            .frame(height: 13)
+            HStack {
+                Text(reading.partLabel.uppercased())
+                Spacer(minLength: 8)
+                Text(reading.wholeLabel.uppercased()).opacity(0.6)
+            }
+            .font(TypeRole.mono(9))
+            .lineLimit(1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(reading.partLabel), \(reading.wholeLabel)")
+    }
+
+    private var share: CGFloat {
+        reading.whole > 0 ? min(1, CGFloat(reading.part) / CGFloat(reading.whole)) : 0
     }
 }
 
@@ -31,10 +97,12 @@ public struct HeroBlock: View {
     let dimmed: Bool
     let lead: String
     let note: String
+    let scale: ScaleReading?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(tone: Tone, label: String, stamp: String, number: String, dimmed: Bool = false,
-                lead: String, note: String) {
+                lead: String, note: String, scale: ScaleReading? = nil) {
+        self.scale = scale
         self.tone = tone
         self.label = label
         self.stamp = stamp
@@ -68,116 +136,121 @@ public struct HeroBlock: View {
                 .font(TypeRole.sans(12))
                 .foregroundStyle(tone.secondary)
                 .padding(.top, 2)
+            if let scale {
+                ScaleBar(scale).opacity(dimmed ? 0.36 : 1).padding(.top, 16)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: 14, leading: 16, bottom: 40, trailing: 16))
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: scale == nil ? 16 : 12, trailing: 16))
         .foregroundStyle(tone.foreground)
         .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
 
-/// The list that slides 24 pt up over the hero block.
-///
-/// What lies behind it is one flat colour, so the frosted edge is drawn as a soft fade from that
-/// colour, seen through the sheet, into the sheet itself. It looks the same as a live backdrop blur and
-/// costs nothing per frame.
-public struct GlassList<Content: View>: View {
-    @Environment(\.colorScheme) private var scheme
-    public static var overlap: CGFloat { 24 }
-    let behind: Color
+/// Rows that sit straight on the panel's ground, under the block they belong to.
+public struct PlainList<Content: View>: View {
     let content: Content
-
-    public init(behind: Color, @ViewBuilder content: () -> Content) {
-        self.behind = behind
-        self.content = content()
-    }
+    public init(@ViewBuilder content: () -> Content) { self.content = content() }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                ZStack(alignment: .top) {
-                    sheet
-                    LinearGradient(stops: [.init(color: frosted, location: 0),
-                                           .init(color: frosted, location: 0.1),
-                                           .init(color: sheetBase, location: 0.6),
-                                           .init(color: sheetBase.opacity(0), location: 1)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: Self.overlap * 3)
-                }
-                .clipShape(shape)
-            }
-            .overlay(shape.strokeBorder(.white.opacity(scheme == .dark ? 0.1 : 0.6), lineWidth: 1))
-            .padding(.top, -Self.overlap)
     }
-
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.block, style: .continuous) }
-    private var sheetBase: Color { scheme == .dark ? Color(hex: 0x2A2A2D) : Color(hex: 0xFCFCFD) }
-    private var sheetCover: Double { scheme == .dark ? 0.72 : 0.66 }
-    private var sheet: Color { sheetBase.opacity(sheetCover) }
-    /// The block's colour as seen through the sheet. Opaque, so the block's real edge
-    /// behind the list does not show as a line.
-    private var frosted: Color { behind.mix(with: sheetBase, by: sheetCover) }
 }
 
-/// One row in a glass list, with a hairline under it unless it is the last.
+/// One row in a plain list, with a hairline under it. With `tree` it starts with a branch line,
+/// a corner on the last row.
 public struct ListRow<Leading: View, Trailing: View>: View {
     let isLast: Bool
+    let tree: Bool
     let leading: Leading
     let trailing: Trailing
 
-    public init(isLast: Bool = false, @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
+    public init(isLast: Bool = false, tree: Bool = false,
+                @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
         self.isLast = isLast
+        self.tree = tree
         self.leading = leading()
         self.trailing = trailing()
     }
 
     public var body: some View {
         HStack(alignment: .center, spacing: 10) {
+            if tree {
+                Path { path in
+                    path.move(to: CGPoint(x: 0.5, y: 0))
+                    path.addLine(to: CGPoint(x: 0.5, y: isLast ? 7.5 : 15))
+                    path.move(to: CGPoint(x: 0.5, y: 7.5))
+                    path.addLine(to: CGPoint(x: 10, y: 7.5))
+                }
+                .stroke(Palette.ink3, lineWidth: 1)
+                .frame(width: 10, height: 15)
+                .accessibilityHidden(true)
+            }
             leading.frame(maxWidth: .infinity, alignment: .leading)
             trailing
         }
         .font(TypeRole.sans(13))
         .padding(.vertical, 10)
-        .overlay(alignment: .bottom) {
-            if !isLast { Palette.ink.opacity(0.08).frame(height: 1) }
-        }
+        .padding(.horizontal, 10)
+        .overlay(alignment: .bottom) { Palette.ink.opacity(0.1).frame(height: 1) }
     }
 }
 
-/// Mono caps in a full-round outline; `prominent` fills it.
+/// A key or shortcut in a small outlined box.
+public struct KeyCap: View {
+    let key: String
+    public init(_ key: String) { self.key = key }
+
+    public var body: some View {
+        Text(key)
+            .font(TypeRole.mono(10))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .continuous).strokeBorder(.primary.opacity(0.4), lineWidth: 1))
+    }
+}
+
+/// Mono caps in a small-radius outline; `prominent` fills it. On a toned block, pass the tone
+/// so the button takes the block's own ink.
 public struct PillButtonStyle: ButtonStyle {
     let prominent: Bool
-    public init(prominent: Bool = false) { self.prominent = prominent }
+    let tone: Tone?
+    public init(prominent: Bool = false, on tone: Tone? = nil) {
+        self.prominent = prominent
+        self.tone = tone
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
-        PillBody(configuration: configuration, prominent: prominent)
+        PillBody(configuration: configuration, prominent: prominent, tone: tone)
     }
 
     private struct PillBody: View {
         let configuration: Configuration
         let prominent: Bool
+        let tone: Tone?
         @Environment(\.isEnabled) private var isEnabled
         @State private var hovering = false
 
         var body: some View {
+            let ink = tone?.foreground ?? Palette.ink
+            let onInk = tone?.background ?? Palette.onInk
+            let shape = RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
             configuration.label
                 .font(TypeRole.mono(10.5, .medium))
                 .tracking(0.42)
                 .textCase(.uppercase)
                 .lineLimit(1)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .foregroundStyle(prominent ? Palette.onInk : Palette.ink)
-                .background(prominent ? Palette.ink : Palette.ink.opacity(hovering ? 0.06 : 0), in: Capsule())
-                .overlay(Capsule().strokeBorder(Palette.ink.opacity(prominent ? 0 : 0.28), lineWidth: 1))
+                .foregroundStyle(prominent ? onInk : ink)
+                .background(prominent ? ink : ink.opacity(hovering ? 0.08 : 0), in: shape)
+                .overlay(shape.strokeBorder(ink.opacity(prominent ? 0 : 0.32), lineWidth: 1))
                 .opacity(isEnabled ? (prominent && hovering ? 0.86 : 1) : 0.4)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .animation(Motion.press, value: configuration.isPressed)
-                .contentShape(Capsule())
+                .contentShape(shape)
                 .animation(Motion.hover, value: hovering)
                 .onHover { hovering = $0 }
         }
@@ -288,7 +361,7 @@ public struct StatTile: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 20, style: .continuous) }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.block, style: .continuous) }
 
     private struct TilePressStyle: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
@@ -299,7 +372,7 @@ public struct StatTile: View {
     }
 }
 
-/// A status in mono capitals on a full-round chip. The word carries the meaning; colour only
+/// A status in mono capitals on a small-radius chip. The word carries the meaning; colour only
 /// marks the two states that ask for attention.
 public struct StatusChip: View {
     public enum Kind: Sendable { case neutral, new, attention, outline }
@@ -319,8 +392,9 @@ public struct StatusChip: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(kind == .outline ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.inkFixed))
-            .background(fill, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color(hex: 0xA3A3A8).opacity(kind == .outline ? 0.7 : 0), lineWidth: 1))
+            .background(fill, in: RoundedRectangle(cornerRadius: Radius.chip, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
+                .strokeBorder(Color(hex: 0xA3A3A8).opacity(kind == .outline ? 0.7 : 0), lineWidth: 1))
             .fixedSize()
     }
 
@@ -354,92 +428,21 @@ public struct TickCount: View {
     }
 }
 
-/// The dark floating bar that appears for the selected item.
-public struct FloatingBar<Content: View>: View {
+/// A fixed row at the bottom of a window for the selected item: the resting block, full width.
+public struct StatusLine<Content: View>: View {
     let content: Content
     public init(@ViewBuilder content: () -> Content) { self.content = content() }
 
     public var body: some View {
         HStack(spacing: 6) { content }
-            .padding(EdgeInsets(top: 6, leading: 18, bottom: 6, trailing: 6))
-            .foregroundStyle(.white)
-            .background {
-                Capsule().fill(.ultraThinMaterial).environment(\.colorScheme, .dark)
-                Capsule().fill(Color(hex: 0x28282A, opacity: 0.72))
-            }
-            .overlay(Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 1))
-            .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
+            .padding(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 8))
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(Tone.rest.foreground)
+            .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 }
 
-/// Pill buttons for dark surfaces such as `FloatingBar`.
-public struct DarkPillButtonStyle: ButtonStyle {
-    let prominent: Bool
-    public init(prominent: Bool = false) { self.prominent = prominent }
-
-    public func makeBody(configuration: Configuration) -> some View {
-        DarkPillBody(configuration: configuration, prominent: prominent)
-    }
-
-    private struct DarkPillBody: View {
-        let configuration: Configuration
-        let prominent: Bool
-        @State private var hovering = false
-
-        var body: some View {
-            configuration.label
-                .font(TypeRole.mono(10.5, .medium))
-                .tracking(0.42)
-                .textCase(.uppercase)
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .foregroundStyle(prominent ? Palette.inkFixed : .white)
-                .background(prominent ? Color.white : Color.white.opacity(hovering ? 0.1 : 0), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(prominent ? 0 : 0.4), lineWidth: 1))
-                .opacity(prominent && hovering ? 0.9 : 1)
-                .scaleEffect(configuration.isPressed ? 0.97 : 1)
-                .animation(Motion.press, value: configuration.isPressed)
-                .contentShape(Capsule())
-                .animation(Motion.hover, value: hovering)
-                .onHover { hovering = $0 }
-        }
-    }
-}
-
-/// The frosted surface used where a light sheet overlaps a solid block: the block's colour,
-/// seen through the sheet, fading into the sheet. See `GlassList` for why this is drawn.
-public struct FrostedSheet: View {
-    @Environment(\.colorScheme) private var scheme
-    let behind: Color
-    let cornerRadius: CGFloat
-    let overlap: CGFloat
-
-    public init(behind: Color, cornerRadius: CGFloat = Radius.block, overlap: CGFloat = 28) {
-        self.behind = behind
-        self.cornerRadius = cornerRadius
-        self.overlap = overlap
-    }
-
-    public var body: some View {
-        let base = scheme == .dark ? Color(hex: 0x2A2A2D) : Color(hex: 0xFCFCFD)
-        let cover = scheme == .dark ? 0.72 : 0.66
-        let frosted = behind.mix(with: base, by: cover)
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        ZStack(alignment: .top) {
-            base.opacity(0.92)
-            LinearGradient(stops: [.init(color: frosted, location: 0),
-                                   .init(color: frosted, location: 0.35),
-                                   .init(color: base.opacity(0), location: 1)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: overlap * 1.6)
-        }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(.white.opacity(scheme == .dark ? 0.1 : 0.6), lineWidth: 1))
-    }
-}
-
-/// A full-round segmented choice in mono capitals. The chosen segment is a raised card.
+/// A segmented choice in mono capitals. The chosen segment is a raised card.
 public struct SegmentedChoice<Value: Hashable>: View {
     let options: [(value: Value, label: String)]
     @Binding var selection: Value
@@ -462,8 +465,8 @@ public struct SegmentedChoice<Value: Hashable>: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .foregroundStyle(chosen ? Palette.ink : Palette.ink2)
-                        .background(chosen ? Palette.card : .clear, in: Capsule())
-                        .contentShape(Capsule())
+                        .background(chosen ? Palette.card : .clear, in: RoundedRectangle(cornerRadius: Radius.chip, style: .continuous))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(chosen ? .isSelected : [])
@@ -471,7 +474,7 @@ public struct SegmentedChoice<Value: Hashable>: View {
         }
         .padding(3)
         .fixedSize()
-        .background(Palette.ink.opacity(0.07), in: Capsule())
+        .background(Palette.ink.opacity(0.07), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
         .animation(Motion.hover, value: selection)
     }
 }
@@ -501,7 +504,7 @@ public struct LabeledCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 8, trailing: 20))
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
 }
 

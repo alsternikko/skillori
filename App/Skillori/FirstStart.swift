@@ -16,7 +16,7 @@ struct FirstStartView: View {
     private static let steps = 3
 
     var body: some View {
-        GlassPanel {
+        PanelSurface {
             ZStack {
                 content
                     .id(step)
@@ -47,7 +47,7 @@ struct FirstStartView: View {
             Spacer(minLength: 0)
             lead("Your agent skills, in one place.")
         }
-        GlassList(behind: Tone.rest.background) {
+        PlainList {
             bullet("Reads skill folders on this Mac")
             bullet("Uploads nothing")
             bullet("Never runs a script from a skill", isLast: true)
@@ -67,7 +67,7 @@ struct FirstStartView: View {
             lead(agents.count == 1 ? "1 agent found on this Mac" : "\(agents.count) agents found on this Mac")
             note("Full Disk Access is not needed.", tone: .quiet)
         }
-        GlassList(behind: Tone.quiet.background) {
+        PlainList {
             ListRow {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Shared skills")
@@ -112,7 +112,7 @@ struct FirstStartView: View {
                 note("\(folders) folders read in \(Int(inventory.duration * 1000)) ms.", tone: .new)
             }
         }
-        GlassList(behind: (inventory == nil ? Tone.quiet : Tone.new).background) {
+        PlainList {
             count("Installed by you", store.trackedCount + store.unknownCount)
             count("Managed by apps", store.managedCount)
             count("With no known source", store.unknownCount, muted: true, isLast: true)
@@ -138,8 +138,8 @@ struct FirstStartView: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: 14, leading: 16, bottom: 40, trailing: 16))
-        .frame(height: 292)
+        .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
+        .frame(height: 268)
         .foregroundStyle(tone.foreground)
         .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
     }
@@ -202,7 +202,7 @@ private struct AgentConstellation: View {
 
             SkilloriMark().fill(.white).frame(width: 28, height: 28)
                 .frame(width: 48, height: 48)
-                .background(Palette.charcoal, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Palette.charcoal, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
                 .position(Self.centre)
 
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, agent in
@@ -213,7 +213,7 @@ private struct AgentConstellation: View {
                     .font(TypeRole.mono(9.5))
                     .foregroundStyle(Palette.ink)
                     .frame(width: 30, height: 30)
-                    .background(Palette.card, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
                     .position(Self.slots[used - 1])
                     .accessibilityLabel("\(extra) more")
             }
@@ -223,13 +223,13 @@ private struct AgentConstellation: View {
     }
 }
 
-/// Shows first start once, in the same glass panel form as the menu bar panel, centred.
+/// Shows first start once, in the same panel form as the menu bar panel, centred.
 @MainActor
 final class FirstStartController {
     static let doneKey = "didFinishFirstStart"
     private let store: InventoryStore
     private let windows: WindowRouter
-    private var panel: GlassPanelWindow?
+    private var panel: PanelWindow?
 
     init(store: InventoryStore, windows: WindowRouter) {
         self.store = store
@@ -245,7 +245,7 @@ final class FirstStartController {
             panel.makeKeyAndOrderFront(nil)
             return
         }
-        let panel = GlassPanelWindow(cornerRadius: Radius.panel)
+        let panel = PanelWindow()
         panel.level = .floating
         panel.isMovable = true
         panel.isMovableByWindowBackground = true
