@@ -73,6 +73,18 @@ enum DebugSelfTest {
                 view.cacheDisplay(in: view.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".settings.png"))
             }
+            // The shell runner behind "Run": output comes back, arguments stay arguments, failure is reported.
+            let printed = OutputBox()
+            let ok = await Shell.run(script: "printf '%s\\n' \"$1\" \"$2\"", arguments: ["one", "two; echo injected"], timeout: 20) { printed.add($0) }
+            check("shell runs a command and returns what it prints", ok == 0 && printed.text == "one\ntwo; echo injected\n", printed.text.debugDescription)
+            let failing = await Shell.run(script: "exit 3", timeout: 20)
+            check("shell reports a failing command", failing == 3, "status \(failing)")
+            let npx = await Shell.run(script: "command -v npx >/dev/null", timeout: 20)
+            check("shell finds npx the way Terminal does", npx == 0, "status \(npx)")
+            let runner = UpdateRunner()
+            runner.append("Checking\rUpdating 1\rUpdating 2\n\u{1B}[32mDone\u{1B}[0m\n")
+            check("printed text is shown as a terminal would", runner.output == "Updating 2\nDone\n", runner.output.debugDescription)
+            check("unsafe skill names are refused", !UpdateRunner.isSafeName("a; rm -rf x") && !UpdateRunner.isSafeName("-g") && UpdateRunner.isSafeName("find-skills"))
             check("Settings window fits its content", settingsHeight > 300 && settingsHeight < 720, "height \(settingsHeight)")
             windows.settings?.close()
 
@@ -131,5 +143,15 @@ enum DebugSelfTest {
             check("⌘Q quits", false, "still running")
         }
     }
+}
+#endif
+
+#if DEBUG
+/// Collects what a shell command prints, from whichever thread it arrives on.
+private final class OutputBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var collected = ""
+    func add(_ text: String) { lock.withLock { collected += text } }
+    var text: String { lock.withLock { collected } }
 }
 #endif

@@ -36,7 +36,7 @@ struct InstallationDetail: View {
             }
         }
         .scrollIndicators(.never)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
@@ -90,16 +90,19 @@ struct InstallationDetail: View {
                 Text(status.sentence)
                     .font(TypeRole.sans(13, .medium))
                     .padding(.top, 14)
+                // The update is a command; it is shown as one, with a button that runs it.
+                if case .updateAvailable = status {
+                    CommandFrame(installations: [installation]).padding(.top, 12)
+                }
                 // The actions sit in the block they act on, under a hairline.
                 tone.foreground.opacity(0.18).frame(height: 1).padding(.top, 14)
                 HStack(spacing: 6) {
                     let history = store.upstreamSource(for: installation)?.historyURL(subpath: subpath)
                     switch status {
                     case .updateAvailable:
-                        CopyUpdateCommandButton(installation: installation, tone: tone)
                         if let history {
                             Button("See what changed") { NSWorkspace.shared.open(history) }
-                                .buttonStyle(PillButtonStyle(on: tone))
+                                .buttonStyle(PillButtonStyle(prominent: true, on: tone))
                         }
                         Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: tone))
                     case .heldBack(let moved):
@@ -144,7 +147,7 @@ struct InstallationDetail: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(EdgeInsets(top: 16, leading: 20, bottom: 14, trailing: 20))
             .foregroundStyle(tone.foreground)
-            .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+            .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
         }
     }
 
@@ -304,7 +307,7 @@ struct InstallationDetail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 18, trailing: 20))
         .foregroundStyle(Tone.rest.foreground)
-        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 
     // MARK: Record
@@ -481,7 +484,7 @@ private struct DetailCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 10, trailing: 20))
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 }
 

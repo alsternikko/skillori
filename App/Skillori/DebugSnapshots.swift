@@ -75,6 +75,16 @@ enum DebugSnapshots {
                 render(LinkSourceSheet(installation: unknown, preview: found, text: "example/skills").environment(store),
                        size: CGSize(width: 520, height: 440), to: out.appendingPathComponent("link-source-found.png"))
             }
+            // The update command: waiting to be run, and after a run that printed something.
+            if let target = store.updatable.first {
+                render(LibraryView(initialSelection: target.id, showsDetail: true).environment(store), size: lib,
+                       to: out.appendingPathComponent("detail-update.png"))
+                store.updater.setSample(names: store.updatable.map(\.directoryName), phase: .succeeded,
+                                        output: "Checking 1 skill for updates\nUpdating \(target.directoryName) from its source\nUpdated 1 skill\n")
+                render(PanelBackdrop { MenuPanel().frame(width: StatusPanelController.panelWidth) }.environment(store),
+                       size: CGSize(width: 420, height: 640), to: out.appendingPathComponent("panel-update-ran.png"))
+                store.updater.setSample(names: [], phase: .idle, output: "")
+            }
             let linked = installs.first { store.link(for: $0) != nil }
             if let linked {
                 render(LibraryView(initialSelection: linked.id).environment(store), size: lib,

@@ -147,7 +147,7 @@ extension UpstreamState.Reason {
 /// Skillori never changes a skill. To update one, the reader runs the installer; this is its command.
 enum UpdateCommand {
     static func text(for installation: Installation) -> String {
-        "npx skills update \(installation.directoryName)"
+        UpdateRunner.commandText(for: [installation.directoryName])
     }
 }
 

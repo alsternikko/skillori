@@ -116,7 +116,7 @@ struct LibraryView: View {
             .padding(.horizontal, 12)
             .frame(height: 30)
             .frame(maxWidth: 360)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
 
             Spacer(minLength: 8)
 
@@ -162,7 +162,7 @@ struct LibraryView: View {
         }
         .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 12))
         .foregroundStyle(Tone.quiet.foreground)
-        .background(Tone.quiet.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(Tone.quiet.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 
     // MARK: Tiles
@@ -199,8 +199,8 @@ struct LibraryView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
 
             // The selected skill's actions are a fixed row under the list, never over it.
             if filter != .coverage, let installation = selected {
@@ -445,17 +445,25 @@ struct LibraryView: View {
         let status = store.status(for: installation)
         return StatusLine {
             Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
-            Text(status.sentence)
+            let runner = store.updater
+            let mine = runner.names == [installation.directoryName]
+            Text(barText(status, running: mine && runner.isRunning, failed: mine && isFailed(runner.phase)))
                 .font(TypeRole.sans(12))
                 .foregroundStyle(Tone.rest.secondary)
                 .lineLimit(1)
                 .padding(.leading, 6)
             Spacer(minLength: 10)
+            if case .updateAvailable = status {
+                // One press runs the installer's update for this skill.
+                Button(mine && runner.isRunning ? "Updating…" : "▶ Update") { Task { await store.update([installation]) } }
+                    .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
+                    .disabled(runner.isRunning)
+                    .help(UpdateCommand.text(for: installation))
+            }
             Button(showsDetail ? "Hide details" : "Details") { showsDetail.toggle() }
-                .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
+                .buttonStyle(PillButtonStyle(prominent: !isUpdate(status), on: .rest))
             switch status {
             case .updateAvailable:
-                CopyUpdateCommandButton(installation: installation, prominent: false, tone: .rest)
                 Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: .rest))
             case .heldBack:
                 Button("Release") { store.release(installation) }.buttonStyle(PillButtonStyle(on: .rest))
@@ -478,6 +486,20 @@ struct LibraryView: View {
                 }
             }
         }
+    }
+
+    private func isUpdate(_ status: SkillStatus) -> Bool {
+        if case .updateAvailable = status { true } else { false }
+    }
+
+    private func isFailed(_ phase: UpdateRunner.Phase) -> Bool {
+        if case .failed = phase { true } else { false }
+    }
+
+    private func barText(_ status: SkillStatus, running: Bool, failed: Bool) -> String {
+        if running { return "Running the installer's update…" }
+        if failed { return "The update did not finish. Open Details to see what it printed." }
+        return status.sentence
     }
 
     private var agentsOnThisMac: [Agent] {
@@ -603,10 +625,10 @@ private struct GroupRow: View {
         .frame(height: 40)
         .padding(.horizontal, 10)
         .background(Palette.ink.opacity(hovering || hasCursor ? 0.04 : 0),
-                    in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Radius.row, style: .circular))
         .overlay {
             if hasCursor {
-                RoundedRectangle(cornerRadius: Radius.row, style: .continuous).strokeBorder(Palette.ink.opacity(0.28), lineWidth: 1)
+                RoundedRectangle(cornerRadius: Radius.row, style: .circular).strokeBorder(Palette.ink.opacity(0.28), lineWidth: 1)
             }
         }
         .contentShape(Rectangle())
@@ -715,7 +737,7 @@ private struct InstallationRow: View {
         .frame(height: 34)
         .padding(.horizontal, 10)
         .background(isSelected ? Tone.rest.background : Palette.ink.opacity(hovering ? 0.04 : 0),
-                    in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+                    in: RoundedRectangle(cornerRadius: Radius.row, style: .circular))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)

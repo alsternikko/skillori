@@ -49,6 +49,8 @@ struct PanelModel {
     var lead: String
     var note: String
     var scale: ScaleReading?
+    /// Skills the installer can update now; the panel shows the command that does it.
+    var updatable: [Installation] = []
     var rows: [Row]
     var buttons: [Button]
     var hint: String
@@ -73,6 +75,9 @@ struct MenuPanel: View {
                         rowView(row, isLast: index == model.rows.count - 1)
                     }
                 }
+            }
+            if !model.updatable.isEmpty {
+                CommandFrame(installations: model.updatable, compact: true).padding(.top, 6)
             }
             HStack(spacing: 6) {
                 ForEach(model.buttons) { button in
@@ -237,7 +242,11 @@ extension PanelModel {
                 note: "of the \(tracked) with a known source",
                 scale: ScaleReading(part: updates.count, whole: tracked,
                                     partLabel: "\(updates.count) differ\(updates.count == 1 ? "s" : "")", wholeLabel: "\(tracked) tracked"),
-                rows: rows + tail, buttons: buttons, hint: hint, hintEnabled: !busy)
+                updatable: store.updatable,
+                rows: rows + tail,
+                // The command frame is the main action here, so no button competes with it.
+                buttons: store.updatable.isEmpty ? buttons : buttons.map { Button(title: $0.title, prominent: false, command: $0.command) },
+                hint: hint, hintEnabled: !busy)
         }
 
         var rows: [Row] = []

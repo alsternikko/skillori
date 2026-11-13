@@ -23,7 +23,7 @@ struct AgentMark: View {
                 .tracking(0.4)
                 .foregroundStyle(Palette.ink)
                 .frame(width: size * 0.82, height: size * 0.82)
-                .background(Palette.card, in: RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: size * 0.22, style: .circular))
                 .frame(width: size, height: size)
                 .accessibilityLabel(agent.displayName)
                 .help(agent.displayName)

@@ -160,7 +160,7 @@ struct SettingsView: View {
                                 selection: Binding(get: { store.checksEnabled }, set: { store.checksEnabled = $0 }))
             }
             VStack(alignment: .leading, spacing: 10) {
-                Text("Asks github.com about each source, every 6 hours while Skillori runs. It sends the source's name and nothing about you or your files. No account. Skillori never updates a skill itself.")
+                Text("Asks github.com about each source, every 6 hours while Skillori runs. It sends the source's name and nothing about you or your files. No account. Skillori never changes a skill on its own: an update runs only when you press Run, and the installer does it.")
                     .font(TypeRole.sans(12))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +200,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20))
         .foregroundStyle(Tone.rest.foreground)
-        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 
     private var version: String {

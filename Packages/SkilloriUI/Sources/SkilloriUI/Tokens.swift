@@ -22,6 +22,8 @@ public enum Palette {
     public static let inkFixed = Color(hex: 0x151516)
 }
 
+/// Corner radii. Every corner the app draws itself is a plain circular arc, as in the design
+/// sketches; only the app icon uses the softer macOS shape.
 public enum Radius {
     public static let panel: CGFloat = 16
     public static let block: CGFloat = 10

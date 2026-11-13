@@ -141,7 +141,7 @@ struct FirstStartView: View {
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
         .frame(height: 268)
         .foregroundStyle(tone.foreground)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 
     private func lead(_ text: String) -> some View {
@@ -202,7 +202,7 @@ private struct AgentConstellation: View {
 
             SkilloriMark().fill(.white).frame(width: 28, height: 28)
                 .frame(width: 48, height: 48)
-                .background(Palette.charcoal, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+                .background(Palette.charcoal, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
                 .position(Self.centre)
 
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, agent in
@@ -213,7 +213,7 @@ private struct AgentConstellation: View {
                     .font(TypeRole.mono(9.5))
                     .foregroundStyle(Palette.ink)
                     .frame(width: 30, height: 30)
-                    .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                    .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
                     .position(Self.slots[used - 1])
                     .accessibilityLabel("\(extra) more")
             }

@@ -67,6 +67,9 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                 store.needsAttention ? "Skillori, local changes"
                     : updates > 0 ? "Skillori, \(updates) update\(updates == 1 ? "" : "s")" : "Skillori")
             _ = store.isChecking
+            // The panel grows when an update prints something.
+            _ = store.updater.phase
+            _ = store.updater.output
             _ = store.inventory?.scannedAt
             _ = store.isScanning
         } onChange: { [weak self] in
@@ -206,6 +209,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                 context.timingFunction = Motion.easeOut
                 panel.animator().setFrame(frame, display: true)
             } completionHandler: { [weak self] in
+                // The shadow follows the window's shape, which just changed.
                 Task { @MainActor in self?.panel.invalidateShadow() }
             }
         } else {
@@ -262,6 +266,9 @@ final class PanelWindow: NSPanel {
                    backing: .buffered, defer: true)
         isOpaque = false
         backgroundColor = .clear
+        // The system's own window shadow. It comes with a thin dark rim along the window's
+        // shape, so the surface inside draws no frame of its own in light mode: two edges
+        // side by side read as one thick border.
         hasShadow = true
         level = .popUpMenu
         collectionBehavior = [.transient, .ignoresCycle, .fullScreenAuxiliary]

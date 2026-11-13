@@ -57,7 +57,7 @@ struct LinkSourceSheet: View {
                     .onSubmit(find)
                     .padding(.horizontal, 12)
                     .frame(height: 30)
-                    .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                    .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
                 Button(isSearching ? "Asking…" : "Find", action: find)
                     .buttonStyle(PillButtonStyle(prominent: !hasResult))
                     .disabled(isSearching || text.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -117,8 +117,8 @@ struct LinkSourceSheet: View {
                     }
                 }
                 .frame(maxHeight: 216)
-                .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
             }
         }
     }

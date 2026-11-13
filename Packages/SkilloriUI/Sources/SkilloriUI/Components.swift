@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The outer surface of the menu bar panel and of first start: solid ground with a 1 pt frame.
-/// Nothing in the app is translucent.
+/// The outer surface of the menu bar panel and of first start: solid ground. Its edge is the
+/// window's own shadow, which already has a thin rim; in dark mode, where that rim cannot be
+/// seen, a faint light hairline takes its place. Nothing in the app is translucent.
 public struct PanelSurface<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
     let content: Content
@@ -12,11 +13,11 @@ public struct PanelSurface<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) { content }
             .padding(6)
             .background(Palette.panel, in: shape)
-            .overlay(shape.strokeBorder(scheme == .dark ? Color.white.opacity(0.12) : Palette.ink.opacity(0.14), lineWidth: 1))
+            .overlay(shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.12 : 0), lineWidth: 1))
             .foregroundStyle(Palette.ink)
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.panel, style: .continuous) }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.panel, style: .circular) }
 }
 
 /// What a number is a share of: `part` out of `whole`, with a caption at each end.
@@ -143,7 +144,7 @@ public struct HeroBlock: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(EdgeInsets(top: 14, leading: 16, bottom: scale == nil ? 16 : 12, trailing: 16))
         .foregroundStyle(tone.foreground)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
         .accessibilityElement(children: .combine)
     }
 }
@@ -208,7 +209,7 @@ public struct KeyCap: View {
             .font(TypeRole.mono(10))
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .continuous).strokeBorder(.primary.opacity(0.4), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .circular).strokeBorder(.primary.opacity(0.4), lineWidth: 1))
     }
 }
 
@@ -236,7 +237,7 @@ public struct PillButtonStyle: ButtonStyle {
         var body: some View {
             let ink = tone?.foreground ?? Palette.ink
             let onInk = tone?.background ?? Palette.onInk
-            let shape = RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+            let shape = RoundedRectangle(cornerRadius: Radius.control, style: .circular)
             configuration.label
                 .font(TypeRole.mono(10.5, .medium))
                 .tracking(0.42)
@@ -361,7 +362,7 @@ public struct StatTile: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.block, style: .continuous) }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.block, style: .circular) }
 
     private struct TilePressStyle: ButtonStyle {
         func makeBody(configuration: Configuration) -> some View {
@@ -395,8 +396,8 @@ public struct StatusChip: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(kind == .outline ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.inkFixed))
-            .background(fill, in: RoundedRectangle(cornerRadius: Radius.chip, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .continuous)
+            .background(fill, in: RoundedRectangle(cornerRadius: Radius.chip, style: .circular))
+            .overlay(RoundedRectangle(cornerRadius: Radius.chip, style: .circular)
                 .strokeBorder(Color(hex: 0xA3A3A8).opacity(kind == .outline ? 0.7 : 0), lineWidth: 1))
             .fixedSize()
     }
@@ -441,7 +442,7 @@ public struct StatusLine<Content: View>: View {
             .padding(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 8))
             .frame(maxWidth: .infinity)
             .foregroundStyle(Tone.rest.foreground)
-            .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+            .background(Tone.rest.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 }
 
@@ -468,7 +469,7 @@ public struct SegmentedChoice<Value: Hashable>: View {
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
                         .foregroundStyle(chosen ? Palette.ink : Palette.ink2)
-                        .background(chosen ? Palette.card : .clear, in: RoundedRectangle(cornerRadius: Radius.chip, style: .continuous))
+                        .background(chosen ? Palette.card : .clear, in: RoundedRectangle(cornerRadius: Radius.chip, style: .circular))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -477,7 +478,7 @@ public struct SegmentedChoice<Value: Hashable>: View {
         }
         .padding(3)
         .fixedSize()
-        .background(Palette.ink.opacity(0.07), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+        .background(Palette.ink.opacity(0.07), in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
         .animation(Motion.hover, value: selection)
     }
 }
@@ -507,7 +508,7 @@ public struct LabeledCard<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(EdgeInsets(top: 16, leading: 20, bottom: 8, trailing: 20))
-        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .continuous))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 }
 

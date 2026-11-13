@@ -27,6 +27,8 @@ final class InventoryStore {
     private(set) var lastCheck: Date?
     /// Why the latest attempt got no answer, if it did not.
     private(set) var lastProblem: UpstreamState.Reason?
+    /// Runs the installer's update command when the reader asks for it.
+    let updater = UpdateRunner()
     /// Asking sources is the reader's choice and is off until they turn it on.
     var checksEnabled: Bool {
         didSet {
@@ -177,6 +179,20 @@ final class InventoryStore {
         guard let key = sourceKey(for: installation) else { return }
         held[key] = nil
         save()
+    }
+
+    /// The skills the installer can update: it recorded them, and their source has moved on.
+    var updatable: [Installation] {
+        own.filter { if case .updateAvailable = status(for: $0) { true } else { false } }
+    }
+
+    /// Runs the installer's update for these skills, then reads this Mac and asks the sources
+    /// again, so every status shows what is true afterwards.
+    func update(_ installations: [Installation]) async {
+        let names = installations.map(\.directoryName)
+        guard !names.isEmpty, !updater.isRunning else { return }
+        _ = await updater.run(names: names)
+        await refresh()
     }
 
     /// Reads this Mac again and then asks the sources, whatever the age of the last answer.

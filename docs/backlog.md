@@ -45,6 +45,8 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 
 ## Etapp 3 — Begränsade säkra uppdateringar
 
+**Påbörjat 13 november, på produktägarens begäran:** uppdateringen kan köras från appen. Kommandot visas i en kodruta med körknapp (panelen, detaljvyn) och som knappen "Update" i bibliotekets fasta rad. Appen startar `npx --yes skills update <namn> -g -y` genom användarens inloggningsskal, visar utskriften, och läser sedan om datorn och frågar källan igen. Det är installationsverktyget som skriver filerna; Skillori gör det inte själv. Namn skickas som argument, aldrig som skalsträng, och bara enkla mappnamn godtas. Inte provat mot en riktig uppdatering av den som byggde det. Kvar: backup och återställning, kontroll av vilken version av verktyget som körs, och uppdatering av skills som är länkade för hand.
+
 Enligt briefen §10. Första kandidat: skills som ägs av `npx skills`. Antingen delegera till `npx skills update`, vilket kräver capability-verifiering och Node, eller ersätta katalogen själva med transaktion, backup och rollback.
 
 ## Senare / idéer
