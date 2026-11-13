@@ -352,3 +352,12 @@ Efter att uppdateringskontrollen och "Link source" byggdes i appen ritades canva
 - **13 Link source (nytt):** dialogen efter Find, de tre sorternas träff och vilken status en länkad skill får.
 
 Kvar som tänkt men inte byggt: ark 04 (granska ändringar), revisionsskalan på ark 03, och det mesta på ark 10 (inställningar) utöver av/på för kontrollen.
+
+### Körknappen på canvasen (13 november, kväll)
+
+- **05:** nytt kort "The update command" med kodrutans tre lägen: väntar, kör med utskrift, och klar.
+- **01 Panel:** rutan ligger under raderna, ovanför knapparna. När den finns är den panelens åtgärd, så Library och Settings är båda oframhävda.
+- **03 Detalj:** rutan ligger i blocket, med Copy bredvid Run. Åtgärdsraden är nu See what changed, Hold back, Reveal in Finder och Open SKILL.md.
+- **02 Bibliotek:** den fasta raden börjar med ▶ Update; Details är inte längre framhävd.
+
+Känt problem, syns på ark 01: med flera uppdateringar blir kommandot för långt för panelens bredd och kapas. Appen gör samma sak. Förslag: visa `skills update <namn>` utan `npx` och utan flaggorna i panelen, och hela kommandot i detaljvyn.
