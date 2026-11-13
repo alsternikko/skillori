@@ -50,7 +50,8 @@ struct LibraryView: View {
         VStack(spacing: 6) {
             topBar
             if showsDetail, let installation = selected {
-                let rows = groups.flatMap(\.items)
+                // Count within the reader's own skills or within the apps' skills, not across both.
+                let rows = groups.filter { ($0.kind == .managed) == isManaged(installation) }.flatMap(\.items)
                 InstallationDetail(installation: installation,
                                    number: (rows.firstIndex { $0.id == installation.id } ?? 0) + 1,
                                    total: rows.count,
@@ -175,12 +176,13 @@ struct LibraryView: View {
         let groups = groups
         let rows = groups.flatMap(\.items)
         let entries = entries(in: groups)
-        let numbers = Dictionary(uniqueKeysWithValues: rows.enumerated().map { ($1.id, $0 + 1) })
         let copies = Dictionary(rows.map { ($0.displayName, 1) }, uniquingKeysWith: +)
         let firstManaged = groups.first { $0.kind == .managed }?.id
+        let lastOwn = groups.last { $0.kind != .managed }?.id
+        let lastManaged = groups.last { $0.kind == .managed }?.id
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
-                LabelText("No").frame(width: Column.number, alignment: .leading)
+                Color.clear.frame(width: Column.number, height: 1)
                 LabelText("Name").frame(maxWidth: .infinity, alignment: .leading)
                 LabelText("Source").frame(width: Column.source, alignment: .leading)
                 LabelText("Revision").frame(width: Column.revision, alignment: .leading)
@@ -197,15 +199,24 @@ struct LibraryView: View {
                     LazyVStack(spacing: 0) {
                         ForEach(groups) { group in
                             let open = isExpanded(group, among: groups)
-                            if group.id == firstManaged, filter != .managed { managedHeader(groups) }
-                            GroupRow(group: group, isOpen: open, hasCursor: groupCursor == group.id)
+                            let lastInSection = group.id == lastOwn || group.id == lastManaged
+                            if group.id == groups.first?.id, group.kind != .managed, firstManaged != nil {
+                                sectionHeader("Installed by you · \(count(.yours))", note: nil)
+                            }
+                            if group.id == firstManaged, filter != .managed {
+                                sectionHeader("Managed by apps · \(count(.managed))",
+                                              note: "Read-only here. Each app updates its own.")
+                            }
+                            GroupRow(group: group, isOpen: open, isLast: lastInSection, hasCursor: groupCursor == group.id)
                                 .id(group.id)
                                 .onTapGesture { toggle(group, among: groups) }
                             if open {
                                 ForEach(group.items) { installation in
-                                    InstallationRow(number: numbers[installation.id] ?? 0, installation: installation,
+                                    InstallationRow(installation: installation,
                                                     copies: copies[installation.displayName] ?? 1,
-                                                    isSelected: installation.id == selection)
+                                                    isSelected: installation.id == selection,
+                                                    trunk: !lastInSection,
+                                                    isLast: installation.id == group.items.last?.id)
                                         .id(installation.id)
                                         .onTapGesture(count: 2) {
                                             selection = installation.id
@@ -217,7 +228,6 @@ struct LibraryView: View {
                                             listFocused = true
                                         }
                                 }
-                                Color.clear.frame(height: 8)
                             }
                         }
                         if rows.isEmpty, store.inventory != nil { emptyState }
@@ -370,17 +380,16 @@ struct LibraryView: View {
         .padding(.vertical, 28)
     }
 
-    /// Divides the reader's own skills from the ones apps own.
-    private func managedHeader(_ groups: [SkillGroup]) -> some View {
-        let count = groups.filter { $0.kind == .managed }.reduce(0) { $0 + $1.items.count }
-        return HStack {
-            LabelText("Managed by apps · \(count)").foregroundStyle(Palette.ink)
+    /// The root of a tree: the reader's own skills, or the ones apps own.
+    private func sectionHeader(_ title: String, note: String?) -> some View {
+        HStack {
+            LabelText(title).foregroundStyle(Palette.ink)
             Spacer()
-            LabelText("Read-only here. Each app updates its own.").foregroundStyle(Palette.ink2)
+            if let note { LabelText(note).foregroundStyle(Palette.ink2) }
         }
-        .frame(height: 40)
+        .frame(height: 32)
         .padding(.horizontal, 10)
-        .padding(.top, 10)
+        .padding(.top, 8)
     }
 
     // MARK: Selection
@@ -464,22 +473,60 @@ private enum Entry: Equatable {
     case skill(Installation.ID)
 }
 
-/// The heading of a group: what it is, how many skills it holds, and a caret that opens it.
+/// One line per level of the tree, drawn as real lines so they join from row to row.
+private struct TreeGuide: Shape {
+    enum Branch { case none, pipe, tee, corner }
+    var branches: [Branch]
+    static let first: CGFloat = 7
+    static let step: CGFloat = 22
+    static let stub: CGFloat = 12
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for (level, branch) in branches.enumerated() {
+            let x = rect.minX + Self.first + CGFloat(level) * Self.step + 0.5
+            let mid = rect.midY.rounded() + 0.5
+            switch branch {
+            case .none: continue
+            case .pipe:
+                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
+            case .tee:
+                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
+                path.move(to: CGPoint(x: x, y: mid)); path.addLine(to: CGPoint(x: x + Self.stub, y: mid))
+            case .corner:
+                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: mid))
+                path.addLine(to: CGPoint(x: x + Self.stub, y: mid))
+            }
+        }
+        return path
+    }
+}
+
+/// A branch of the tree: where a set of skills comes from, how many there are, and a
+/// plus or minus that opens it one level further.
 private struct GroupRow: View {
     let group: SkillGroup
     let isOpen: Bool
+    let isLast: Bool
     let hasCursor: Bool
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 0) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .rotationEffect(.degrees(isOpen ? 90 : 0))
-                .foregroundStyle(Palette.ink2)
-                .frame(width: Column.number - 14, alignment: .leading)
-                .padding(.leading, 2)
-                .padding(.trailing, 12)
+            ZStack(alignment: .leading) {
+                // An open branch sends a line down from its sign to its skills.
+                TreeGuide(branches: [isLast ? .corner : .tee]).stroke(Palette.ink2, lineWidth: 1)
+                if isOpen {
+                    TreeGuide(branches: [.none, .pipe]).stroke(Palette.ink2, lineWidth: 1)
+                        .mask(alignment: .bottom) { Rectangle().frame(height: 12) }
+                }
+                DataText(isOpen ? "−" : "+")
+                    .foregroundStyle(Palette.ink)
+                    .frame(width: 14)
+                    .offset(x: TreeGuide.first + TreeGuide.step - 7)
+            }
+            .frame(width: Column.number)
+            .frame(maxHeight: .infinity)
             Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
             DataText("\(group.items.count) skill\(group.items.count == 1 ? "" : "s")")
@@ -493,17 +540,14 @@ private struct GroupRow: View {
                 .help(group.agents.sorted().map(\.displayName).joined(separator: ", "))
             chip.frame(width: Column.status, alignment: .leading)
         }
-        .frame(height: 44)
+        .frame(height: 40)
         .padding(.horizontal, 10)
-        .background(Palette.ink.opacity(isOpen ? 0.05 : hovering || hasCursor ? 0.04 : 0),
+        .background(Palette.ink.opacity(hovering || hasCursor ? 0.04 : 0),
                     in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
         .overlay {
             if hasCursor {
                 RoundedRectangle(cornerRadius: Radius.row, style: .continuous).strokeBorder(Palette.ink.opacity(0.28), lineWidth: 1)
             }
-        }
-        .overlay(alignment: .bottom) {
-            if !isOpen { Palette.line.frame(height: 1).padding(.horizontal, 10) }
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -539,10 +583,13 @@ private enum Column {
 }
 
 private struct InstallationRow: View {
-    let number: Int
     let installation: Installation
     let copies: Int
     let isSelected: Bool
+    /// The branch this skill hangs from has more branches below it.
+    let trunk: Bool
+    /// The last skill of its branch.
+    let isLast: Bool
     @State private var hovering = false
 
     var body: some View {
@@ -550,9 +597,10 @@ private struct InstallationRow: View {
         let quiet = isSelected ? Tone.rest.foreground.opacity(0.72) : Palette.ink2
         let faint = isSelected ? Tone.rest.secondary : Palette.ink3
         HStack(spacing: 0) {
-            DataText(String(format: "%03d", number))
-                .foregroundStyle(faint)
-                .frame(width: Column.number, alignment: .leading)
+            TreeGuide(branches: [trunk ? .pipe : .none, isLast ? .corner : .tee])
+                .stroke(isSelected ? quiet : Palette.ink2, lineWidth: 1)
+                .frame(width: Column.number + 6)
+                .frame(maxHeight: .infinity)
             HStack(spacing: 6) {
                 Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
                 if copies > 1 {
@@ -582,13 +630,10 @@ private struct InstallationRow: View {
                 .frame(width: Column.status, alignment: .leading)
         }
         .foregroundStyle(strong)
-        .frame(height: 40)
+        .frame(height: 34)
         .padding(.horizontal, 10)
         .background(isSelected ? Tone.rest.background : Palette.ink.opacity(hovering ? 0.04 : 0),
                     in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
-        .overlay(alignment: .bottom) {
-            if !isSelected { Palette.line.frame(height: 1).padding(.horizontal, 10) }
-        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
@@ -597,7 +642,8 @@ private struct InstallationRow: View {
 
     private var source: (text: String, known: Bool) {
         switch installation.provenance {
-        case .skillsLock(let source, _, _, _, _): (source, true)
+        // The branch already names the source; the skill shows where in it the skill lives.
+        case .skillsLock(let source, _, let subpath, _, _): (subpath ?? source, true)
         case .managed(let owner): (owner, true)
         case .unknown: ("not linked", false)
         }

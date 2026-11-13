@@ -1,6 +1,6 @@
 # Visuell riktning "Readout" — 12 november 2026
 
-**Status:** Förslag till produktägaren, omgång 3, ritad i sin helhet. Inget är beslutat och inget är byggt i appen.
+**Status:** Omgång 3 är ritad i sin helhet och sedan byggd i appen. Appen är nu facit; skisserna på canvasen är inte uppdaterade efter den och visar bland annat det tidigare märket. Se [Byggt i appen efter skisserna](#byggt-i-appen-efter-skisserna-13-november).
 **Canvas:** [Skillori – visuell riktning Readout](https://claude.ai/artifact/E4o4Z5GrzN1heWNrRM58ov) (privat tills den delas). Elva artboards.
 **Bilder i repot:** [`readout-2026-11-12/v3/`](readout-2026-11-12/v3/). Tidigare omgångar finns i `v1/` och `v2/`.
 **Underlag:** [Pinterest-referenserna](pinterest-referenser-2026-11-12.md), [typografin](typografi-2026-11-12.md), [Mobbin-baselinen](mobbin-baseline-2026-11-11.md), [UI-grunden](ui-bibliotek-utforskning.md).
@@ -108,6 +108,8 @@ I mörkt läge behåller lime och lila sin ton, med svart text på. Neutralerna 
 
 ## Märket
 
+> **Ersatt 13 november.** Märket nedan är omgång 3:s förslag. Det gällande märket är produktägarens egen teckning, se [Byggt i appen efter skisserna](#byggt-i-appen-efter-skisserna-13-november).
+
 Ett S av femton jämnstora punkter på ett rutnät om fem gånger sju, enligt produktägarens referenser ([S av stora punkter](https://se.pinterest.com/pin/358317714128597959/), [bokstäver av punkter som byter form](https://se.pinterest.com/pin/338121884551090664/)).
 
 | Rad | Punkter | Kolumner |
@@ -187,6 +189,46 @@ Versionsnumret är en platshållare.
 | En mapp kan inte läsas | Lila, `1` | Rakt: vad som saknas, varför och vad man gör |
 
 Regeln från Mobbin-baselinen gäller: personlighet i lugnet, klarhet i allvaret. Ett fel visar aldrig ett tal som ser komplett ut.
+
+## Byggt i appen efter skisserna (13 november)
+
+Det här avsnittet beskriver det som skiljer appen från skisserna. Bilder ur appen finns i [`readout-2026-11-12/native/`](readout-2026-11-12/native/).
+
+### Märket, version 2
+
+Produktägarens egen teckning i Figma ersätter S:et med femton punkter. I koden är det `SkilloriMark` i `SkilloriUI`.
+
+- **Rutnät:** sju gånger sju cirklar à 100 enheter med 20 enheters mellanrum, 820 enheter i kvadrat. Punkten är alltså 83 % av steget.
+- **Frizon:** den yttersta ringen av celler är alltid tom. Den ska respekteras i både appikon och menyradsikon.
+- **Symbolen** använder de inre fem gånger fem cellerna:
+
+| Rad | Innehåll | Kolumner |
+| --- | --- | --- |
+| 1 | 3 punkter | 2, 3, 4 |
+| 2 | 1 punkt och ett © | 1 och 5 |
+| 3 | 3 punkter | 2, 3, 4 |
+| 4 | 2 punkter | 1 och 5 |
+| 5 | 3 punkter | 2, 3, 4 |
+
+- **©-tecknet** är konturen ur Figma-filen, inte omritad. Under ungefär 64 px läses det som en ring med en prick i.
+- **Appikon:** vita punkter på svart. Ikonfilen använder macOS standardplatta (824 av 1024 px med mjuka hörn) i stället för skissens hörnradie 100 av 820, eftersom macOS föreskriver ikonens ytterform. Hela rutnätet ligger på plattan, så frizonen blir avståndet till plattans kant.
+- **Menyradsikon:** hela rutnätet i 22 pt utan bakgrund, som mallbild. macOS färgar den efter vad menyraden ligger på. Produktägaren valde det ("Följ systemet") framför fast vit och svart.
+- **Menyradens tillstånd:** i läget "kräver dig" fylls ©-cellen med en hel prick, så frizonen hålls. Det är en svag signal i den storleken och inte godkänt av produktägaren. Utan aktuell avläsning tonas hela märket ned.
+- **I appens ytor** ritas symbolen utan frizon, eftersom ytan runt den redan ger luft.
+
+### Biblioteket som träd
+
+Listan är ett träd i två nivåer, ritat med tunna linjer som i ett filträd i en terminal.
+
+- **Rötter:** "Installed by you" och "Managed by apps".
+- **Grenar:** en per källa, en för "No known source" och en per app som äger sina egna skills. Raden visar antal skills, antal agenter och en samlad status.
+- **Löv:** varje skill, med sin sökväg inom källan, revision, agenter och status.
+- **Öppna och stänga:** ett plus eller minus vid grenen. En gren öppnas också av sig själv när den är den enda, vid sökning, och när den innehåller den valda skillen.
+- **Löpnumren är borta** ur listan. Detaljvyn räknar inom den egna roten, inte över båda.
+
+### Inställningarna
+
+Fönstret mäter sitt innehåll och blir exakt så högt, med samma marginal nedtill som på sidorna. Integritetsblocket är lika högt som vänsterkolumnen.
 
 ## Typografi
 

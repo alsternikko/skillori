@@ -58,6 +58,12 @@ enum DebugSnapshots {
             let unknown = installs.first { $0.provenance == .unknown }
             render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
                    to: out.appendingPathComponent("detail-unknown.png"))
+            let icon = ImageRenderer(content: AppIconArt())
+            icon.scale = 1
+            if let image = icon.cgImage {
+                try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?
+                    .write(to: out.appendingPathComponent("app-icon-1024.png"))
+            }
             render(MarkSheet(), size: CGSize(width: 1040, height: 460), to: out.appendingPathComponent("mark.png"))
             NSApp.terminate(nil)
         }
@@ -131,5 +137,17 @@ private struct MarkSheet: View {
         .padding(.horizontal, 8 * scale)
         .frame(height: 24 * scale)
         .background(light ? Color(hex: 0x8E8E93) : Color(hex: 0xD8D8DC))
+    }
+}
+
+/// The app icon at 1024 px: macOS's standard plate (824 px, continuous corners) in black,
+/// with the mark's full grid on it, so the safe zone is the distance to the plate's edge.
+struct AppIconArt: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 185.4, style: .continuous)
+            .fill(.black)
+            .overlay(SkilloriMark(safeZone: true).fill(.white))
+            .frame(width: 824, height: 824)
+            .frame(width: 1024, height: 1024)
     }
 }

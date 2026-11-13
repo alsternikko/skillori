@@ -135,7 +135,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         }
         if outsideClickMonitor == nil {
             outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                Task { @MainActor in self?.close() }
+                Task { @MainActor in self?.pressedOutside() }
             }
         }
     }
@@ -208,6 +208,22 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// True while the pointer is over our menu bar item.
+    private var pointerIsOnStatusItem: Bool {
+        guard let button = statusItem.button, let window = button.window else { return false }
+        let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+        return frame.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation)
+    }
+
+    /// A press somewhere outside the panel. The system can deliver a press on our own menu
+    /// bar item this way too, before the click itself arrives. That press must leave the
+    /// panel alone, or the click would find it closed and open it again.
+    private func pressedOutside() {
+        guard isOpen, !pointerIsOnStatusItem else { return }
+        lostFocusAt = ProcessInfo.processInfo.systemUptime
+        close()
+    }
+
     /// When the panel last closed because it lost focus.
     private var lostFocusAt: TimeInterval?
 
@@ -216,6 +232,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     /// again; the click itself toggles.
     func windowDidResignKey(_ notification: Notification) {
         guard isOpen else { return }
+        if pointerIsOnStatusItem, NSEvent.pressedMouseButtons & 1 == 1 { return }
         if let event = NSApp.currentEvent, event.type == .leftMouseDown,
            let buttonWindow = statusItem.button?.window, event.window === buttonWindow {
             return
