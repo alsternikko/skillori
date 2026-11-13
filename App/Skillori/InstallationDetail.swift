@@ -13,6 +13,8 @@ struct InstallationDetail: View {
     var readAt: Date?
     var agentsOnThisMac: [Agent] = []
     var onBack: () -> Void = {}
+    /// Opens the sheet where the reader points out this skill's source.
+    var onLink: () -> Void = {}
     var onStep: (Int) -> Void = { _ in }
     @FocusState private var focused: Bool
 
@@ -107,16 +109,27 @@ struct InstallationDetail: View {
                             Button("See what changed") { NSWorkspace.shared.open(history) }
                                 .buttonStyle(PillButtonStyle(on: tone))
                         }
+                    case .differs:
+                        if let link = sourceLink {
+                            Button("Open source") { NSWorkspace.shared.open(link) }
+                                .buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                        }
+                        Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: tone))
+                    case .noSource:
+                        Button("Link source…", action: onLink).buttonStyle(PillButtonStyle(prominent: true, on: tone))
                     default:
                         if let link = sourceLink {
                             Button("Open source") { NSWorkspace.shared.open(link) }
                                 .buttonStyle(PillButtonStyle(prominent: true, on: tone))
                         }
                     }
+                    if store.link(for: installation) != nil {
+                        Button("Unlink") { store.unlink(installation) }.buttonStyle(PillButtonStyle(on: tone))
+                    }
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
                     }
-                    .buttonStyle(PillButtonStyle(prominent: sourceLink == nil, on: tone))
+                    .buttonStyle(PillButtonStyle(prominent: sourceLink == nil && status != .noSource, on: tone))
                     Button("Open SKILL.md") {
                         NSWorkspace.shared.open(URL(fileURLWithPath: installation.canonicalPath).appendingPathComponent("SKILL.md"))
                     }
@@ -144,10 +157,7 @@ struct InstallationDetail: View {
 
     private var tone: Tone { status.tone }
 
-    private var subpath: String? {
-        guard case .skillsLock(_, _, let subpath, _, _) = installation.provenance else { return nil }
-        return subpath
-    }
+    private var subpath: String? { store.sourceSubpath(for: installation) }
 
     private var sourceLink: URL? {
         store.upstreamSource(for: installation)?.webURL(subpath: subpath)
@@ -195,9 +205,36 @@ struct InstallationDetail: View {
                 PlateRow("Managed by") { value(owner) }
                 PlateRow("Updates", isLast: true) { value("handled by the app") }
             case .unknown:
+                if let link = store.link(for: installation) {
+                    PlateRow("Source") {
+                        Button(link.source.name) { if let url = sourceLink { NSWorkspace.shared.open(url) } }
+                            .buttonStyle(ValueLinkStyle())
+                    }
+                    PlateRow("Path in source") { value(link.subpath.isEmpty ? "top level" : link.subpath) }
+                    PlateRow("Linked") { value(InventoryStore.stamp(link.linkedAt), faint: "by you") }
+                    PlateRow("Local copy") {
+                        value(link.localHash.map { String($0.prefix(8)) } ?? "could not be read", faint: "tree hash")
+                    }
+                    PlateRow("Source now") {
+                        switch store.reading(for: installation)?.state {
+                        case .upToDate: value("same content")
+                        case .updateAvailable(let upstream): value(String(upstream.prefix(8)), faint: "differs")
+                        case .cannotCheck(let reason): value(reason.short, muted: true)
+                        case nil: value("not asked yet", muted: true)
+                        }
+                    }
+                    PlateRow("Checked", isLast: true) {
+                        if let reading = store.reading(for: installation) {
+                            value(InventoryStore.stamp(reading.checkedAt))
+                        } else {
+                            value("never", muted: true)
+                        }
+                    }
+                } else {
                 PlateRow("Source") { value("not linked", muted: true) }
                 PlateRow("Installed by") { value("no record", muted: true) }
                 PlateRow("Local copy", isLast: true) { value("no baseline", muted: true) }
+                }
             }
         }
     }
@@ -207,7 +244,7 @@ struct InstallationDetail: View {
         case .skillsLock(_, _, _, _, .hashFailed): "Not verified"
         case .skillsLock: "Verified by content hash"
         case .managed: "Read-only here"
-        case .unknown: "No installer record"
+        case .unknown: store.link(for: installation) == nil ? "No installer record" : "Linked by you"
         }
     }
 
@@ -348,6 +385,20 @@ struct InstallationDetail: View {
         case .unknown:
             steps.append(("no record", "Installed", false))
             if let readAt { steps.append((stamp(readAt), "Read on this Mac", true)) }
+            if let link = store.link(for: installation) {
+                steps.append((stamp(link.linkedAt), "Linked to \(link.source.name) by you", true))
+                if let reading = store.reading(for: installation) {
+                    let what = switch reading.state {
+                    case .upToDate: "Source asked, same content"
+                    case .updateAvailable: "Source asked, content differs"
+                    case .cannotCheck(let reason): "Source asked, \(reason.short)"
+                    }
+                    steps.append((stamp(reading.checkedAt), what, true))
+                }
+                if let key = store.sourceKey(for: installation), let since = store.held[key] {
+                    steps.append((stamp(since), "Held back by you", true))
+                }
+            }
         }
         return steps
     }

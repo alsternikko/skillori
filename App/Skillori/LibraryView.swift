@@ -21,7 +21,11 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
     func includes(_ status: SkillStatus) -> Bool {
         switch self {
         case .yours: status != .managed
-        case .updates: if case .updateAvailable = status { true } else { false }
+        case .updates:
+            switch status {
+            case .updateAvailable, .differs: true
+            default: false
+            }
         case .upToDate: status == .upToDate
         case .heldBack: if case .heldBack = status { true } else { false }
         case .unverified: status.isUnverified
@@ -42,6 +46,8 @@ struct LibraryView: View {
     @State private var expanded: Set<String> = []
     /// The group the keyboard is on, when it is not on a skill.
     @State private var groupCursor: String?
+    /// The skill whose source the reader is pointing out, while the sheet is up.
+    @State private var linking: Installation?
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
@@ -63,6 +69,7 @@ struct LibraryView: View {
                                    readAt: store.inventory?.scannedAt,
                                    agentsOnThisMac: agentsOnThisMac,
                                    onBack: { showsDetail = false },
+                                   onLink: { linking = installation },
                                    onStep: { step in _ = move(step, in: rows) })
             } else {
                 if !store.checksEnabled, store.trackedCount > 0 { checksOffNotice }
@@ -78,6 +85,9 @@ struct LibraryView: View {
         .onChange(of: filter) {
             selection = nil
             groupCursor = nil
+        }
+        .sheet(item: $linking) { installation in
+            LinkSourceSheet(installation: installation).environment(store)
         }
     }
 
@@ -243,6 +253,7 @@ struct LibraryView: View {
                                 ForEach(group.items) { installation in
                                     InstallationRow(installation: installation,
                                                     status: store.status(for: installation),
+                                                    link: store.link(for: installation),
                                                     copies: copies[installation.displayName] ?? 1,
                                                     isSelected: installation.id == selection,
                                                     trunk: !lastInSection,
@@ -307,7 +318,13 @@ struct LibraryView: View {
         for installation in visible {
             let (id, title, kind): (String, String, SkillGroup.Kind) = switch installation.provenance {
             case .skillsLock(let source, _, _, _, _): ("source:" + source, source, .source)
-            case .unknown: ("unknown", "No known source", .unknown)
+            case .unknown:
+                // A skill the reader linked sits with its source, like the ones the installer recorded.
+                if let link = store.link(for: installation) {
+                    ("source:" + link.source.name, link.source.name, .source)
+                } else {
+                    ("unknown", "No known source", .unknown)
+                }
             case .managed(let owner): ("managed:" + owner, owner, .managed)
             }
             if byID[id] == nil {
@@ -442,6 +459,13 @@ struct LibraryView: View {
                 Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: .rest))
             case .heldBack:
                 Button("Release") { store.release(installation) }.buttonStyle(PillButtonStyle(on: .rest))
+            case .differs:
+                if let link = store.upstreamSource(for: installation)?.webURL(subpath: store.sourceSubpath(for: installation)) {
+                    Button("Open source") { NSWorkspace.shared.open(link) }.buttonStyle(PillButtonStyle(on: .rest))
+                }
+                Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: .rest))
+            case .noSource:
+                Button("Link source…") { linking = installation }.buttonStyle(PillButtonStyle(on: .rest))
             default:
                 if let link = store.upstreamSource(for: installation)?.webURL() {
                     Button("Open source") { NSWorkspace.shared.open(link) }
@@ -472,7 +496,7 @@ struct LibraryView: View {
             switch installation.provenance {
             case .skillsLock(let source, _, _, _, _): return source.localizedCaseInsensitiveContains(search)
             case .managed(let owner): return owner.localizedCaseInsensitiveContains(search)
-            case .unknown: return false
+            case .unknown: return store.link(for: installation)?.source.name.localizedCaseInsensitiveContains(search) ?? false
             }
         }
     }
@@ -603,6 +627,7 @@ private struct GroupRow: View {
     /// What the branch says about its skills: the state that most needs a look comes first.
     @ViewBuilder private var chip: some View {
         let updates = statuses.filter { if case .updateAvailable = $0 { true } else { false } }.count
+        let differing = statuses.filter { if case .differs = $0 { true } else { false } }.count
         let held = statuses.filter { if case .heldBack = $0 { true } else { false } }.count
         let cant = statuses.filter { if case .cantCheck = $0 { true } else { false } }.count
         switch group.kind {
@@ -611,6 +636,8 @@ private struct GroupRow: View {
         case .source:
             if updates > 0 {
                 StatusChip("\(updates) update\(updates == 1 ? "" : "s")", kind: .new, mark: "▲")
+            } else if differing > 0 {
+                StatusChip("\(differing) differ\(differing == 1 ? "s" : "")", kind: .new, mark: "≠")
             } else if group.changed > 0 {
                 StatusChip("\(group.changed) changed here", kind: .attention, mark: "◐")
             } else if cant > 0 {
@@ -637,6 +664,8 @@ private enum Column {
 private struct InstallationRow: View {
     let installation: Installation
     let status: SkillStatus
+    /// Set when the reader, not the installer, said where this skill comes from.
+    let link: SourceLink?
     let copies: Int
     let isSelected: Bool
     /// The branch this skill hangs from has more branches below it.
@@ -698,7 +727,8 @@ private struct InstallationRow: View {
         // The branch already names the source; the skill shows where in it the skill lives.
         case .skillsLock(let source, _, let subpath, _, _): (subpath ?? source, true)
         case .managed(let owner): (owner, true)
-        case .unknown: ("not linked", false)
+        case .unknown:
+            if let link { (link.subpath.isEmpty ? "top level" : link.subpath, true) } else { ("not linked", false) }
         }
     }
 
@@ -706,6 +736,10 @@ private struct InstallationRow: View {
         if case .updateAvailable(let upstream) = status,
            case .skillsLock(_, _, _, let baseline?, _) = installation.provenance {
             return ("\(baseline.prefix(7)) → \(upstream.prefix(7))", true)
+        }
+        if let local = link?.localHash {
+            if case .differs(let upstream) = status { return ("\(local.prefix(7)) ≠ \(upstream.prefix(7))", true) }
+            return (String(local.prefix(7)), true)
         }
         return switch installation.provenance {
         case .skillsLock(_, _, _, let baseline?, .modified(let local)):

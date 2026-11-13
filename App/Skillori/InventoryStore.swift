@@ -20,6 +20,8 @@ final class InventoryStore {
     private(set) var readings: [String: UpstreamReading] = [:]
     /// Skills the reader keeps on their installed version, and since when.
     private(set) var held: [String: Date] = [:]
+    /// Sources the reader has pointed out for skills that came with no record, by `sourceKey`.
+    private(set) var links: [String: SourceLink] = [:]
     private(set) var isChecking = false
     /// When sources last gave a real answer.
     private(set) var lastCheck: Date?
@@ -67,13 +69,34 @@ final class InventoryStore {
 
     /// Identifies a tracked skill by where it comes from, so an answer survives a rescan.
     func sourceKey(for installation: Installation) -> String? {
-        guard case .skillsLock(let source, _, let subpath, _, _) = installation.provenance else { return nil }
-        return "\(source)#\(subpath ?? "")"
+        switch installation.provenance {
+        case .skillsLock(let source, _, let subpath, _, _): return "\(source)#\(subpath ?? "")"
+        case .unknown:
+            let key = Self.linkKey(for: installation)
+            return links[key] == nil ? nil : key
+        case .managed: return nil
+        }
+    }
+
+    private static func linkKey(for installation: Installation) -> String { "link:" + installation.canonicalPath }
+
+    /// The source the reader linked this skill to, if they did.
+    func link(for installation: Installation) -> SourceLink? {
+        guard installation.provenance == .unknown else { return nil }
+        return links[Self.linkKey(for: installation)]
     }
 
     func upstreamSource(for installation: Installation) -> UpstreamSource? {
+        if let link = link(for: installation) { return link.source }
         guard case .skillsLock(let source, let url, _, _, _) = installation.provenance else { return nil }
         return UpstreamSource(source: source, sourceURL: url, ref: installation.sourceRef)
+    }
+
+    /// The folder inside the source that this skill is compared with.
+    func sourceSubpath(for installation: Installation) -> String? {
+        if let link = link(for: installation) { return link.subpath.isEmpty ? nil : link.subpath }
+        guard case .skillsLock(_, _, let subpath, _, _) = installation.provenance else { return nil }
+        return subpath
     }
 
     func reading(for installation: Installation) -> UpstreamReading? {
@@ -87,7 +110,20 @@ final class InventoryStore {
     func status(for installation: Installation) -> SkillStatus {
         switch installation.provenance {
         case .managed: return .managed
-        case .unknown: return .noSource
+        case .unknown:
+            guard link(for: installation) != nil else { return .noSource }
+            // Linked by the reader: there is no installer baseline, so "differs" is all that can be said.
+            let state = reading(for: installation)?.state
+            if isHeld(installation) {
+                if case .updateAvailable = state { return .heldBack(sourceMoved: true) }
+                return .heldBack(sourceMoved: false)
+            }
+            switch state {
+            case .updateAvailable(let upstream): return .differs(upstream: upstream)
+            case .upToDate: return .upToDate
+            case .cannotCheck(let reason): return .cantCheck(reason)
+            case nil: return .notChecked
+            }
         case .skillsLock(_, _, _, _, let local):
             if case .hashFailed = local { return .checkFailed }
             let state = reading(for: installation)?.state
@@ -110,8 +146,19 @@ final class InventoryStore {
         (inventory?.installations ?? []).filter { if case .managed = $0.provenance { false } else { true } }
     }
 
+    /// Skills whose source has other content: a known update, or a linked skill that differs.
     var updates: [Installation] {
-        own.filter { if case .updateAvailable = status(for: $0) { true } else { false } }
+        own.filter {
+            switch status(for: $0) {
+            case .updateAvailable, .differs: true
+            default: false
+            }
+        }
+    }
+
+    /// The reasons behind the skills that cannot be checked right now.
+    var cantCheckReasons: Set<UpstreamState.Reason> {
+        Set(own.compactMap { if case .cantCheck(let reason) = status(for: $0) { reason } else { nil } })
     }
     var updateCount: Int { updates.count }
     var upToDateCount: Int { own.filter { status(for: $0) == .upToDate }.count }
@@ -142,6 +189,15 @@ final class InventoryStore {
     func checkSources(force: Bool = false) async {
         guard checksEnabled, !isChecking, let inventory else { return }
         if !force, let lastCheck, Date().timeIntervalSince(lastCheck) < Self.checkInterval { return }
+        #if DEBUG
+        if usesSampleReadings, links.isEmpty,
+           let unknown = inventory.installations.filter({ $0.provenance == .unknown }).min(by: { $0.displayName < $1.displayName }) {
+            // One linked skill in the pictures, so that state can be looked at too.
+            links[Self.linkKey(for: unknown)] = SourceLink(owner: "example", repository: "skills", ref: nil,
+                                                           subpath: "skills/" + unknown.directoryName, linkedAt: Date(),
+                                                           localHash: "83b528722eed2d5663a7fa843be58369c7a0235c")
+        }
+        #endif
         let tracked = inventory.installations.filter { sourceKey(for: $0) != nil }
         guard !tracked.isEmpty else { return }
         isChecking = true
@@ -154,9 +210,22 @@ final class InventoryStore {
         }
         #endif
 
+        // A linked skill has no installer baseline; its own files, hashed now, stand in for one.
+        let linked = tracked.filter { link(for: $0) != nil }
+        let localHashes = await Task.detached(priority: .utility) {
+            Dictionary(uniqueKeysWithValues: linked.map { installation in
+                (installation.id, try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: installation.canonicalPath)).treeID)
+            })
+        }.value
         let questions = tracked.compactMap { installation -> UpstreamQuestion? in
-            guard let key = sourceKey(for: installation),
-                  case .skillsLock(_, _, let subpath, let baseline, _) = installation.provenance else { return nil }
+            guard let key = sourceKey(for: installation) else { return nil }
+            if link(for: installation) != nil {
+                let local = localHashes[installation.id] ?? nil
+                links[key]?.localHash = local
+                return UpstreamQuestion(key: key, source: upstreamSource(for: installation),
+                                        subpath: sourceSubpath(for: installation), baseline: local)
+            }
+            guard case .skillsLock(_, _, let subpath, let baseline, _) = installation.provenance else { return nil }
             return UpstreamQuestion(key: key, source: upstreamSource(for: installation), subpath: subpath, baseline: baseline)
         }
         let answers = await UpstreamChecker.check(questions)
@@ -183,12 +252,78 @@ final class InventoryStore {
         save()
     }
 
+    // MARK: Linking a source
+
+    /// What a look at a source found for one skill.
+    struct LinkSearch {
+        let source: UpstreamSource
+        let localHash: String?
+        let candidates: [SourceCandidate]
+        /// The folder the pasted address pointed at, if it pointed at one.
+        let suggested: String?
+    }
+
+    enum LinkProblem: Error {
+        case unreadable
+        case source(UpstreamState.Reason)
+        case noSkills
+
+        var sentence: String {
+            switch self {
+            case .unreadable: "That does not look like a GitHub repository. Use owner/repository or an address on github.com."
+            case .source(let reason): reason.sentence
+            case .noSkills: "That repository has no folder with a SKILL.md."
+            }
+        }
+    }
+
+    /// Asks the source the reader named for its skill folders and ranks them against this skill.
+    /// This is a direct action by the reader, so it runs whether or not regular checks are on.
+    func searchSource(_ text: String, for installation: Installation) async -> Result<LinkSearch, LinkProblem> {
+        guard let (source, subpath) = UpstreamSource.parse(text) else { return .failure(.unreadable) }
+        let path = installation.canonicalPath
+        async let local = Task.detached(priority: .utility) {
+            try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).treeID
+        }.value
+        switch await GitHubTrees().tree(of: source) {
+        case .failure(let reason): return .failure(.source(reason))
+        case .success(let tree):
+            let localHash = await local
+            let names = [installation.directoryName, installation.displayName]
+            let candidates = SourceMatcher.candidates(localHash: localHash, names: names, in: tree)
+            guard !candidates.isEmpty else { return .failure(.noSkills) }
+            return .success(LinkSearch(source: source, localHash: localHash, candidates: candidates, suggested: subpath))
+        }
+    }
+
+    /// Remembers that this skill comes from `candidate` in the searched source.
+    func link(_ installation: Installation, to candidate: SourceCandidate, in search: LinkSearch) {
+        guard installation.provenance == .unknown else { return }
+        let key = Self.linkKey(for: installation)
+        let now = Date()
+        links[key] = SourceLink(owner: search.source.owner, repository: search.source.repository, ref: search.source.ref,
+                                subpath: candidate.subpath, linkedAt: now, localHash: search.localHash)
+        // The search already has the answer a check would give.
+        let state: UpstreamState = candidate.hash == search.localHash ? .upToDate : .updateAvailable(upstreamHash: candidate.hash)
+        readings[key] = UpstreamReading(state: state, checkedAt: now)
+        save()
+    }
+
+    func unlink(_ installation: Installation) {
+        let key = Self.linkKey(for: installation)
+        links[key] = nil
+        readings[key] = nil
+        held[key] = nil
+        save()
+    }
+
     // MARK: Saved state
 
     private struct Saved: Codable {
         var readings: [String: UpstreamReading]
         var held: [String: Date]
         var lastCheck: Date?
+        var links: [String: SourceLink]?
     }
 
     private static var savedURL: URL? {
@@ -202,12 +337,13 @@ final class InventoryStore {
         readings = saved.readings
         held = saved.held
         lastCheck = saved.lastCheck
+        links = saved.links ?? [:]
     }
 
     private func save() {
         guard !usesSampleReadings, let url = Self.savedURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let saved = Saved(readings: readings, held: held, lastCheck: lastCheck)
+        let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 
@@ -220,10 +356,14 @@ final class InventoryStore {
         var next: [String: UpstreamReading] = [:]
         for (index, installation) in sorted.enumerated() {
             guard let key = sourceKey(for: installation) else { continue }
-            let state: UpstreamState = switch index {
-            case 0, 3: .updateAvailable(upstreamHash: "4f1a02d9c0ffee00000000000000000000000000")
-            case 5: .cannotCheck(.notFound)
-            default: .upToDate
+            let state: UpstreamState = if link(for: installation) != nil {
+                .updateAvailable(upstreamHash: "9c2e77aa00000000000000000000000000000000")
+            } else {
+                switch index {
+                case 0, 3: .updateAvailable(upstreamHash: "4f1a02d9c0ffee00000000000000000000000000")
+                case 5: .cannotCheck(.notFound)
+                default: .upToDate
+                }
             }
             next[key] = UpstreamReading(state: state, checkedAt: now)
             if index == 3 { held[key] = now }
@@ -233,8 +373,9 @@ final class InventoryStore {
     }
     #endif
 
-    var trackedCount: Int { count { if case .skillsLock = $0 { true } else { false } } }
-    var unknownCount: Int { count { $0 == .unknown } }
+    /// Skills with a source that can be asked: recorded by the installer, or linked by the reader.
+    var trackedCount: Int { own.filter { sourceKey(for: $0) != nil }.count }
+    var unknownCount: Int { own.filter { $0.provenance == .unknown && link(for: $0) == nil }.count }
     var managedCount: Int { count { if case .managed = $0 { true } else { false } } }
     var localChangeCount: Int {
         count { if case .skillsLock(_, _, _, _, .modified) = $0 { true } else { false } }

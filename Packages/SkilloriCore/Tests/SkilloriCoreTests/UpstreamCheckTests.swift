@@ -75,6 +75,41 @@ import Testing
         }
     }
 
+    @Test func readsWhatAPersonTypesOrPastes() {
+        #expect(UpstreamSource.parse(" emilkowalski/skills ")?.source == UpstreamSource(owner: "emilkowalski", repository: "skills"))
+        #expect(UpstreamSource.parse("https://github.com/anthropics/skills")?.source.name == "anthropics/skills")
+        #expect(UpstreamSource.parse("github.com/anthropics/skills.git/")?.source.name == "anthropics/skills")
+        let folder = UpstreamSource.parse("https://github.com/anthropics/skills/tree/main/skills/pptx")
+        #expect(folder?.source == UpstreamSource(owner: "anthropics", repository: "skills", ref: "main"))
+        #expect(folder?.subpath == "skills/pptx")
+        #expect(UpstreamSource.parse("https://github.com/o/r/blob/main/a/SKILL.md")?.subpath == "a")
+        #expect(UpstreamSource.parse("https://gitlab.com/o/r") == nil)
+        #expect(UpstreamSource.parse("https://github.com/o/r/issues/4") == nil)
+        #expect(UpstreamSource.parse("not a source") == nil)
+        #expect(UpstreamSource.parse("") == nil)
+    }
+
+    @Test func ranksTheFoldersASkillMightComeFrom() {
+        let tree = SourceTree(rootHash: "root",
+                              folders: ["skills": "s", "skills/pptx": "p1", "skills/docx": "d1", "other/pptx": "p2"],
+                              skillFolders: ["other/pptx", "skills/docx", "skills/pptx"])
+        let found = SourceMatcher.candidates(localHash: "d1", names: ["PPTX"], in: tree)
+        #expect(found.map(\.subpath) == ["skills/docx", "other/pptx", "skills/pptx"])
+        #expect(found.map(\.match) == [.identical, .sameName, .sameName])
+        #expect(SourceMatcher.candidates(localHash: nil, names: [], in: tree).allSatisfy { $0.match == .other })
+    }
+
+    @Test func aSkillAtTheTopOfItsSourceIsFound() async {
+        let trees = GitHubTrees { request in
+            let body = #"{"sha":"root","tree":[{"path":"SKILL.md","type":"blob","sha":"f"},{"path":"docs","type":"tree","sha":"d"}]}"#
+            return (Data(body.utf8), Self.response(request.url!, 200))
+        }
+        let tree = try? await trees.tree(of: UpstreamSource(owner: "o", repository: "r")).get()
+        #expect(tree?.skillFolders == [""])
+        #expect(SourceMatcher.candidates(localHash: "root", names: [], in: tree!).first
+            == SourceCandidate(subpath: "", hash: "root", match: .identical))
+    }
+
     @Test func readingsSurviveBeingSaved() throws {
         let reading = UpstreamReading(state: .updateAvailable(upstreamHash: "abc"), checkedAt: Date(timeIntervalSince1970: 1_800_000_000))
         let data = try JSONEncoder().encode(["k": reading])

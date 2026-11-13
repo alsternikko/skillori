@@ -6,7 +6,15 @@ import SkilloriCore
 // With --check-sources it also asks each tracked skill's source whether it has changed. That is
 // the only thing here that uses the network.
 let checkSources = CommandLine.arguments.contains("--check-sources")
-let projects = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
+// With --find-source <repository> <skill> it asks one repository which of its folders that skill
+// on this Mac matches, the way "Link source" does.
+var arguments = Array(CommandLine.arguments.dropFirst())
+var findSource: (repository: String, skill: String)?
+if let index = arguments.firstIndex(of: "--find-source"), arguments.count > index + 2 {
+    findSource = (arguments[index + 1], arguments[index + 2])
+    arguments.removeSubrange(index...index + 2)
+}
+let projects = arguments.filter { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
 let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
                              projects: projects, environment: ProcessInfo.processInfo.environment)
 let inventory = engine.scan()
@@ -64,5 +72,24 @@ if checkSources {
         case nil: text = "no answer"
         }
         print("  \(question.key) [\(question.source?.name ?? "?")] — \(text)")
+    }
+}
+
+if let findSource {
+    print("\nLooking for \(findSource.skill) in \(findSource.repository)")
+    guard let (source, _) = UpstreamSource.parse(findSource.repository) else { print("  not a GitHub repository"); exit(1) }
+    let matches = inventory.installations.filter { $0.directoryName == findSource.skill && $0.provenance == .unknown }
+    guard !matches.isEmpty else { print("  no skill with that folder name and no known source"); exit(1) }
+    switch await GitHubTrees().tree(of: source) {
+    case .failure(let reason): print("  can't ask the source: \(reason.rawValue)")
+    case .success(let tree):
+        for inst in matches {
+            let local = try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: inst.canonicalPath)).treeID
+            let found = SourceMatcher.candidates(localHash: local, names: [inst.directoryName, inst.displayName], in: tree)
+            print("  \(inst.canonicalPath) · local \((local ?? "?").prefix(7)) · \(found.count) skill folders in source")
+            for candidate in found.prefix(3) {
+                print("    \(candidate.match) · \(candidate.subpath) · \(candidate.hash.prefix(7))")
+            }
+        }
     }
 }

@@ -7,6 +7,9 @@ import SwiftUI
 enum SkillStatus: Equatable {
     /// The source has other content than what is installed.
     case updateAvailable(upstream: String)
+    /// A skill the reader linked to a source, whose files differ from it. Without an installer
+    /// record nobody can say whether the source is newer or the files were changed here.
+    case differs(upstream: String)
     /// The reader chose to stay on the installed version. `sourceMoved` says whether that costs anything yet.
     case heldBack(sourceMoved: Bool)
     /// The files on this Mac differ from what the installer put there.
@@ -25,6 +28,7 @@ enum SkillStatus: Equatable {
     var word: String {
         switch self {
         case .updateAvailable: "Update available"
+        case .differs: "Differs from source"
         case .heldBack: "Held back"
         case .changedHere: "Changed here"
         case .upToDate: "Up to date"
@@ -40,6 +44,7 @@ enum SkillStatus: Equatable {
     var mark: String {
         switch self {
         case .updateAvailable: "▲"
+        case .differs: "≠"
         case .heldBack: "◆"
         case .changedHere: "◐"
         case .upToDate: "●"
@@ -52,7 +57,7 @@ enum SkillStatus: Equatable {
 
     var chipKind: StatusChip.Kind {
         switch self {
-        case .updateAvailable: .new
+        case .updateAvailable, .differs: .new
         case .changedHere, .checkFailed: .attention
         case .cantCheck, .notChecked, .noSource: .outline
         case .heldBack, .upToDate, .managed: .neutral
@@ -62,7 +67,7 @@ enum SkillStatus: Equatable {
     /// The block colour for a skill in this state.
     var tone: Tone {
         switch self {
-        case .updateAvailable: .new
+        case .updateAvailable, .differs: .new
         case .changedHere, .checkFailed: .attention
         case .upToDate, .heldBack: .rest
         case .cantCheck, .notChecked, .noSource, .managed: .quiet
@@ -73,6 +78,7 @@ enum SkillStatus: Equatable {
     var sentence: String {
         switch self {
         case .updateAvailable: "The source has changed since you installed this."
+        case .differs: "Differs from the source you linked. It may be older, or changed on this Mac."
         case .heldBack(let moved):
             moved ? "You are staying on this version. The source has moved on." : "You are staying on this version. The source has not changed."
         case .changedHere: "The files on this Mac differ from what was installed."
@@ -92,6 +98,20 @@ enum SkillStatus: Equatable {
         default: false
         }
     }
+}
+
+/// A source the reader pointed out for a skill that came with no installer record.
+struct SourceLink: Codable, Equatable {
+    var owner: String
+    var repository: String
+    var ref: String?
+    /// The folder inside the source; empty for the top of it.
+    var subpath: String
+    var linkedAt: Date
+    /// The content hash of the files on this Mac when the source was last asked.
+    var localHash: String?
+
+    var source: UpstreamSource { UpstreamSource(owner: owner, repository: repository, ref: ref) }
 }
 
 extension UpstreamState.Reason {

@@ -199,7 +199,10 @@ extension PanelModel {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
         }
         if store.cantCheckCount > 0 {
-            tail.append(.line(text: "\(store.cantCheckCount) can't be checked", data: "NO ANSWER", muted: true))
+            // Say why when there is one reason; the library has the rest.
+            let reasons = store.cantCheckReasons
+            let why = reasons.count == 1 ? reasons.first!.short.uppercased() : "SEE LIBRARY"
+            tail.append(.line(text: "\(store.cantCheckCount) can't be checked", data: why, muted: true))
         }
         if unknown > 0 {
             tail.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
@@ -211,11 +214,15 @@ extension PanelModel {
         if store.checksEnabled, !updates.isEmpty {
             var rows: [Row] = updates.prefix(3).map { installation in
                 var data = ""
-                var source = ""
-                if case .skillsLock(let name, _, _, let baseline, _) = installation.provenance,
-                   case .updateAvailable(let upstream) = store.status(for: installation) {
-                    source = name
-                    data = "\((baseline ?? "").prefix(7)) → \(upstream.prefix(7))"
+                let source = store.upstreamSource(for: installation)?.name ?? ""
+                switch store.status(for: installation) {
+                case .updateAvailable(let upstream):
+                    if case .skillsLock(_, _, _, let baseline, _) = installation.provenance {
+                        data = "\((baseline ?? "").prefix(7)) → \(upstream.prefix(7))"
+                    }
+                case .differs(let upstream):
+                    data = "\((store.link(for: installation)?.localHash ?? "").prefix(7)) ≠ \(upstream.prefix(7))"
+                default: break
                 }
                 return .item(title: installation.displayName, detail: source, data: data)
             }
@@ -225,10 +232,11 @@ extension PanelModel {
             return PanelModel(
                 tone: .new, label: "Updates", stamp: store.checkStamp,
                 number: "\(updates.count)",
-                lead: updates.count == 1 ? "skill has changed at its source" : "skills have changed at their source",
+                // "Differs" is true of both kinds: a known update and a linked skill with other content.
+                lead: updates.count == 1 ? "skill differs from its source" : "skills differ from their source",
                 note: "of the \(tracked) with a known source",
                 scale: ScaleReading(part: updates.count, whole: tracked,
-                                    partLabel: "\(updates.count) changed", wholeLabel: "\(tracked) tracked"),
+                                    partLabel: "\(updates.count) differ\(updates.count == 1 ? "s" : "")", wholeLabel: "\(tracked) tracked"),
                 rows: rows + tail, buttons: buttons, hint: hint, hintEnabled: !busy)
         }
 

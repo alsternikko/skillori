@@ -49,7 +49,7 @@ struct FirstStartView: View {
         }
         PlainList {
             bullet("Reads skill folders on this Mac")
-            bullet("Uploads nothing")
+            bullet("Never uploads your skills")
             bullet("Never runs a script from a skill", isLast: true)
         }
         footer {

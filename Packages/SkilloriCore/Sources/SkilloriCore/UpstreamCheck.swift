@@ -35,6 +35,34 @@ public struct UpstreamSource: Hashable, Sendable {
 
     public var name: String { "\(owner)/\(repository)" }
 
+    /// Reads what a person types or pastes when pointing at a source: `owner/repo`, a GitHub
+    /// address, or the address of a folder inside a repository (`…/tree/<branch>/<folder>`).
+    /// A branch name with a slash in it cannot be told from a folder, so it is not supported here.
+    public static func parse(_ text: String) -> (source: UpstreamSource, subpath: String?)? {
+        var input = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if input.hasSuffix("/") { input.removeLast() }
+        guard !input.isEmpty else { return nil }
+        if !input.contains("://"), !input.lowercased().hasPrefix("github.com/") {
+            return UpstreamSource(source: input, sourceURL: nil).map { ($0, nil) }
+        }
+        if !input.contains("://") { input = "https://" + input }
+        guard let url = URL(string: input), url.scheme == "https", url.host?.lowercased() == "github.com" else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard parts.count >= 2 else { return nil }
+        var ref: String?
+        var subpath: String?
+        if parts.count >= 4, parts[2] == "tree" || parts[2] == "blob" {
+            ref = parts[3]
+            var rest = Array(parts.dropFirst(4))
+            if rest.last == "SKILL.md" { rest.removeLast() }
+            subpath = rest.isEmpty ? nil : rest.joined(separator: "/")
+        } else if parts.count > 2 {
+            return nil
+        }
+        guard let source = UpstreamSource(source: "\(parts[0])/\(parts[1])", sourceURL: nil, ref: ref) else { return nil }
+        return (source, subpath)
+    }
+
     /// The page a person can open to look at the source themselves.
     public func webURL(subpath: String? = nil) -> URL? {
         var text = "https://github.com/\(owner)/\(repository)"
@@ -97,13 +125,22 @@ public struct UpstreamReading: Sendable, Equatable, Codable {
 public struct SourceTree: Sendable, Equatable {
     public let rootHash: String
     public let folders: [String: String]
+    /// Folders that hold a `SKILL.md`, sorted. The empty string stands for the top of the source.
+    public let skillFolders: [String]
     /// The source cut the listing short, so a missing folder proves nothing.
     public let truncated: Bool
 
-    public init(rootHash: String, folders: [String: String], truncated: Bool = false) {
+    public init(rootHash: String, folders: [String: String], skillFolders: [String] = [], truncated: Bool = false) {
         self.rootHash = rootHash
         self.folders = folders
+        self.skillFolders = skillFolders
         self.truncated = truncated
+    }
+
+    /// The tree id of a folder; the empty string or nil is the top of the source.
+    public func hash(of subpath: String?) -> String? {
+        let path = (subpath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return path.isEmpty ? rootHash : folders[path]
     }
 }
 
@@ -112,8 +149,7 @@ public enum UpstreamComparer {
     /// The ids are git tree ids, so equal ids mean identical content.
     public static func state(baseline: String?, subpath: String?, in tree: SourceTree) -> UpstreamState {
         guard let baseline, !baseline.isEmpty else { return .cannotCheck(.noBaseline) }
-        let path = (subpath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let current = path.isEmpty ? tree.rootHash : tree.folders[path] else {
+        guard let current = tree.hash(of: subpath) else {
             return .cannotCheck(tree.truncated ? .failed : .folderGone)
         }
         return current == baseline ? .upToDate : .updateAvailable(upstreamHash: current)
@@ -182,7 +218,12 @@ public struct GitHubTrees: Sendable {
         guard let listing = try? JSONDecoder().decode(Listing.self, from: data) else { return .failure(.failed) }
         let folders = Dictionary(listing.tree.filter { $0.type == "tree" }.map { ($0.path, $0.sha) },
                                  uniquingKeysWith: { first, _ in first })
-        return .success(SourceTree(rootHash: listing.sha, folders: folders, truncated: listing.truncated ?? false))
+        let skillFolders = listing.tree
+            .filter { $0.type == "blob" && ($0.path == "SKILL.md" || $0.path.hasSuffix("/SKILL.md")) }
+            .map { ($0.path as NSString).deletingLastPathComponent }
+            .sorted()
+        return .success(SourceTree(rootHash: listing.sha, folders: folders, skillFolders: skillFolders,
+                                   truncated: listing.truncated ?? false))
     }
 }
 
@@ -229,5 +270,46 @@ public enum UpstreamChecker {
             }
         }
         return answers
+    }
+}
+
+/// A folder in a source that a skill on this Mac might have come from.
+public struct SourceCandidate: Sendable, Equatable, Identifiable {
+    public enum Match: Int, Sendable, Comparable {
+        /// Byte for byte the same content as the skill on this Mac.
+        case identical
+        /// A skill folder with the same name; the content differs.
+        case sameName
+        /// Some other skill in the source.
+        case other
+
+        public static func < (a: Match, b: Match) -> Bool { a.rawValue < b.rawValue }
+    }
+
+    /// The folder inside the source; empty for the top of it.
+    public let subpath: String
+    public let hash: String
+    public let match: Match
+    public var id: String { subpath }
+
+    public init(subpath: String, hash: String, match: Match) {
+        self.subpath = subpath
+        self.hash = hash
+        self.match = match
+    }
+}
+
+public enum SourceMatcher {
+    /// The skill folders of a source, best match first: identical content, then the same
+    /// name, then the rest in order. Nothing is guessed: a name match is only a name match.
+    public static func candidates(localHash: String?, names: [String], in tree: SourceTree) -> [SourceCandidate] {
+        let wanted = Set(names.map { $0.lowercased() })
+        return tree.skillFolders.compactMap { folder -> SourceCandidate? in
+            guard let hash = tree.hash(of: folder) else { return nil }
+            let last = (folder as NSString).lastPathComponent.lowercased()
+            let match: SourceCandidate.Match = hash == localHash ? .identical : wanted.contains(last) ? .sameName : .other
+            return SourceCandidate(subpath: folder, hash: hash, match: match)
+        }
+        .sorted { a, b in a.match != b.match ? a.match < b.match : a.subpath < b.subpath }
     }
 }

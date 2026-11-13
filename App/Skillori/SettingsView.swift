@@ -185,7 +185,7 @@ struct SettingsView: View {
                 LabelText("No telemetry")
             }
             .foregroundStyle(Tone.rest.secondary)
-            Text("Skillori reads skill folders on this Mac. It doesn't upload anything, and it doesn't run scripts from skills.")
+            Text("Skillori reads skill folders on this Mac. It never uploads your skills, and it never runs scripts from them.")
                 .font(TypeRole.sans(15, .medium))
                 .tracking(-0.15)
                 .lineSpacing(3)

@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import SkilloriCore
 import SkilloriUI
 import SwiftUI
 
@@ -61,6 +62,26 @@ enum DebugSnapshots {
             let unknown = installs.first { $0.provenance == .unknown }
             render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
                    to: out.appendingPathComponent("detail-unknown.png"))
+            if let unknown {
+                let found = InventoryStore.LinkSearch(
+                    source: UpstreamSource(owner: "example", repository: "skills"), localHash: "aaa",
+                    candidates: [SourceCandidate(subpath: "skills/" + unknown.directoryName, hash: "bbb", match: .sameName),
+                                 SourceCandidate(subpath: "skills/docx", hash: "c", match: .other),
+                                 SourceCandidate(subpath: "skills/pdf", hash: "d", match: .other),
+                                 SourceCandidate(subpath: "skills/xlsx", hash: "e", match: .other)],
+                    suggested: nil)
+                render(LinkSourceSheet(installation: unknown).environment(store),
+                       size: CGSize(width: 520, height: 250), to: out.appendingPathComponent("link-source.png"))
+                render(LinkSourceSheet(installation: unknown, preview: found, text: "example/skills").environment(store),
+                       size: CGSize(width: 520, height: 440), to: out.appendingPathComponent("link-source-found.png"))
+            }
+            let linked = installs.first { store.link(for: $0) != nil }
+            if let linked {
+                render(LibraryView(initialSelection: linked.id).environment(store), size: lib,
+                       to: out.appendingPathComponent("library-linked.png"))
+                render(LibraryView(initialSelection: linked.id, showsDetail: true).environment(store), size: lib,
+                       to: out.appendingPathComponent("detail-linked.png"))
+            }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = 1
             if let image = icon.cgImage {
