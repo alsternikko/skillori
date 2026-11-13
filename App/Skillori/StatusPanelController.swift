@@ -74,9 +74,14 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         if NSApp.currentEvent?.type == .rightMouseUp {
             showContextMenu()
+        } else if isOpen {
+            close()
+        } else if let lostFocusAt, ProcessInfo.processInfo.systemUptime - lostFocusAt < 0.5 {
+            // The press that led to this click already closed the panel. Leave it closed.
         } else {
-            isOpen ? close() : open()
+            open()
         }
+        lostFocusAt = nil
     }
 
     private func showContextMenu() {
@@ -203,7 +208,21 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         }
     }
 
-    func windowDidResignKey(_ notification: Notification) { close() }
+    /// When the panel last closed because it lost focus.
+    private var lostFocusAt: TimeInterval?
+
+    /// Pressing the menu bar item takes focus from the panel before the click arrives.
+    /// That press must not close the panel here, or the click that follows would open it
+    /// again; the click itself toggles.
+    func windowDidResignKey(_ notification: Notification) {
+        guard isOpen else { return }
+        if let event = NSApp.currentEvent, event.type == .leftMouseDown,
+           let buttonWindow = statusItem.button?.window, event.window === buttonWindow {
+            return
+        }
+        lostFocusAt = ProcessInfo.processInfo.systemUptime
+        close()
+    }
 
     /// Escape: a keyboard action, so no animation.
     func panelDidCancel() { close(animated: false) }

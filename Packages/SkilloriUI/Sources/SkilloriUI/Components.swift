@@ -525,6 +525,9 @@ public struct SettingRow<Leading: View, Trailing: View>: View {
         .font(TypeRole.sans(13))
         .padding(.vertical, 10)
         .frame(minHeight: 40)
+        // A row is as tall as its content needs. Without this a tight parent can squeeze
+        // the row below its content, which then overflows or truncates.
+        .fixedSize(horizontal: false, vertical: true)
         .overlay(alignment: .bottom) { if !isLast { Palette.line.frame(height: 1) } }
     }
 }

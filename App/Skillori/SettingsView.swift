@@ -27,7 +27,12 @@ struct SettingsView: View {
     @Environment(InventoryStore.self) private var store
     /// True in our own window, which has no system title bar.
     var ownChrome = false
+    /// Reports the height the content needs, so the window can fit it exactly.
+    var onHeight: ((CGFloat) -> Void)?
     @State private var appearance = AppearanceSetting.current
+
+    private static let width: CGFloat = 640
+    private static let columnWidth = (width - 6 * 3) / 2
 
     var body: some View {
         VStack(spacing: 6) {
@@ -40,17 +45,23 @@ struct SettingsView: View {
                 .frame(height: 52)
             }
             folders
-            HStack(alignment: .top, spacing: 6) {
-                VStack(spacing: 6) {
-                    general
-                    checking
-                }
-                privacy
+            // The left column sets the height; the privacy block is laid over the space
+            // beside it, so it is exactly as tall.
+            VStack(spacing: 6) {
+                general
+                checking
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: Self.columnWidth)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .trailing) { privacy.frame(width: Self.columnWidth) }
         }
         .padding(EdgeInsets(top: ownChrome ? 0 : 6, leading: 6, bottom: 6, trailing: 6))
-        .frame(width: 640)
+        // Every part has a fixed height, so this is the height the window should have.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeight?($0) }
+        .frame(width: Self.width)
+        // No minimum height of its own: the window is fitted to the measured height, and a
+        // minimum here would have the system add the title bar's height on top of it.
+        .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
         .background(Palette.panel)
         .foregroundStyle(Palette.ink)
         .font(TypeRole.sans(13))
@@ -139,6 +150,8 @@ struct SettingsView: View {
             Text("Skillori reads this Mac and nothing else. Asking sources whether a skill has changed, and telling you about it, comes in a later version.")
                 .font(TypeRole.sans(12))
                 .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .foregroundStyle(Palette.ink2)
                 .padding(.top, 6)
                 .padding(.bottom, 8)
@@ -161,7 +174,7 @@ struct SettingsView: View {
                 .lineSpacing(3)
             Spacer(minLength: 12)
             HStack(spacing: 12) {
-                SkilloriMark().fill(Tone.rest.foreground).frame(width: 14, height: 20)
+                SkilloriMark().fill(Tone.rest.foreground).frame(width: 18, height: 18)
                 DataText("SKILLORI \(version)").foregroundStyle(Tone.rest.foreground.opacity(0.7))
                 Spacer()
                 DataText("RULES \(AdapterRules.rulesVersion.split(separator: " ").first.map(String.init)?.uppercased() ?? "")").foregroundStyle(Tone.rest.secondary)

@@ -49,6 +49,7 @@ final class WindowRouter {
     private let store: InventoryStore
     private(set) var library: NSWindow?
     private(set) var settings: NSWindow?
+    private var settingsHeight: CGFloat = 0
 
     init(store: InventoryStore) { self.store = store }
 
@@ -63,11 +64,27 @@ final class WindowRouter {
 
     func showSettings() {
         if settings == nil {
-            settings = makeWindow(title: "Settings", size: NSSize(width: 640, height: 420),
+            settings = makeWindow(title: "Settings", size: NSSize(width: 640, height: 720),
                                   minSize: nil, resizable: false, ownChrome: true,
-                                  content: SettingsView(ownChrome: true).environment(store))
+                                  content: SettingsView(ownChrome: true, onHeight: { [weak self] height in
+                                      // Reported from inside a layout pass; resize the window after it.
+                                      DispatchQueue.main.async { self?.fitSettings(height: height) }
+                                  }).environment(store))
+            settings?.contentView?.layoutSubtreeIfNeeded()
+            fitSettings(height: settingsHeight)
+            settings?.center()
         }
         present(settings)
+    }
+
+    /// Keeps the settings window exactly as tall as its content, with the top edge in place.
+    private func fitSettings(height: CGFloat) {
+        settingsHeight = height
+        guard let settings, height > 0, abs(settings.frame.height - height) > 0.5 else { return }
+        var frame = settings.frame
+        frame.origin.y += frame.height - height
+        frame.size.height = height
+        settings.setFrame(frame, display: true)
     }
 
     private func present(_ window: NSWindow?) {
@@ -93,8 +110,12 @@ final class WindowRouter {
         }
         window.title = title
         window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(rootView: content)
-        if resizable { window.setContentSize(size) }
+        // We size our windows ourselves. Left to size the window, the hosting view adds the
+        // title bar's height below content that already draws under the title bar.
+        let host = NSHostingView(rootView: content)
+        host.sizingOptions = []
+        window.contentView = host
+        window.setContentSize(size)
         if let minSize { window.contentMinSize = minSize }
         window.center()
         return window

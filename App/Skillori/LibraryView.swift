@@ -33,6 +33,10 @@ struct LibraryView: View {
     @State private var selection: Installation.ID?
     @State private var showsDetail: Bool
     @State private var search = ""
+    /// Groups the reader has opened.
+    @State private var expanded: Set<String> = []
+    /// The group the keyboard is on, when it is not on a skill.
+    @State private var groupCursor: String?
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
@@ -46,7 +50,7 @@ struct LibraryView: View {
         VStack(spacing: 6) {
             topBar
             if showsDetail, let installation = selected {
-                let rows = visible
+                let rows = groups.flatMap(\.items)
                 InstallationDetail(installation: installation,
                                    number: (rows.firstIndex { $0.id == installation.id } ?? 0) + 1,
                                    total: rows.count,
@@ -64,7 +68,10 @@ struct LibraryView: View {
         .foregroundStyle(Palette.ink)
         .font(TypeRole.sans(13))
         .ignoresSafeArea(edges: .top)
-        .onChange(of: filter) { selection = nil }
+        .onChange(of: filter) {
+            selection = nil
+            groupCursor = nil
+        }
     }
 
     // MARK: Top bar
@@ -72,7 +79,7 @@ struct LibraryView: View {
     private var topBar: some View {
         HStack(spacing: 16) {
             HStack(spacing: 8) {
-                SkilloriMark().fill(Palette.ink).frame(width: 13, height: 18)
+                SkilloriMark().fill(Palette.ink).frame(width: 18, height: 18)
                 Text("Library").font(TypeRole.sans(13, .medium))
             }
             .frame(width: 110, alignment: .leading)
@@ -165,18 +172,18 @@ struct LibraryView: View {
     }
 
     private var table: some View {
-        let rows = visible
-        // With the detail card open there is no room for every column; it shows source and revision.
-        let compact = showsDetail && selected != nil
+        let groups = groups
+        let rows = groups.flatMap(\.items)
+        let entries = entries(in: groups)
+        let numbers = Dictionary(uniqueKeysWithValues: rows.enumerated().map { ($1.id, $0 + 1) })
         let copies = Dictionary(rows.map { ($0.displayName, 1) }, uniquingKeysWith: +)
+        let firstManaged = groups.first { $0.kind == .managed }?.id
         return VStack(spacing: 0) {
             HStack(spacing: 0) {
                 LabelText("No").frame(width: Column.number, alignment: .leading)
                 LabelText("Name").frame(maxWidth: .infinity, alignment: .leading)
-                if !compact {
-                    LabelText("Source").frame(width: Column.source, alignment: .leading)
-                    LabelText("Revision").frame(width: Column.revision, alignment: .leading)
-                }
+                LabelText("Source").frame(width: Column.source, alignment: .leading)
+                LabelText("Revision").frame(width: Column.revision, alignment: .leading)
                 LabelText("Agents").frame(width: Column.agents, alignment: .leading)
                 LabelText("Status").frame(width: Column.status, alignment: .leading)
             }
@@ -188,27 +195,41 @@ struct LibraryView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, installation in
-                            InstallationRow(number: index + 1, installation: installation,
-                                            copies: copies[installation.displayName] ?? 1,
-                                            isSelected: installation.id == selection, compact: compact)
-                                .id(installation.id)
-                                .onTapGesture(count: 2) {
-                                    selection = installation.id
-                                    showsDetail = true
+                        ForEach(groups) { group in
+                            let open = isExpanded(group, among: groups)
+                            if group.id == firstManaged, filter != .managed { managedHeader(groups) }
+                            GroupRow(group: group, isOpen: open, hasCursor: groupCursor == group.id)
+                                .id(group.id)
+                                .onTapGesture { toggle(group, among: groups) }
+                            if open {
+                                ForEach(group.items) { installation in
+                                    InstallationRow(number: numbers[installation.id] ?? 0, installation: installation,
+                                                    copies: copies[installation.displayName] ?? 1,
+                                                    isSelected: installation.id == selection)
+                                        .id(installation.id)
+                                        .onTapGesture(count: 2) {
+                                            selection = installation.id
+                                            showsDetail = true
+                                        }
+                                        .onTapGesture {
+                                            groupCursor = nil
+                                            selection = installation.id == selection ? nil : installation.id
+                                            listFocused = true
+                                        }
                                 }
-                                .onTapGesture {
-                                    selection = installation.id == selection ? nil : installation.id
-                                    listFocused = true
-                                }
+                                Color.clear.frame(height: 8)
+                            }
                         }
                         if rows.isEmpty, store.inventory != nil { emptyState }
-                        if filter != .managed, search.isEmpty { managedSection }
                         Color.clear.frame(height: selected == nil ? 8 : 64)
                     }
                     .padding(.horizontal, 6)
+                    .padding(.top, 6)
                 }
                 .onChange(of: selection) { _, new in
+                    if let new { proxy.scrollTo(new) }
+                }
+                .onChange(of: groupCursor) { _, new in
                     if let new { proxy.scrollTo(new) }
                 }
             }
@@ -216,28 +237,111 @@ struct LibraryView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($listFocused)
-        .onKeyPress(.downArrow) { move(1, in: rows) }
-        .onKeyPress(.upArrow) { move(-1, in: rows) }
+        .onKeyPress(.downArrow) { move(1, in: entries) }
+        .onKeyPress(.upArrow) { move(-1, in: entries) }
+        .onKeyPress(.rightArrow) { setCursorGroup(open: true, among: groups) }
+        .onKeyPress(.leftArrow) { setCursorGroup(open: false, among: groups) }
         .onKeyPress(.return) {
+            if let id = groupCursor, let group = groups.first(where: { $0.id == id }) {
+                toggle(group, among: groups)
+                return .handled
+            }
             guard selected != nil else { return .ignored }
             showsDetail.toggle()
             return .handled
         }
         .onKeyPress(.escape) {
-            guard selection != nil else { return .ignored }
-            if showsDetail { showsDetail = false } else { selection = nil }
+            guard selection != nil || groupCursor != nil else { return .ignored }
+            if showsDetail { showsDetail = false } else { selection = nil; groupCursor = nil }
             return .handled
         }
     }
 
+    // MARK: Groups
+
+    /// The skills that match the filter and the search, gathered by where they come from:
+    /// one group per source, one for skills with no known source, one per owning app.
+    private var groups: [SkillGroup] {
+        var order: [String] = []
+        var byID: [String: SkillGroup] = [:]
+        for installation in visible {
+            let (id, title, kind): (String, String, SkillGroup.Kind) = switch installation.provenance {
+            case .skillsLock(let source, _, _, _, _): ("source:" + source, source, .source)
+            case .unknown: ("unknown", "No known source", .unknown)
+            case .managed(let owner): ("managed:" + owner, owner, .managed)
+            }
+            if byID[id] == nil {
+                byID[id] = SkillGroup(id: id, title: title, kind: kind, items: [])
+                order.append(id)
+            }
+            byID[id]?.items.append(installation)
+        }
+        return order.compactMap { byID[$0] }.sorted { a, b in
+            if a.kind != b.kind { return a.kind.rawValue < b.kind.rawValue }
+            if a.items.count != b.items.count { return a.items.count > b.items.count }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
+    }
+
+    /// A group is open when the reader opened it, when it is the only one, while searching,
+    /// or when it holds the selected skill.
+    private func isExpanded(_ group: SkillGroup, among groups: [SkillGroup]) -> Bool {
+        expanded.contains(group.id) || groups.count == 1 || !search.isEmpty
+            || group.items.contains { $0.id == selection }
+    }
+
+    private func toggle(_ group: SkillGroup, among groups: [SkillGroup]) {
+        let open = isExpanded(group, among: groups)
+        withAnimation(reduceMotion ? nil : Motion.swap) {
+            if open {
+                expanded.remove(group.id)
+                if group.items.contains(where: { $0.id == selection }) { selection = nil }
+            } else {
+                expanded.insert(group.id)
+            }
+        }
+        groupCursor = group.id
+        selection = open ? selection : nil
+        listFocused = true
+    }
+
+    private func setCursorGroup(open: Bool, among groups: [SkillGroup]) -> KeyPress.Result {
+        guard let id = groupCursor, let group = groups.first(where: { $0.id == id }),
+              isExpanded(group, among: groups) != open else { return .ignored }
+        toggle(group, among: groups)
+        return .handled
+    }
+
+    /// What the arrow keys step through: every group, and the skills of the open ones.
+    private func entries(in groups: [SkillGroup]) -> [Entry] {
+        groups.flatMap { group in
+            [Entry.group(group.id)] + (isExpanded(group, among: groups) ? group.items.map { .skill($0.id) } : [])
+        }
+    }
+
+    private func move(_ step: Int, in entries: [Entry]) -> KeyPress.Result {
+        guard !entries.isEmpty else { return .ignored }
+        let here: Entry? = selection.map { .skill($0) } ?? groupCursor.map { .group($0) }
+        let current = here.flatMap { entries.firstIndex(of: $0) }
+        let next = current.map { min(max($0 + step, 0), entries.count - 1) } ?? (step > 0 ? 0 : entries.count - 1)
+        // Keyboard moves are immediate: no animation on something pressed many times.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            switch entries[next] {
+            case .group(let id): selection = nil; groupCursor = id
+            case .skill(let id): groupCursor = nil; selection = id
+            }
+        }
+        return .handled
+    }
+
+    /// Steps between skills in the detail view.
     private func move(_ step: Int, in rows: [Installation]) -> KeyPress.Result {
         guard !rows.isEmpty else { return .ignored }
         let current = rows.firstIndex { $0.id == selection }
         let next = current.map { min(max($0 + step, 0), rows.count - 1) } ?? (step > 0 ? 0 : rows.count - 1)
-        // Keyboard moves are immediate: no animation on something pressed many times.
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { selection = rows[next].id }
+        selection = rows[next].id
         return .handled
     }
 
@@ -266,71 +370,17 @@ struct LibraryView: View {
         .padding(.vertical, 28)
     }
 
-    /// Skills owned by apps, grouped by owner. Read-only here.
-    @ViewBuilder private var managedSection: some View {
-        let groups = managedGroups
-        if !groups.isEmpty {
-            HStack {
-                LabelText("Managed by apps · \(groups.reduce(0) { $0 + $1.count })").foregroundStyle(Palette.ink)
-                Spacer()
-                LabelText("Read-only here. Each app updates its own.").foregroundStyle(Palette.ink2)
-            }
-            .frame(height: 40)
-            .overlay(alignment: .top) { Palette.line.frame(height: 1) }
-            .overlay(alignment: .bottom) { Palette.line.frame(height: 1) }
-            .padding(.horizontal, 10)
-            .padding(.top, 6)
-
-            ForEach(Array(groups.enumerated()), id: \.element.owner) { index, group in
-                HStack(spacing: 0) {
-                    DataText(index == groups.count - 1 ? "└─" : "├─")
-                        .foregroundStyle(Palette.ink3)
-                        .frame(width: Column.number, alignment: .leading)
-                    Text(group.owner).font(TypeRole.sans(13, .medium)).lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    DataText("\(group.count) skill\(group.count == 1 ? "" : "s")")
-                        .frame(width: showsDetail && selected != nil ? Column.agents : Column.source, alignment: .leading)
-                    if !(showsDetail && selected != nil) {
-                        DataText(group.path).truncationMode(.middle)
-                            .frame(width: Column.revision + Column.agents, alignment: .leading)
-                    }
-                    StatusChip("Managed").frame(width: Column.status, alignment: .leading)
-                }
-                .foregroundStyle(Palette.ink2)
-                .frame(height: 40)
-                .overlay(alignment: .bottom) {
-                    if index < groups.count - 1 { Palette.line.frame(height: 1) }
-                }
-                .padding(.horizontal, 10)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    search = ""
-                    filter = .managed
-                }
-                .help("Show the skills managed by apps")
-            }
+    /// Divides the reader's own skills from the ones apps own.
+    private func managedHeader(_ groups: [SkillGroup]) -> some View {
+        let count = groups.filter { $0.kind == .managed }.reduce(0) { $0 + $1.items.count }
+        return HStack {
+            LabelText("Managed by apps · \(count)").foregroundStyle(Palette.ink)
+            Spacer()
+            LabelText("Read-only here. Each app updates its own.").foregroundStyle(Palette.ink2)
         }
-    }
-
-    private var managedGroups: [(owner: String, count: Int, path: String)] {
-        var byOwner: [String: [Installation]] = [:]
-        for installation in store.inventory?.installations ?? [] {
-            if case .managed(let owner) = installation.provenance { byOwner[owner, default: []].append(installation) }
-        }
-        return byOwner
-            .map { (owner: $0.key, count: $0.value.count, path: Self.commonFolder(of: $0.value.map(\.canonicalPath))) }
-            .sorted { $0.count > $1.count }
-    }
-
-    private static func commonFolder(of paths: [String]) -> String {
-        guard var common = paths.first.map({ URL(fileURLWithPath: $0).deletingLastPathComponent().pathComponents }) else {
-            return ""
-        }
-        for path in paths.dropFirst() {
-            let parts = URL(fileURLWithPath: path).pathComponents
-            common = Array(zip(common, parts).prefix { $0 == $1 }.map(\.0))
-        }
-        return NSString.path(withComponents: common).abbreviatingHome
+        .frame(height: 40)
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
     }
 
     // MARK: Selection
@@ -369,7 +419,7 @@ struct LibraryView: View {
 
     private var visible: [Installation] {
         let all = store.inventory?.installations ?? []
-        let filtered = all.filter(filter.includes)
+        let filtered = all.filter { filter.includes($0) || (filter == .yours && isManaged($0)) }
             .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
         guard !search.isEmpty else { return filtered }
         return filtered.filter { installation in
@@ -384,9 +434,99 @@ struct LibraryView: View {
         }
     }
 
+    private func isManaged(_ installation: Installation) -> Bool {
+        if case .managed = installation.provenance { return true }
+        return false
+    }
+
     private var selected: Installation? {
         guard let selection else { return nil }
         return store.inventory?.installations.first { $0.id == selection }
+    }
+}
+
+/// Skills that share an origin.
+struct SkillGroup: Identifiable {
+    enum Kind: Int { case source, unknown, managed }
+    let id: String
+    let title: String
+    let kind: Kind
+    var items: [Installation]
+
+    var agents: Set<Agent> { Set(items.flatMap(\.agents)) }
+    var changed: Int {
+        items.filter { if case .skillsLock(_, _, _, _, .modified) = $0.provenance { true } else { false } }.count
+    }
+}
+
+private enum Entry: Equatable {
+    case group(String)
+    case skill(Installation.ID)
+}
+
+/// The heading of a group: what it is, how many skills it holds, and a caret that opens it.
+private struct GroupRow: View {
+    let group: SkillGroup
+    let isOpen: Bool
+    let hasCursor: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .rotationEffect(.degrees(isOpen ? 90 : 0))
+                .foregroundStyle(Palette.ink2)
+                .frame(width: Column.number - 14, alignment: .leading)
+                .padding(.leading, 2)
+                .padding(.trailing, 12)
+            Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1).truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            DataText("\(group.items.count) skill\(group.items.count == 1 ? "" : "s")")
+                .foregroundStyle(Palette.ink2)
+                .frame(width: Column.source, alignment: .leading)
+            DataText(note)
+                .foregroundStyle(Palette.ink3)
+                .frame(width: Column.revision, alignment: .leading)
+            TickCount(group.agents.count)
+                .frame(width: Column.agents, alignment: .leading)
+                .help(group.agents.sorted().map(\.displayName).joined(separator: ", "))
+            chip.frame(width: Column.status, alignment: .leading)
+        }
+        .frame(height: 44)
+        .padding(.horizontal, 10)
+        .background(Palette.ink.opacity(isOpen ? 0.05 : hovering || hasCursor ? 0.04 : 0),
+                    in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+        .overlay {
+            if hasCursor {
+                RoundedRectangle(cornerRadius: Radius.row, style: .continuous).strokeBorder(Palette.ink.opacity(0.28), lineWidth: 1)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if !isOpen { Palette.line.frame(height: 1).padding(.horizontal, 10) }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isOpen ? "Open" : "Closed")
+    }
+
+    private var note: String {
+        switch group.kind {
+        case .source: ""
+        case .unknown: "not linked"
+        case .managed: "set by the app"
+        }
+    }
+
+    @ViewBuilder private var chip: some View {
+        switch group.kind {
+        case .source where group.changed > 0: StatusChip("\(group.changed) changed here", kind: .new)
+        case .source: StatusChip("Tracked")
+        case .unknown: StatusChip("Source unknown", kind: .outline)
+        case .managed: StatusChip("Managed")
+        }
     }
 }
 
@@ -403,7 +543,6 @@ private struct InstallationRow: View {
     let installation: Installation
     let copies: Int
     let isSelected: Bool
-    var compact = false
     @State private var hovering = false
 
     var body: some View {
@@ -428,15 +567,13 @@ private struct InstallationRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if !compact {
-                DataText(source.text).truncationMode(.middle)
-                    .foregroundStyle(source.known ? quiet : faint)
-                    .frame(width: Column.source - 12, alignment: .leading)
-                    .padding(.trailing, 12)
-                DataText(revision.text)
-                    .foregroundStyle(revision.known ? quiet : faint)
-                    .frame(width: Column.revision, alignment: .leading)
-            }
+            DataText(source.text).truncationMode(.middle)
+                .foregroundStyle(source.known ? quiet : faint)
+                .frame(width: Column.source - 12, alignment: .leading)
+                .padding(.trailing, 12)
+            DataText(revision.text)
+                .foregroundStyle(revision.known ? quiet : faint)
+                .frame(width: Column.revision, alignment: .leading)
             TickCount(installation.agents.count)
                 .foregroundStyle(strong)
                 .frame(width: Column.agents, alignment: .leading)

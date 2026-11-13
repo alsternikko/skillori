@@ -43,7 +43,7 @@ struct FirstStartView: View {
 
     @ViewBuilder private var welcome: some View {
         hero(.rest, label: "Welcome") {
-            SkilloriMark().fill(Tone.rest.foreground).frame(width: 58, height: 81).padding(.top, 22)
+            SkilloriMark().fill(Tone.rest.foreground).frame(width: 72, height: 72).padding(.top, 22)
             Spacer(minLength: 0)
             lead("Your agent skills, in one place.")
         }
@@ -200,7 +200,7 @@ private struct AgentConstellation: View {
             }
             .stroke(Palette.ink3, lineWidth: 1)
 
-            SkilloriMark().fill(.white).frame(width: 20, height: 28)
+            SkilloriMark().fill(.white).frame(width: 28, height: 28)
                 .frame(width: 48, height: 48)
                 .background(Palette.charcoal, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .position(Self.centre)

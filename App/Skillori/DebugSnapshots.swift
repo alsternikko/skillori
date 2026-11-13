@@ -51,13 +51,14 @@ enum DebugSnapshots {
                    to: out.appendingPathComponent("detail.png"))
             render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store)
                 .environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("detail-dark.png"))
-            render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 470),
+            render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 540),
                    to: out.appendingPathComponent("settings.png"))
             render(SettingsView(ownChrome: true).environment(store).environment(\.colorScheme, .dark),
-                   size: CGSize(width: 640, height: 470), to: out.appendingPathComponent("settings-dark.png"))
+                   size: CGSize(width: 640, height: 540), to: out.appendingPathComponent("settings-dark.png"))
             let unknown = installs.first { $0.provenance == .unknown }
             render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
                    to: out.appendingPathComponent("detail-unknown.png"))
+            render(MarkSheet(), size: CGSize(width: 1040, height: 460), to: out.appendingPathComponent("mark.png"))
             NSApp.terminate(nil)
         }
     }
@@ -93,3 +94,42 @@ private struct PanelBackdrop<Content: View>: View {
     }
 }
 #endif
+
+/// The mark as app icon and as menu bar image, at real size and enlarged.
+private struct MarkSheet: View {
+    var body: some View {
+        HStack(spacing: 32) {
+            appIcon(side: 328)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) { appIcon(side: 64); appIcon(side: 32); appIcon(side: 16) }
+                bar(light: true, scale: 6)
+                bar(light: false, scale: 6)
+                bar(light: true, scale: 1)
+                bar(light: false, scale: 1)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(hex: 0xE6E6E8))
+    }
+
+    private func appIcon(side: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: side * 100 / 820, style: .circular)
+            .fill(.black)
+            .overlay(SkilloriMark(safeZone: true).fill(.white))
+            .frame(width: side, height: side)
+    }
+
+    private func bar(light: Bool, scale: CGFloat) -> some View {
+        HStack(spacing: 8 * scale) {
+            ForEach([SkilloriMark.MenuBarState.rest, .attention, .stale], id: \.self) { state in
+                SkilloriMark(safeZone: true, solidSign: state == .attention)
+                    .fill((light ? Color.white : Color.black).opacity(state == .stale ? 0.4 : 1))
+                    .frame(width: 22 * scale, height: 22 * scale)
+            }
+        }
+        .padding(.horizontal, 8 * scale)
+        .frame(height: 24 * scale)
+        .background(light ? Color(hex: 0x8E8E93) : Color(hex: 0xD8D8DC))
+    }
+}

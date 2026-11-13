@@ -67,6 +67,13 @@ enum DebugSelfTest {
             await pause(500)
             check("⌘, opens Settings", windows.settings?.isVisible == true)
             check("panel closes when Settings opens", !panel.isOpen)
+            let settingsHeight = windows.settings?.frame.height ?? 0
+            if let view = windows.settings?.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds),
+               let path = ProcessInfo.processInfo.environment["SKILLORI_SELFTEST"] {
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".settings.png"))
+            }
+            check("Settings window fits its content", settingsHeight > 300 && settingsHeight < 640, "height \(settingsHeight)")
             windows.settings?.close()
 
             panel.open()
