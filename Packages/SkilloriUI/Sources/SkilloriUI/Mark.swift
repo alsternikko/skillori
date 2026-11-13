@@ -25,12 +25,9 @@ public struct SkilloriMark: Shape {
 
     /// With the safe zone the shape fills its rect as the 820 grid; without it, as the 580 symbol.
     public var safeZone: Bool
-    /// Draws a plain dot in place of the ©.
-    public var solidSign: Bool
 
-    public init(safeZone: Bool = false, solidSign: Bool = false) {
+    public init(safeZone: Bool = false) {
         self.safeZone = safeZone
-        self.solidSign = solidSign
     }
 
     public func path(in rect: CGRect) -> Path {
@@ -42,11 +39,7 @@ public struct SkilloriMark: Shape {
             path.addEllipse(in: Self.cell(dot.col, dot.row, inset: inset))
         }
         let sign = Self.cell(Self.signCell.col, Self.signCell.row, inset: inset)
-        if solidSign {
-            path.addEllipse(in: sign)
-        } else {
-            path.addPath(Self.copyrightSign, transform: CGAffineTransform(translationX: sign.minX, y: sign.minY))
-        }
+        path.addPath(Self.copyrightSign, transform: CGAffineTransform(translationX: sign.minX, y: sign.minY))
         let transform = CGAffineTransform(translationX: rect.midX - side * scale / 2, y: rect.midY - side * scale / 2)
             .scaledBy(x: scale, y: scale)
         return path.applying(transform)
@@ -129,19 +122,29 @@ public struct SkilloriMark: Shape {
 public extension SkilloriMark {
     enum MenuBarState: Sendable { case rest, attention, stale }
 
-    /// Template image for the menu bar: the full grid with its safe zone, so the system
-    /// colours it for the bar it sits on. `attention` fills the © cell with a plain dot.
+    /// Image for the menu bar: the full grid with its safe zone.
+    ///
+    /// At rest and when stale it is a template image, so the system colours it for the bar
+    /// it sits on. `attention` is the one state with a colour of its own: the mark in ink
+    /// on a lilac plate, the same block the app uses for "needs you".
     @MainActor
     static func menuBarImage(_ state: MenuBarState = .rest, side: CGFloat = 22) -> NSImage {
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            let mark = SkilloriMark(safeZone: true, solidSign: state == .attention)
-            context.addPath(mark.path(in: rect).cgPath)
-            context.setFillColor(NSColor.black.withAlphaComponent(state == .stale ? 0.4 : 1).cgColor)
+            var ink = NSColor.black.withAlphaComponent(state == .stale ? 0.4 : 1)
+            if state == .attention {
+                let radius = side * 5 / 22
+                context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+                context.setFillColor(NSColor(srgbRed: 0xB5 / 255, green: 0x92 / 255, blue: 0xFF / 255, alpha: 1).cgColor)
+                context.fillPath()
+                ink = NSColor(srgbRed: 0x15 / 255, green: 0x15 / 255, blue: 0x16 / 255, alpha: 1)
+            }
+            context.addPath(SkilloriMark(safeZone: true).path(in: rect).cgPath)
+            context.setFillColor(ink.cgColor)
             context.fillPath()
             return true
         }
-        image.isTemplate = true
+        image.isTemplate = state != .attention
         image.accessibilityDescription = "Skillori"
         return image
     }

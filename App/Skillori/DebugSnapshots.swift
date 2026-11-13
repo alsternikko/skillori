@@ -129,9 +129,9 @@ private struct MarkSheet: View {
     private func bar(light: Bool, scale: CGFloat) -> some View {
         HStack(spacing: 8 * scale) {
             ForEach([SkilloriMark.MenuBarState.rest, .attention, .stale], id: \.self) { state in
-                SkilloriMark(safeZone: true, solidSign: state == .attention)
-                    .fill((light ? Color.white : Color.black).opacity(state == .stale ? 0.4 : 1))
-                    .frame(width: 22 * scale, height: 22 * scale)
+                // The image the menu bar really gets; template states take the bar's colour.
+                Image(nsImage: SkilloriMark.menuBarImage(state, side: 22 * scale))
+                    .foregroundStyle(light ? Color.white : Color.black)
             }
         }
         .padding(.horizontal, 8 * scale)

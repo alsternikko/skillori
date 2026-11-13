@@ -125,7 +125,7 @@ Ett S av femton jämnstora punkter på ett rutnät om fem gånger sju, enligt pr
 - **Punktstorlek:** 92 % av rutnätets steg, så grannar nästan möts. 80 % och 70 % visas som alternativ.
 - **Appikon:** ljusa punkter på ett kolsvart rundat kort.
 - **Samma teckning i alla storlekar.** I 16 px blir varje punkt ungefär två pixlar, så menyradsikonen är märket självt.
-- **Menyradens tillstånd:** hela S:et när allt stämmer, en uppsvälld övre ändpunkt vid uppdateringar, punkter som tänds i skrivordning vid kontroll, och nedtonat utan kontakt.
+- **Menyradens tillstånd:** i läget "kräver dig" ligger märket i svart på en lila platta (22 pt, hörnradie 5), samma block som appen använder för "kräver dig". Produktägaren valde det 13 november bland fyra kandidater (`native/kraver-dig-kandidater-2026-11-13.png`). Det är det enda läget där ikonen har egen färg; i vila är den en mallbild som macOS färgar. Läget utlöses i dag av lokala ändringar i en spårad skill. Utan aktuell avläsning tonas hela märket ned.
 - **Rörelse:** femton punkter som flyttar sig mellan arrangemang. Bara beskriven, inte animerad.
 - **Ordbild:** märket på kort med namnet i Inter, och en variant där märket står som första bokstav.
 - **Kvadratiskt alternativ:** tretton punkter på fem gånger fem.
