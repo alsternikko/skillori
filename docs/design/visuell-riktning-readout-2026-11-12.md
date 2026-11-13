@@ -1,6 +1,6 @@
 # Visuell riktning "Readout" — 12 november 2026
 
-**Status:** Omgång 3 är ritad i sin helhet och sedan byggd i appen. Appen är nu facit; skisserna på canvasen är inte uppdaterade efter den och visar bland annat det tidigare märket. Se [Byggt i appen efter skisserna](#byggt-i-appen-efter-skisserna-13-november).
+**Status:** Omgång 3 är ritad i sin helhet och sedan byggd i appen. Appen är facit. Canvasen är uppdaterad 13 november med märket version 2 (artboard 01, 02, 08, 09 och 10) och biblioteket som träd (artboard 02); övriga ark är oförändrade och visar fortfarande etapp 2 som den är tänkt, inte som den är byggd. Se [Byggt i appen efter skisserna](#byggt-i-appen-efter-skisserna-13-november).
 **Canvas:** [Skillori – visuell riktning Readout](https://claude.ai/artifact/E4o4Z5GrzN1heWNrRM58ov) (privat tills den delas). Elva artboards.
 **Bilder i repot:** [`readout-2026-11-12/v3/`](readout-2026-11-12/v3/). Tidigare omgångar finns i `v1/` och `v2/`.
 **Underlag:** [Pinterest-referenserna](pinterest-referenser-2026-11-12.md), [typografin](typografi-2026-11-12.md), [Mobbin-baselinen](mobbin-baseline-2026-11-11.md), [UI-grunden](ui-bibliotek-utforskning.md).
