@@ -16,9 +16,18 @@ public enum Palette {
     public static let onInk = Color(light: 0xFFFFFF, dark: 0x151516)
 
     public static let charcoal = Color(hex: 0x1E1E1F)
-    public static let lime = Color(hex: 0xBDF24B)
-    public static let lilac = Color(hex: 0xB592FF)
-    /// Fixed near-black for text on lime and lilac, in both appearances.
+    /// The flat accents, for chips, the menu bar plate and other things too small to carry light.
+    /// Both come from Orchid (see `LightRamp`). Something new takes its calm end, a pale
+    /// pink-lilac. Needs you takes the blue the ramp passes through between lilac and green
+    /// (measured there as #7A86A5), at the same hue but lighter and clearer, to sit with the pink.
+    public static let accentNew = Color(hex: accentNewHex)
+    public static let accentAttention = Color(hex: accentAttentionHex)
+    public static let accentNewHex: UInt32 = 0xF1C8F0
+    public static let accentAttentionHex: UInt32 = 0x8DB3F2
+    /// A soft orange in the same character, from the study's Fruit ramp (measured as #D27E42,
+    /// lifted to the blue's lightness). Part of the palette; nothing uses it yet.
+    public static let orange = Color(hex: 0xF19A5F)
+    /// Fixed near-black for text on the flat accents, in both appearances.
     public static let inkFixed = Color(hex: 0x151516)
 }
 
@@ -48,8 +57,8 @@ public enum Tone: Sendable {
     public var background: Color {
         switch self {
         case .rest: Color(light: 0x1E1E1F, dark: 0xF1F1F3)
-        case .new: Palette.lime
-        case .attention: Palette.lilac
+        case .new: Palette.accentNew
+        case .attention: Palette.accentAttention
         case .quiet: Palette.softBlock
         }
     }

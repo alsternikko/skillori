@@ -37,10 +37,13 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders") {
                         NSWorkspace.shared.open(url)
                     }
-                }
+                },
+                contentResized: { [weak self] in self?.layoutPanel(animated: true) }
             ))
             .environment(store)
             .frame(width: Self.panelWidth)
+            // While the window is still on its way to a new height, the content stays at its top.
+            .frame(maxHeight: .infinity, alignment: .top)
         )
         panel.setContent(host)
         panel.delegate = self
@@ -59,7 +62,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     private func observeStore() {
         withObservationTracking {
-            // Lilac for what needs the reader, lime for something new at a source, plain otherwise.
+            // A plate in the flat accent for what needs the reader or for something new at a source, plain otherwise.
             let updates = store.checksEnabled ? store.updateCount : 0
             let state: SkilloriMark.MenuBarState = store.needsAttention ? .attention : updates > 0 ? .new : .rest
             statusItem.button?.image = SkilloriMark.menuBarImage(state)

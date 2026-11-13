@@ -8,9 +8,9 @@ extension PanelModel {
     static let sampleUpdates = PanelModel(
         tone: .new, label: "Updates", stamp: "Checked 12 min ago", number: "2",
         lead: "skills changed upstream", note: "of the 29 you installed",
-        rows: [.item(title: "emil-design-eng", detail: "emilkowalski/skills", data: "e79b9cc → 4f1a02d"),
-               .item(title: "find-skills", detail: "vercel-labs/skills", data: "0c4d1e7 → a93f0b2"),
-               .link(text: "9 have no known source", label: "Link", command: .library)],
+        groups: [UpdateGroup(title: "emilkowalski/skills", items: [.init(title: "emil-design-eng", data: "→ 4f1a02d")], count: "1 UPDATE"),
+                 UpdateGroup(title: "vercel-labs/skills", items: [.init(title: "find-skills", data: "→ a93f0b2")], count: "1 UPDATE")],
+        rows: [.link(text: "9 have no known source", label: "Link", command: .library)],
         buttons: [Button(title: "Review 2", prominent: true, command: .library),
                   Button(title: "Library", prominent: false, command: .library)],
         hint: "Check now ⌘R")

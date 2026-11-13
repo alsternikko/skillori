@@ -157,16 +157,20 @@ final class UpdateRunner {
 struct CommandFrame: View {
     @Environment(InventoryStore.self) private var store
     let installations: [Installation]
-    /// In the menu bar panel: no copy button and fewer lines of output.
+    /// In the menu bar panel: a slim bar, no copy button and fewer lines of output.
     var compact = false
 
     var body: some View {
         let runner = store.updater
         let names = installations.map(\.directoryName)
         let mine = runner.names == names
+        // In the panel one frame stands for a whole source, so a run of some of its skills reports here too.
+        let partial = compact && !mine && !runner.names.isEmpty && Set(runner.names).isSubset(of: Set(names))
         let phase = mine ? runner.phase : .idle
-        let lines = mine ? runner.lastLines(compact ? 3 : 8) : []
+        let reported = mine || partial ? runner.phase : .idle
+        let lines = mine || partial ? runner.lastLines(compact ? 3 : 8) : []
         let tone = Tone.rest
+        let inset: CGFloat = compact ? 10 : 14
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("$").foregroundStyle(tone.secondary)
@@ -179,21 +183,23 @@ struct CommandFrame: View {
                     CopyUpdateCommandButton(installation: first, prominent: false, tone: tone)
                 }
                 Button(label(for: phase)) { Task { await store.update(installations) } }
-                    .buttonStyle(PillButtonStyle(prominent: phase != .succeeded, on: tone))
+                    .buttonStyle(PillButtonStyle(prominent: phase != .succeeded, on: tone, compact: compact))
                     .disabled(runner.isRunning || phase == .succeeded)
             }
-            .font(TypeRole.mono(11.5))
-            .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 8))
+            .font(TypeRole.mono(compact ? 10.5 : 11.5))
+            .padding(compact ? EdgeInsets(top: 5, leading: inset, bottom: 5, trailing: 5)
+                     : EdgeInsets(top: 8, leading: inset, bottom: 8, trailing: 8))
 
-            if case .failed(let why) = phase {
+            if case .failed(let why) = reported {
                 tone.foreground.opacity(0.14).frame(height: 1)
-                Text(why)
+                // After a run of one skill, say which: the command above is the whole source's.
+                Text(partial ? "\(runner.names.joined(separator: ", ")): \(why)" : why)
                     .font(TypeRole.sans(12))
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(EdgeInsets(top: 8, leading: 14, bottom: lines.isEmpty ? 10 : 2, trailing: 14))
+                    .padding(EdgeInsets(top: 8, leading: inset, bottom: lines.isEmpty ? 10 : 2, trailing: inset))
             }
             if !lines.isEmpty {
-                if case .failed = phase {} else { tone.foreground.opacity(0.14).frame(height: 1) }
+                if case .failed = reported {} else { tone.foreground.opacity(0.14).frame(height: 1) }
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                         Text(line).lineLimit(1).truncationMode(.tail)
@@ -202,13 +208,13 @@ struct CommandFrame: View {
                 .font(TypeRole.mono(10.5))
                 .foregroundStyle(tone.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(EdgeInsets(top: 8, leading: 14, bottom: 10, trailing: 14))
+                .padding(EdgeInsets(top: 8, leading: inset, bottom: 10, trailing: inset))
                 .textSelection(.enabled)
             }
         }
         .foregroundStyle(tone.foreground)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
-        .animation(Motion.swap, value: phase)
+        .background(tone.background, in: RoundedRectangle(cornerRadius: compact ? Radius.row : Radius.block, style: .circular))
+        .animation(Motion.swap, value: reported)
         .accessibilityElement(children: .contain)
     }
 

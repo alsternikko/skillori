@@ -51,10 +51,12 @@ struct LibraryView: View {
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
-    init(initialFilter: LibraryFilter = .yours, initialSelection: Installation.ID? = nil, showsDetail: Bool = false) {
+    init(initialFilter: LibraryFilter = .yours, initialSelection: Installation.ID? = nil, showsDetail: Bool = false,
+         initialGroup: String? = nil) {
         _filter = State(initialValue: initialFilter)
         _selection = State(initialValue: initialSelection)
         _showsDetail = State(initialValue: showsDetail)
+        _groupCursor = State(initialValue: initialGroup)
     }
 
     var body: some View {
@@ -205,9 +207,13 @@ struct LibraryView: View {
             // The selected skill's actions are a fixed row under the list, never over it.
             if filter != .coverage, let installation = selected {
                 actionBar(installation).transition(.opacity)
+            } else if filter != .coverage, let (group, updatable) = cursorGroupWithUpdates {
+                // A source under the cursor offers its updates in one go.
+                groupBar(group, updatable: updatable).transition(.opacity)
             }
         }
         .animation(reduceMotion ? nil : Motion.swap, value: selected?.id)
+        .animation(reduceMotion ? nil : Motion.swap, value: groupCursor)
     }
 
     private var table: some View {
@@ -440,6 +446,40 @@ struct LibraryView: View {
     }
 
     // MARK: Selection
+
+    /// The source under the cursor and those of its skills the installer can update now.
+    private var cursorGroupWithUpdates: (SkillGroup, [Installation])? {
+        guard let groupCursor, let group = groups.first(where: { $0.id == groupCursor }), group.kind == .source else { return nil }
+        let updatable = group.items.filter { isUpdate(store.status(for: $0)) }
+        return updatable.isEmpty ? nil : (group, updatable)
+    }
+
+    /// One press runs the installer's update for every skill of a source that has one.
+    /// Skills the reader holds back are not among them.
+    private func groupBar(_ group: SkillGroup, updatable: [Installation]) -> some View {
+        let runner = store.updater
+        let names = updatable.map(\.directoryName)
+        let mine = runner.names == names
+        let count = updatable.count
+        var text = count == group.items.count
+            ? "\(count) skill\(count == 1 ? " has" : "s have") an update at the source"
+            : "\(count) of \(group.items.count) skills \(count == 1 ? "has" : "have") an update at the source"
+        if mine, runner.isRunning { text = "Running the installer's update…" }
+        if mine, case .failed(let why) = runner.phase { text = "The update did not finish. \(why)" }
+        return StatusLine {
+            Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1)
+            Text(text)
+                .font(TypeRole.sans(12))
+                .foregroundStyle(Tone.rest.secondary)
+                .lineLimit(1)
+                .padding(.leading, 6)
+            Spacer(minLength: 10)
+            Button(mine && runner.isRunning ? "Updating…" : "▶ Update \(count)") { Task { await store.update(updatable) } }
+                .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
+                .disabled(runner.isRunning)
+                .help(UpdateRunner.commandText(for: names))
+        }
+    }
 
     private func actionBar(_ installation: Installation) -> some View {
         let status = store.status(for: installation)

@@ -10,6 +10,8 @@ struct PanelActions {
     var addFolder: () -> Void = {}
     var rescan: () -> Void = {}
     var openPrivacySettings: () -> Void = {}
+    /// The panel's own content changed height, so its window has to follow.
+    var contentResized: () -> Void = {}
 }
 
 /// Everything the panel shows, as plain values. The live model comes from the inventory;
@@ -34,6 +36,27 @@ struct PanelModel {
 
     enum Command { case library, settings, addFolder, rescan, privacySettings, enableChecks }
 
+    /// The skills of one source that differ from it: one row with the command that updates them
+    /// all under it. Open, it also lists the skills, each with its own run button.
+    struct UpdateGroup: Identifiable {
+        struct Item: Identifiable {
+            let title: String
+            let data: String
+            /// Set when the installer can update this skill now.
+            var installation: Installation?
+            var id: String { title }
+        }
+
+        /// The source's name.
+        let title: String
+        let items: [Item]
+        /// The skills the installer can update now. Empty when the group only differs.
+        var updatable: [Installation] = []
+        /// Mono caps to the right of the name, such as "18 UPDATES".
+        let count: String
+        var id: String { title }
+    }
+
     struct Button: Identifiable {
         let title: String
         let prominent: Bool
@@ -49,8 +72,8 @@ struct PanelModel {
     var lead: String
     var note: String
     var scale: ScaleReading?
-    /// Skills the installer can update now; the panel shows the command that does it.
-    var updatable: [Installation] = []
+    /// What differs from its source, one group per source. They come before `rows`.
+    var groups: [UpdateGroup] = []
     var rows: [Row]
     var buttons: [Button]
     var hint: String
@@ -63,21 +86,29 @@ struct MenuPanel: View {
     var actions = PanelActions()
     /// Set in debug snapshots to show a fixed state instead of the inventory.
     var fixedModel: PanelModel?
+    /// The sources whose skills are listed. A source is closed until the reader opens it.
+    @State private var opened: Set<String>
+
+    init(actions: PanelActions = PanelActions(), fixedModel: PanelModel? = nil, opened: Set<String> = []) {
+        self.actions = actions
+        self.fixedModel = fixedModel
+        _opened = State(initialValue: opened)
+    }
 
     var body: some View {
         let model = fixedModel ?? PanelModel.live(from: store)
         PanelSurface {
             HeroBlock(tone: model.tone, label: model.label, stamp: model.stamp, number: model.number,
                       dimmed: model.dimmed, lead: model.lead, note: model.note, scale: model.scale)
-            if !model.rows.isEmpty {
+            if !model.groups.isEmpty || !model.rows.isEmpty {
                 PlainList {
+                    ForEach(model.groups) { group in
+                        groupView(group, isLast: model.rows.isEmpty && group.id == model.groups.last?.id)
+                    }
                     ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
                         rowView(row, isLast: index == model.rows.count - 1)
                     }
                 }
-            }
-            if !model.updatable.isEmpty {
-                CommandFrame(installations: model.updatable, compact: true).padding(.top, 6)
             }
             HStack(spacing: 6) {
                 ForEach(model.buttons) { button in
@@ -113,6 +144,88 @@ struct MenuPanel: View {
             .opacity(0)
             .accessibilityHidden(true)
         }
+    }
+
+    // MARK: Sources with updates
+
+    /// How many skills an open source shows before its list scrolls.
+    private static let openRows = 7
+    private static let itemHeight: CGFloat = 26
+
+    @ViewBuilder
+    private func groupView(_ group: PanelModel.UpdateGroup, isLast: Bool) -> some View {
+        let runner = store.updater
+        let names = Set(group.updatable.map(\.directoryName))
+        // A run of the whole source or of one of its skills.
+        let running = runner.isRunning && !runner.names.isEmpty && Set(runner.names).isSubset(of: names)
+        let open = opened.contains(group.id)
+        let hasCommand = !group.updatable.isEmpty
+        VStack(alignment: .leading, spacing: 0) {
+            // The row is the same open and closed, so nothing in it moves when the list appears.
+            ListRow(isLast: isLast && !open && !hasCommand, tree: true, rule: false) {
+                Button {
+                    if open { opened.remove(group.id) } else { opened.insert(group.id) }
+                    // The window follows once the list has its new height.
+                    Task { @MainActor in actions.contentResized() }
+                } label: {
+                    HStack(spacing: 8) {
+                        DataText(open ? "−" : "+").frame(width: 8)
+                        Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: 8)
+                        DataText(running ? "UPDATING…" : group.count).foregroundStyle(Palette.ink2)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(group.title), \(group.count.lowercased())")
+                .accessibilityValue(open ? "Open" : "Closed")
+            } trailing: {
+                EmptyView()
+            }
+            if open {
+                let list = VStack(spacing: 0) {
+                    ForEach(group.items) { item in itemRow(item, reservesButton: hasCommand) }
+                }
+                Group {
+                    if group.items.count > Self.openRows {
+                        // Half a row shows at the bottom edge, which says the list goes on.
+                        ScrollView { list }.frame(height: (CGFloat(Self.openRows) + 0.5) * Self.itemHeight)
+                    } else {
+                        list
+                    }
+                }
+                // The list starts under the source's name.
+                .padding(EdgeInsets(top: 0, leading: 46, bottom: hasCommand ? 8 : 6, trailing: 10))
+                .padding(.top, -4)
+            }
+            if hasCommand {
+                // The command for the whole source, as wide as the block above the list.
+                CommandFrame(installations: group.updatable, compact: true)
+                    .padding(.top, open ? 0 : -2)
+                    .padding(.bottom, 8)
+            }
+        }
+        .overlay(alignment: .bottom) { ListRule() }
+    }
+
+    private func itemRow(_ item: PanelModel.UpdateGroup.Item, reservesButton: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(item.title).font(TypeRole.sans(13)).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 2)
+            // The revision is the data; a long name gives way to it.
+            DataText(item.data).foregroundStyle(Palette.ink2).fixedSize()
+            if let installation = item.installation {
+                Button("▶") { Task { await store.update([installation]) } }
+                    .buttonStyle(IconButtonStyle(ghost: true))
+                    .disabled(store.updater.isRunning)
+                    .help(UpdateRunner.commandText(for: [installation.directoryName]))
+                    .accessibilityLabel("Update \(item.title)")
+            } else if reservesButton {
+                // Keeps the revisions in one column when some skills here cannot be updated.
+                Color.clear.frame(width: 22, height: 1)
+            }
+        }
+        .frame(height: Self.itemHeight)
     }
 
     @ViewBuilder
@@ -217,22 +330,35 @@ extension PanelModel {
         // Something new at a source is the first thing the panel says.
         let updates = store.updates
         if store.checksEnabled, !updates.isEmpty {
-            var rows: [Row] = updates.prefix(3).map { installation in
-                var data = ""
-                let source = store.upstreamSource(for: installation)?.name ?? ""
-                switch store.status(for: installation) {
-                case .updateAvailable(let upstream):
-                    if case .skillsLock(_, _, _, let baseline, _) = installation.provenance {
-                        data = "\((baseline ?? "").prefix(7)) → \(upstream.prefix(7))"
-                    }
-                case .differs(let upstream):
-                    data = "\((store.link(for: installation)?.localHash ?? "").prefix(7)) ≠ \(upstream.prefix(7))"
-                default: break
-                }
-                return .item(title: installation.displayName, detail: source, data: data)
+            // One group per source, the one with most to say first.
+            var bySource: [String: [Installation]] = [:]
+            for installation in updates {
+                bySource[store.upstreamSource(for: installation)?.name ?? "", default: []].append(installation)
             }
-            if updates.count > 3 {
-                rows.append(.line(text: "\(updates.count - 3) more", data: "", muted: true))
+            let groups: [UpdateGroup] = bySource.map { source, members in
+                let members = members.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+                let updatable = members.filter { if case .updateAvailable = store.status(for: $0) { true } else { false } }
+                // The row has room for a name, one revision and a button: the one at the source.
+                // Both revisions are in the library.
+                let items = members.map { installation -> UpdateGroup.Item in
+                    switch store.status(for: installation) {
+                    case .updateAvailable(let upstream):
+                        UpdateGroup.Item(title: installation.displayName, data: "→ \(upstream.prefix(7))", installation: installation)
+                    case .differs(let upstream):
+                        UpdateGroup.Item(title: installation.displayName, data: "≠ \(upstream.prefix(7))")
+                    default:
+                        UpdateGroup.Item(title: installation.displayName, data: "")
+                    }
+                }
+                // "Updates" when the installer can fetch them all; otherwise the word that is true of every one.
+                let count = updatable.count == members.count
+                    ? "\(members.count) UPDATE\(members.count == 1 ? "" : "S")"
+                    : "\(members.count) DIFFER\(members.count == 1 ? "S" : "")"
+                return UpdateGroup(title: source.isEmpty ? "Unknown source" : source, items: items, updatable: updatable, count: count)
+            }
+            .sorted { a, b in
+                a.items.count != b.items.count ? a.items.count > b.items.count
+                    : a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
             }
             return PanelModel(
                 tone: .new, label: "Updates", stamp: store.checkStamp,
@@ -242,9 +368,9 @@ extension PanelModel {
                 note: "of the \(tracked) with a known source",
                 scale: ScaleReading(part: updates.count, whole: tracked,
                                     partLabel: "\(updates.count) differ\(updates.count == 1 ? "s" : "")", wholeLabel: "\(tracked) tracked"),
-                updatable: store.updatable,
-                rows: rows + tail,
-                // The command frame is the main action here, so no button competes with it.
+                groups: groups,
+                rows: tail,
+                // Running the update is the main action here, so no button competes with it.
                 buttons: store.updatable.isEmpty ? buttons : buttons.map { Button(title: $0.title, prominent: false, command: $0.command) },
                 hint: hint, hintEnabled: !busy)
         }

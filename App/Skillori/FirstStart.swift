@@ -43,7 +43,7 @@ struct FirstStartView: View {
 
     @ViewBuilder private var welcome: some View {
         hero(.rest, label: "Welcome") {
-            SkilloriMark().fill(Tone.rest.foreground).frame(width: 72, height: 72).padding(.top, 22)
+            SkilloriMark().fill(Tone.rest.blockForeground).frame(width: 72, height: 72).padding(.top, 22)
             Spacer(minLength: 0)
             lead("Your agent skills, in one place.")
         }
@@ -134,14 +134,14 @@ struct FirstStartView: View {
                 Spacer(minLength: 8)
                 LabelText("\(step) of \(Self.steps)")
             }
-            .foregroundStyle(tone.secondary)
+            .foregroundStyle(tone.blockSecondary)
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
         .frame(height: 268)
-        .foregroundStyle(tone.foreground)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+        .foregroundStyle(tone.blockForeground)
+        .background { tone.blockBackground(phase: 40) }
     }
 
     private func lead(_ text: String) -> some View {
@@ -149,7 +149,7 @@ struct FirstStartView: View {
     }
 
     private func note(_ text: String, tone: Tone) -> some View {
-        Text(text).font(TypeRole.sans(12)).foregroundStyle(tone.secondary).padding(.top, 6)
+        Text(text).font(TypeRole.sans(12)).foregroundStyle(tone.blockSecondary).padding(.top, 6)
     }
 
     private func bullet(_ text: String, isLast: Bool = false) -> some View {

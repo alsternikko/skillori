@@ -13,6 +13,8 @@ xcodegen generate
 xcodebuild -project Skillori.xcodeproj -scheme Skillori -configuration Release -derivedDataPath build/DerivedData build
 ```
 
+Bygget kompilerar en Metal-shader och kräver Xcodes Metal-verktygskedja, som hämtas en gång med `xcodebuild -downloadComponent MetalToolchain`.
+
 Tester för kärnan: `swift test --package-path Packages/SkilloriCore`. Notarisering: `scripts/notarize.sh` (kräver lokal `scripts/notarize.conf.local`).
 
 ## Dokumentation

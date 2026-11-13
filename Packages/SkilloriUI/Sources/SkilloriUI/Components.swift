@@ -89,7 +89,8 @@ public struct ScaleBar: View {
     }
 }
 
-/// A solid block with a label row, one big number, a lead line and a note.
+/// A block with a label row, one big number, a lead line and a note. The block is light where
+/// its tone has a ramp and a flat grey where it is quiet.
 public struct HeroBlock: View {
     let tone: Tone
     let label: String
@@ -120,7 +121,7 @@ public struct HeroBlock: View {
                 Spacer(minLength: 8)
                 LabelText(stamp)
             }
-            .foregroundStyle(tone.secondary)
+            .foregroundStyle(tone.blockSecondary)
             ZStack(alignment: .leading) {
                 DotNumber(number)
                     .opacity(dimmed ? 0.36 : 1)
@@ -135,7 +136,7 @@ public struct HeroBlock: View {
                 .padding(.top, 12)
             Text(note)
                 .font(TypeRole.sans(12))
-                .foregroundStyle(tone.secondary)
+                .foregroundStyle(tone.blockSecondary)
                 .padding(.top, 2)
             if let scale {
                 ScaleBar(scale).opacity(dimmed ? 0.36 : 1).padding(.top, 16)
@@ -143,8 +144,8 @@ public struct HeroBlock: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(EdgeInsets(top: 14, leading: 16, bottom: scale == nil ? 16 : 12, trailing: 16))
-        .foregroundStyle(tone.foreground)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+        .foregroundStyle(tone.blockForeground)
+        .background { tone.blockBackground() }
         .accessibilityElement(children: .combine)
     }
 }
@@ -161,17 +162,20 @@ public struct PlainList<Content: View>: View {
 }
 
 /// One row in a plain list, with a hairline under it. With `tree` it starts with a branch line,
-/// a corner on the last row.
+/// a corner on the last row. `rule: false` leaves the hairline out, for a row that has more
+/// under it before the next one starts.
 public struct ListRow<Leading: View, Trailing: View>: View {
     let isLast: Bool
     let tree: Bool
+    let rule: Bool
     let leading: Leading
     let trailing: Trailing
 
-    public init(isLast: Bool = false, tree: Bool = false,
+    public init(isLast: Bool = false, tree: Bool = false, rule: Bool = true,
                 @ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) {
         self.isLast = isLast
         self.tree = tree
+        self.rule = rule
         self.leading = leading()
         self.trailing = trailing()
     }
@@ -195,8 +199,14 @@ public struct ListRow<Leading: View, Trailing: View>: View {
         .font(TypeRole.sans(13))
         .padding(.vertical, 10)
         .padding(.horizontal, 10)
-        .overlay(alignment: .bottom) { Palette.ink.opacity(0.1).frame(height: 1) }
+        .overlay(alignment: .bottom) { if rule { ListRule() } }
     }
+}
+
+/// The hairline between rows in a plain list.
+public struct ListRule: View {
+    public init() {}
+    public var body: some View { Palette.ink.opacity(0.1).frame(height: 1) }
 }
 
 /// A key or shortcut in a small outlined box.
@@ -214,23 +224,27 @@ public struct KeyCap: View {
 }
 
 /// Mono caps in a small-radius outline; `prominent` fills it. On a toned block, pass the tone
-/// so the button takes the block's own ink.
+/// so the button takes the block's own ink. `compact` is the lower one that sits inside a slim
+/// bar, such as the command row in the menu bar panel.
 public struct PillButtonStyle: ButtonStyle {
     let prominent: Bool
     let tone: Tone?
-    public init(prominent: Bool = false, on tone: Tone? = nil) {
+    let compact: Bool
+    public init(prominent: Bool = false, on tone: Tone? = nil, compact: Bool = false) {
         self.prominent = prominent
         self.tone = tone
+        self.compact = compact
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        PillBody(configuration: configuration, prominent: prominent, tone: tone)
+        PillBody(configuration: configuration, prominent: prominent, tone: tone, compact: compact)
     }
 
     private struct PillBody: View {
         let configuration: Configuration
         let prominent: Bool
         let tone: Tone?
+        let compact: Bool
         @Environment(\.isEnabled) private var isEnabled
         @State private var hovering = false
 
@@ -239,17 +253,53 @@ public struct PillButtonStyle: ButtonStyle {
             let onInk = tone?.background ?? Palette.onInk
             let shape = RoundedRectangle(cornerRadius: Radius.control, style: .circular)
             configuration.label
-                .font(TypeRole.mono(10.5, .medium))
+                .font(TypeRole.mono(compact ? 10 : 10.5, .medium))
                 .tracking(0.42)
                 .textCase(.uppercase)
                 .lineLimit(1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .padding(.horizontal, compact ? 9 : 12)
+                .padding(.vertical, compact ? 4 : 7)
                 .foregroundStyle(prominent ? onInk : ink)
                 .background(prominent ? ink : ink.opacity(hovering ? 0.08 : 0), in: shape)
                 .overlay(shape.strokeBorder(ink.opacity(prominent ? 0 : 0.32), lineWidth: 1))
                 .opacity(isEnabled ? (prominent && hovering ? 0.86 : 1) : 0.4)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
+                .animation(Motion.press, value: configuration.isPressed)
+                .contentShape(shape)
+                .animation(Motion.hover, value: hovering)
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// A small square with one sign in it, such as the ▶ that runs a command from a list row.
+/// Filled by default. `ghost` is the quiet one for a row among many: a thin outline with the
+/// sign in ink. Give the button an accessibility label: the sign alone says nothing to a
+/// screen reader.
+public struct IconButtonStyle: ButtonStyle {
+    let ghost: Bool
+    public init(ghost: Bool = false) { self.ghost = ghost }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        IconBody(configuration: configuration, ghost: ghost)
+    }
+
+    private struct IconBody: View {
+        let configuration: Configuration
+        let ghost: Bool
+        @Environment(\.isEnabled) private var isEnabled
+        @State private var hovering = false
+
+        var body: some View {
+            let shape = RoundedRectangle(cornerRadius: ghost ? Radius.chip : Radius.control, style: .circular)
+            configuration.label
+                .font(TypeRole.mono(ghost ? 8 : 10, .medium))
+                .frame(width: ghost ? 22 : 26, height: ghost ? 18 : 22)
+                .foregroundStyle(ghost ? Palette.ink : Palette.onInk)
+                .background(ghost ? Palette.ink.opacity(hovering ? 0.08 : 0) : Palette.ink, in: shape)
+                .overlay(shape.strokeBorder(Palette.ink.opacity(ghost ? 0.24 : 0), lineWidth: 1))
+                .opacity(isEnabled ? (!ghost && hovering ? 0.86 : 1) : 0.4)
+                .scaleEffect(configuration.isPressed ? 0.95 : 1)
                 .animation(Motion.press, value: configuration.isPressed)
                 .contentShape(shape)
                 .animation(Motion.hover, value: hovering)
@@ -405,8 +455,8 @@ public struct StatusChip: View {
     private var fill: Color {
         switch kind {
         case .neutral: Color(hex: 0xE9E9EC)
-        case .new: Palette.lime
-        case .attention: Palette.lilac
+        case .new: Palette.accentNew
+        case .attention: Palette.accentAttention
         case .outline: .clear
         }
     }

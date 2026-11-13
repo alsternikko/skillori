@@ -23,6 +23,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusPanel: StatusPanelController?
     private var firstStart: FirstStartController?
 
+    override init() {
+        // macOS thickens text a little when it smooths it ("font smoothing"). The design is
+        // drawn without that, so the app turns it off for itself, before any text is drawn.
+        // It has to be a stored value of the app's own: the text system does not read registered defaults.
+        if UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleFontSmoothing"] == nil {
+            UserDefaults.standard.set(0, forKey: "AppleFontSmoothing")
+        }
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         SkilloriFonts.register()
         AppearanceSetting.current.apply()

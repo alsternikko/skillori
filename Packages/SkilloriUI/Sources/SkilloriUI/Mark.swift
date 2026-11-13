@@ -125,9 +125,8 @@ public extension SkilloriMark {
     /// Image for the menu bar: the full grid with its safe zone.
     ///
     /// At rest and when stale it is a template image, so the system colours it for the bar
-    /// it sits on. Two states have a colour of their own, the mark in ink on a plate: lime for
-    /// `new` (a source has an update) and lilac for `attention` (needs you), the same blocks
-    /// the app uses for them.
+    /// it sits on. Two states have a colour of their own, the mark in ink on a plate in the
+    /// flat accent of `new` (a source has an update) or of `attention` (needs you).
     @MainActor
     static func menuBarImage(_ state: MenuBarState = .rest, side: CGFloat = 22) -> NSImage {
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { rect in
@@ -135,9 +134,9 @@ public extension SkilloriMark {
             var ink = NSColor.black.withAlphaComponent(state == .stale ? 0.4 : 1)
             if state == .attention || state == .new {
                 let radius = side * 5 / 22
-                let plate = state == .new
-                    ? NSColor(srgbRed: 0xBD / 255, green: 0xF2 / 255, blue: 0x4B / 255, alpha: 1)
-                    : NSColor(srgbRed: 0xB5 / 255, green: 0x92 / 255, blue: 0xFF / 255, alpha: 1)
+                let hex = state == .new ? Palette.accentNewHex : Palette.accentAttentionHex
+                let plate = NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                                    blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
                 context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
                 context.setFillColor(plate.cgColor)
                 context.fillPath()
