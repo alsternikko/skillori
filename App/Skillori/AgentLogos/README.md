@@ -12,5 +12,8 @@ Logos for agents that have no app on this Mac to take an icon from. `AgentMark` 
 
 Fetched 2026-11-12, scaled to 256 px and given rounded corners. Nothing else is changed.
 
-These are other companies' marks. Their brand guidelines have **not been read yet**. That
-has to be done before a release that ships them.
+These are other companies' marks. Their brand guidelines were read on 2026-11-13; see
+[`docs/design/agentlogotyper-riktlinjer-2026-11-13.md`](../../../docs/design/agentlogotyper-riktlinjer-2026-11-13.md).
+The product owner decided the same day to keep all logos as they are, without asking the
+vendors for permission, and to show a trademark line in Settings. The Kiro logo conflicts
+with AWS's written policy; that risk is known and accepted.

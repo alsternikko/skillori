@@ -51,10 +51,10 @@ enum DebugSnapshots {
                    to: out.appendingPathComponent("detail.png"))
             render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store)
                 .environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("detail-dark.png"))
-            render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 540),
+            render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 580),
                    to: out.appendingPathComponent("settings.png"))
             render(SettingsView(ownChrome: true).environment(store).environment(\.colorScheme, .dark),
-                   size: CGSize(width: 640, height: 540), to: out.appendingPathComponent("settings-dark.png"))
+                   size: CGSize(width: 640, height: 580), to: out.appendingPathComponent("settings-dark.png"))
             let unknown = installs.first { $0.provenance == .unknown }
             render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
                    to: out.appendingPathComponent("detail-unknown.png"))

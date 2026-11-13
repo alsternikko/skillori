@@ -54,6 +54,12 @@ struct SettingsView: View {
             .frame(width: Self.columnWidth)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .trailing) { privacy.frame(width: Self.columnWidth) }
+            Text("All product names and logos belong to their owners. Skillori is not affiliated with or endorsed by them.")
+                .font(TypeRole.sans(11))
+                .foregroundStyle(Palette.ink3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(EdgeInsets(top: 8, leading: 14, bottom: 6, trailing: 14))
         }
         .padding(EdgeInsets(top: ownChrome ? 0 : 6, leading: 6, bottom: 6, trailing: 6))
         // Every part has a fixed height, so this is the height the window should have.

@@ -1,6 +1,6 @@
 # Agentlogotyperna och leverantörernas varumärkesriktlinjer — 13 november 2026
 
-**Status:** Genomläsning för produktägarens beslut. Inget är ändrat i appen.
+**Status:** Beslutat av produktägaren 13 november, se [Beslut](#beslut-13-november) sist. Alla logotyper behålls; en rad om varumärken är tillagd i inställningarna.
 **Gäller:** logotyperna i första start och på andra ställen där appen visar vilka agenter som finns på datorn. Se [`App/Skillori/AgentLogos/README.md`](../../App/Skillori/AgentLogos/README.md).
 **Hur läsningen gjordes:** en läsande agent hämtade leverantörernas egna sidor den 13 november. Jag har inte läst om sidorna själv, och detta är ingen juridisk bedömning. Följ länkarna innan du bestämmer dig.
 
@@ -91,3 +91,16 @@ Ingen sida säger heller om en rundad bricka räknas som ändring av logotypen.
 4. **En rad om varumärken** i inställningarna och på webbplatsen, till exempel att alla produktnamn och logotyper tillhör sina ägare och att Skillori inte har något samarbete med dem. OpenAI och Google ber om något sådant.
 
 En bricka utan logotyp finns redan i appen som reserv (två bokstäver), men du valde bort den 12 november till förmån för logotyper. Det valet behöver alltså vägas mot punkterna ovan.
+
+## Beslut 13 november
+
+Produktägarens svar på de fyra punkterna:
+
+1. **Kiro:** logotypen behålls. Skälet: appen är liten, drar ingen vinning av deras varumärke och använder det inte för att kommunicera något eget.
+2. **Codex och Gemini CLI:** behålls, av samma skäl. Inget tillstånd begärs.
+3. **Claude, Cursor och Antigravity:** behålls som de är, med ikonen ur den installerade appen.
+4. **Rad om varumärken:** ja. Den står nu sist i inställningarna: "All product names and logos belong to their owners. Skillori is not affiliated with or endorsed by them." Samma rad ska in på webbplatsen när den finns.
+
+Det här är ett medvetet val att bära risken, inte en ny bedömning av reglerna. Bedömningarna i tabellen ovan står kvar: Kiros logotyp strider mot AWS skrivna regler, och OpenAI och Google har vägar för tillstånd som inte är använda. Om en leverantör hör av sig är åtgärden att byta den logotypen mot brickan med två bokstäver, som redan finns som reserv i appen.
+
+Kvar att göra, oberoende av besluten: byta OpenCodes fil mot deras officiella kvadratiska version.
