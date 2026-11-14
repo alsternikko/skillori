@@ -34,7 +34,7 @@ struct PanelModel {
         }
     }
 
-    enum Command { case library, settings, addFolder, rescan, privacySettings, enableChecks }
+    enum Command { case library, settings, addFolder, rescan, privacySettings, enableChecks, installAppUpdate }
 
     /// The skills of one source that differ from it: one row with the command that updates them
     /// all under it. Open, it also lists the skills, each with its own run button.
@@ -263,15 +263,42 @@ struct MenuPanel: View {
         case .rescan: actions.rescan()
         case .privacySettings: actions.openPrivacySettings()
         case .enableChecks: store.checksEnabled = true
+        case .installAppUpdate: AppUpdater.shared.install()
         }
     }
 }
 
 extension PanelModel {
+    /// The panel for the inventory, with a line about Skillori itself on top of the list when
+    /// a newer version is out or on its way in.
+    @MainActor
+    static func live(from store: InventoryStore) -> PanelModel {
+        var model = skills(from: store)
+        if let row = appUpdateRow(AppUpdater.shared) { model.rows.insert(row, at: 0) }
+        return model
+    }
+
+    /// Skillori's own update, as one row. Nothing when there is nothing new: settings has the rest.
+    @MainActor
+    static func appUpdateRow(_ updates: AppUpdater) -> Row? {
+        switch updates.phase {
+        case let .available(version, _):
+            .link(text: "Skillori \(version) is out", label: "Install", command: .installAppUpdate)
+        case let .downloading(version, fraction):
+            .line(text: "Downloading Skillori \(version)", data: fraction.map { "\(Int($0 * 100))%" } ?? "…", muted: false)
+        case let .preparing(version):
+            .line(text: "Downloading Skillori \(version)", data: "CHECKING", muted: false)
+        case let .installing(version):
+            .line(text: "Installing Skillori \(version)", data: "RESTARTING", muted: false)
+        default:
+            nil
+        }
+    }
+
     /// The panel for what the app can truthfully say today: a local reading. Skillori does
     /// not ask sources about changes yet (backlog, etapp 2), so this never claims "in sync".
     @MainActor
-    static func live(from store: InventoryStore) -> PanelModel {
+    static func skills(from store: InventoryStore) -> PanelModel {
         guard let inventory = store.inventory else {
             return PanelModel(tone: .quiet, label: "No reading", stamp: "Reading now",
                               number: "--", dimmed: true,

@@ -17,6 +17,12 @@
 #
 #   sh scripts/release.sh --check     # does skillori.app/download lead to the file in Dropbox?
 #
+# The app updates itself with Sparkle from skillori.app/appcast.xml, which this script writes.
+# Sparkle only installs a .dmg signed with Skillori's EdDSA key. Make the key once, before the
+# first release (it lives in the login keychain; keep the exported copy somewhere safe):
+#
+#   sh scripts/release.sh --keys
+#
 # Needs Config/Signing.local.xcconfig and scripts/notarize.conf.local (see scripts/notarize.sh),
 # and Xcode's Metal toolchain.
 set -euo pipefail
@@ -28,6 +34,8 @@ source "$conf"
 
 page="$root/site/index.html"
 changelog="$root/site/changelog/index.html"
+appcast="$root/site/appcast.xml"
+sparkle_bin="$root/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
 counter="$root/site/api/download.mjs"
 dropbox_file="$DROPBOX_DIR/$DMG_NAME"
 
@@ -75,13 +83,17 @@ q = [(k, v) for k, v in u.parse_qsl(p.query) if k == "rlkey"] + [("dl", "1")]
 print(u.urlunsplit(("https", "dl.dropboxusercontent.com", p.path, u.urlencode(q), "")))
 PY
 )"
-  python3 -I - "$conf" "$counter" "$url" <<'PY'
-import re, sys
-conf, counter, url = sys.argv[1:4]
-for path, pattern, repl in [
+  python3 -I - "$conf" "$counter" "$appcast" "$url" <<'PY'
+import html, os, re, sys
+conf, counter, appcast, url = sys.argv[1:5]
+targets = [
     (conf, r'^DMG_URL=".*"$', f'DMG_URL="{url}"'),
     (counter, r'^const DMG_URL = ".*";$', f'const DMG_URL = "{url}";'),
-]:
+]
+# The appcast written by the first release, which had no link to give it.
+if os.path.exists(appcast):
+    targets.append((appcast, r'<enclosure url="[^"]*"', f'<enclosure url="{html.escape(url, quote=True)}"'))
+for path, pattern, repl in targets:
     s, n = re.subn(pattern, lambda m: repl, open(path, encoding="utf-8").read(), count=1, flags=re.M)
     if n == 0:
         sys.exit(f"Found no DMG_URL in {path}")
@@ -92,7 +104,39 @@ PY
   if [[ -f "$dropbox_file" ]]; then
     wait_for_dropbox
   fi
-  print "\nCommit and push scripts/release.conf and site/api/download.mjs. Then the buttons lead to Dropbox."
+  print "\nCommit and push scripts/release.conf, site/api/download.mjs and site/appcast.xml. Then the buttons lead to Dropbox."
+  exit 0
+fi
+
+# Sparkle's tools come with the Swift package; resolving it fetches them.
+sparkle_tools() {
+  if [[ ! -x "$sparkle_bin/sign_update" ]]; then
+    (cd "$root" && xcodegen generate --quiet && xcodebuild -project Skillori.xcodeproj -scheme Skillori \
+      -derivedDataPath build/DerivedData -resolvePackageDependencies -quiet)
+  fi
+  [[ -x "$sparkle_bin/sign_update" ]] || fail "Found no Sparkle tools in $sparkle_bin."
+}
+
+# ---------- --keys: make the EdDSA key pair and put the public key in project.yml ----------
+if [[ "${1:-}" == "--keys" ]]; then
+  sparkle_tools
+  # Makes a key in the login keychain, or prints the one already there.
+  "$sparkle_bin/generate_keys" >/dev/null
+  public="$("$sparkle_bin/generate_keys" -p)"
+  [[ -n "$public" ]] || fail "generate_keys gave no public key."
+  python3 -I - "$root/project.yml" "$public" <<'PY'
+import re, sys
+path, key = sys.argv[1:3]
+s, n = re.subn(r'^(\s*SPARKLE_PUBLIC_ED_KEY: )".*"', lambda m: f'{m.group(1)}"{key}"', open(path, encoding="utf-8").read(), count=1, flags=re.M)
+if n == 0:
+    sys.exit("Found no SPARKLE_PUBLIC_ED_KEY in project.yml")
+open(path, "w", encoding="utf-8").write(s)
+PY
+  print "The public key is in project.yml: $public"
+  print "\nBack up the private key, which only exists in this Mac's keychain:"
+  print "  $sparkle_bin/generate_keys -x ~/skillori-sparkle-private-key"
+  print "and keep that file somewhere safe (not in the repo). Without it no installed copy can update."
+  print "Commit project.yml."
   exit 0
 fi
 
@@ -122,6 +166,8 @@ identity="$(security find-identity -v -p codesigning | sed -n "s/.*\"\(Developer
 [[ -n "$identity" ]] || fail "The keychain has no Developer ID Application certificate for team $TEAM_ID."
 [[ -d "$DROPBOX_DIR" ]] || fail "No Dropbox folder at $DROPBOX_DIR."
 command -v xcodegen >/dev/null || fail "xcodegen is missing (brew install xcodegen)."
+grep -qE '^\s*SPARKLE_PUBLIC_ED_KEY: "[^"]+"' "$root/project.yml" \
+  || fail "No SPARKLE_PUBLIC_ED_KEY in project.yml, so the app couldn't update itself. Run: sh scripts/release.sh --keys"
 print "Signing as $identity."
 
 say "Version $version"
@@ -150,6 +196,9 @@ codesign --verify --strict --deep "$app" || fail "Signature check failed."
 codesign -dv "$app" 2>&1 | grep -qF "TeamIdentifier=$TEAM_ID" || fail "Not signed by team $TEAM_ID."
 built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 [[ "$built" == "$version" ]] || fail "The app says $built, not $version."
+[[ -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist" 2>/dev/null)" ]] \
+  || fail "The app has no SUPublicEDKey."
+[[ -d "$app/Contents/Frameworks/Sparkle.framework" ]] || fail "The app has no Sparkle.framework."
 
 # The password only lives in this process's environment while notarytool runs.
 NOTARY_PASSWORD="$(security find-generic-password -s "$NOTARY_KEYCHAIN_SERVICE" -a "$NOTARY_APPLE_ID" -w)"
@@ -188,10 +237,17 @@ xcrun stapler validate -q "$app" || fail "Skillori.app has no stapled ticket."
 xcrun stapler validate -q "$dmg" || fail "The .dmg has no stapled ticket."
 print "Apple has notarized Skillori.app and $DMG_NAME."
 
+say "Signing the update"
+sparkle_tools
+# Prints sparkle:edSignature="…" length="…", for the appcast. Uses the key in the keychain.
+signature="$("$sparkle_bin/sign_update" "$dmg")"
+[[ "$signature" == *'sparkle:edSignature="'* ]] || fail "sign_update gave no signature."
+build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
+
 say "The site"
-python3 -I - "$page" "$changelog" "$version" "$notes" <<'PY'
-import datetime, html, re, sys
-page, changelog, version, notes = sys.argv[1:5]
+python3 -I - "$page" "$changelog" "$version" "$notes" "$appcast" "$DMG_URL" "$signature" "$build_number" <<'PY'
+import datetime, email.utils, html, re, sys
+page, changelog, version, notes, appcast, dmg_url, signature, build = sys.argv[1:9]
 
 # Every version on the launch page (the line under the buttons, the closing block, the action bar).
 # Both pages are checked before either is written, so a failure leaves them as they were.
@@ -221,8 +277,37 @@ if n == 0:
         sys.exit("Found no place for the version on the changelog")
     s = s.replace('class="rel is-latest"', 'class="rel"')
     s = s.replace(mark, mark + row, 1)
+# The feed the app asks (AppUpdater.swift): only the newest version, since Dropbox only has that
+# file. Sparkle compares sparkle:version with the app's build number. Before the first --link
+# there is no URL yet; --link fills it in.
+attrs = dict(re.findall(r'([\w:]+)="([^"]*)"', signature))
+if "sparkle:edSignature" not in attrs or "length" not in attrs:
+    sys.exit("Couldn't read the signature from sign_update")
+q = lambda v: html.escape(v, quote=True)
+feed = f'''<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/release.sh. Skillori asks for this once a day (Sparkle). -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Skillori</title>
+    <link>https://skillori.app/changelog/</link>
+    <item>
+      <title>Skillori {q(version)}</title>
+      <pubDate>{email.utils.format_datetime(datetime.datetime.now(datetime.timezone.utc))}</pubDate>
+      <sparkle:version>{q(build)}</sparkle:version>
+      <sparkle:shortVersionString>{q(version)}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v{q(version)}</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>{html.escape(notes, quote=False)}</p>]]></description>
+      <enclosure url="{q(dmg_url)}" type="application/octet-stream"
+                 sparkle:edSignature="{q(attrs["sparkle:edSignature"])}" length="{q(attrs["length"])}"/>
+    </item>
+  </channel>
+</rss>
+'''
 open(page, "w", encoding="utf-8").write(launch)
 open(changelog, "w", encoding="utf-8").write(s)
+open(appcast, "w", encoding="utf-8").write(feed)
+print(f"The appcast offers v{version} (build {build}).")
 print(f"The launch page says v{version} in {places} places.")
 print(f"The changelog {'replaces' if n else 'adds'} v{version}.")
 PY
@@ -251,11 +336,14 @@ say "Done"
 cat <<EOF
 Skillori $version is in Dropbox, and the launch page and the changelog say so. Left for you:
 
-  git add project.yml site/index.html site/changelog/index.html scripts/release.conf site/api/download.mjs
+  git add project.yml site/index.html site/changelog/index.html site/appcast.xml scripts/release.conf site/api/download.mjs
   git commit -m "Release $version"
   git tag v$version
   git push origin main --tags
 
-The push publishes the site. Afterwards, sh scripts/release.sh --check confirms that
+The push publishes the site, and with it the appcast: installed copies find $version within a
+day, or at once with Check now. Push soon after Dropbox has the file, because until then the
+old appcast's signature doesn't match the new file and an install in between fails (it can
+be retried). Afterwards, sh scripts/release.sh --check confirms that
 $DMG_LINK leads to the new file.
 EOF
