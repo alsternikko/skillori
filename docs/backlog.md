@@ -48,7 +48,8 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 - ✅ MIT-licens, README på engelska, CONTRIBUTING, SECURITY, dokumentindex och en GitHub Action som kör kärntesterna (14 november).
 - ✅ Signeringen fungerar utan Apple-konto: ad hoc som standard, Developer ID läses från `Config/Signing.local.xcconfig`.
 - [ ] Beslut innan repot blir publikt: commit-adressen i historiken, licensen för Icomoon-ikonerna och `labb-referenser.jpg`.
-- [ ] På GitHub: Private vulnerability reporting, beskrivning (tom i dag), topics och social förhandsbild (share-bilden kan återanvändas). Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
+- ✅ Beskrivning, webbplats och topics på GitHub (14 november).
+- [ ] På GitHub: Private vulnerability reporting och social förhandsbild (share-bilden kan återanvändas). Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
 
 ## Kvar efter 0.1.0
 
