@@ -2,7 +2,8 @@
 # Builds a Release Skillori.app, signs it with Developer ID, notarizes it with Apple and
 # staples the ticket. Spike version: no DMG and no Sparkle yet.
 #
-# Needs scripts/notarize.conf.local (not committed) with:
+# Needs Config/Signing.local.xcconfig (see Signing.local.xcconfig.example) so the build is
+# signed with Developer ID, and scripts/notarize.conf.local (not committed) with:
 #   NOTARY_APPLE_ID="you@example.com"
 #   NOTARY_KEYCHAIN_SERVICE="name-of-keychain-item-holding-an-app-specific-password"
 #   TEAM_ID="XXXXXXXXXX"
@@ -13,6 +14,8 @@ conf="$root/scripts/notarize.conf.local"
 fail() { print -u2 "notarize: $1"; exit 1; }
 
 [[ -f "$conf" ]] || fail "Missing $conf. See the header of this script."
+[[ -f "$root/Config/Signing.local.xcconfig" ]] \
+  || fail "Missing Config/Signing.local.xcconfig. Copy Config/Signing.local.xcconfig.example and fill it in."
 source "$conf"
 : "${NOTARY_APPLE_ID:?}" "${NOTARY_KEYCHAIN_SERVICE:?}" "${TEAM_ID:?}"
 
