@@ -49,7 +49,7 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 - ✅ Signeringen fungerar utan Apple-konto: ad hoc som standard, Developer ID läses från `Config/Signing.local.xcconfig`.
 - [ ] Beslut innan repot blir publikt: commit-adressen i historiken, licensen för Icomoon-ikonerna och `labb-referenser.jpg`.
 - ✅ Beskrivning, webbplats och topics på GitHub (14 november).
-- [ ] På GitHub: Private vulnerability reporting och social förhandsbild (share-bilden kan återanvändas). Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
+- [ ] När repot blivit publikt, på GitHub: slå på Private vulnerability reporting och ladda upp social förhandsbild (`docs/design/share-image/github-social-preview.jpg`, 1280×640). GitHub erbjuder ingen av dem för privata repon. Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
 
 ## Kvar efter 0.1.0
 
