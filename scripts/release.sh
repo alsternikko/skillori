@@ -194,12 +194,11 @@ import datetime, html, re, sys
 page, changelog, version, notes = sys.argv[1:5]
 
 # Every version on the launch page (the line under the buttons, the closing block, the action bar).
-s = open(page, encoding="utf-8").read()
-s, n = re.subn(r'\bv\d+\.\d+\.\d+\b', f'v{version}', s)
-if n == 0:
+# Both pages are checked before either is written, so a failure leaves them as they were.
+launch = open(page, encoding="utf-8").read()
+launch, places = re.subn(r'\bv\d+\.\d+\.\d+\b', f'v{version}', launch)
+if places == 0:
     sys.exit("Found no version on the launch page")
-open(page, "w", encoding="utf-8").write(s)
-print(f"The launch page says v{version} in {n} places.")
 
 # The changelog: the newest on top, marked Latest. Running again for the same version replaces
 # its row, so the page never lists a version twice.
@@ -214,13 +213,17 @@ row = (
 mark = "      <!-- scripts/release.sh adds each version here, newest first. -->\n"
 s = open(changelog, encoding="utf-8").read()
 s = re.sub(r'      <article class="rel none" id="none">\n.*?      </article>\n', "", s, count=1, flags=re.S)
-s, n = re.subn(rf'      <article class="rel[^"]*" id="v{re.escape(version)}">\n.*?      </article>\n', lambda m: row, s, count=1, flags=re.S)
+# A replaced row keeps its class, so re-running an older version doesn't mark it Latest.
+s, n = re.subn(rf'      <article class="(rel[^"]*)" id="v{re.escape(version)}">\n.*?      </article>\n',
+               lambda m: row.replace('class="rel is-latest"', f'class="{m.group(1)}"', 1), s, count=1, flags=re.S)
 if n == 0:
     if mark not in s:
         sys.exit("Found no place for the version on the changelog")
     s = s.replace('class="rel is-latest"', 'class="rel"')
     s = s.replace(mark, mark + row, 1)
+open(page, "w", encoding="utf-8").write(launch)
 open(changelog, "w", encoding="utf-8").write(s)
+print(f"The launch page says v{version} in {places} places.")
 print(f"The changelog {'replaces' if n else 'adds'} v{version}.")
 PY
 
