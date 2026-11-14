@@ -5,8 +5,8 @@
 //
 // Only numbers are kept: a total and one per day (Stockholm time). Nothing about who downloaded,
 // no address and no cookie. The numbers are in the Redis database (Upstash) under Storage in the
-// Vercel project. Without it, or when it doesn't answer in time, the download still goes on,
-// uncounted.
+// Vercel project, shared with Lore, so Skillori's numbers are under their own key, skillori:dmg.
+// Without the database, or when it doesn't answer in time, the download still goes on, uncounted.
 
 // Written by `sh scripts/release.sh --link "<Dropbox link>"`, together with DMG_URL in
 // scripts/release.conf. Empty until the first release is in Dropbox.
@@ -28,6 +28,9 @@ export function HEAD() {
   return redirect(DMG_URL);
 }
 
+// One hash in Redis: total, and one field per day.
+const KEY = "skillori:dmg";
+
 async function count() {
   const base = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -36,7 +39,7 @@ async function count() {
   const res = await fetch(`${base}/pipeline`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-    body: JSON.stringify([["HINCRBY", "dmg", "total", 1], ["HINCRBY", "dmg", day, 1]]),
+    body: JSON.stringify([["HINCRBY", KEY, "total", 1], ["HINCRBY", KEY, day, 1]]),
     signal: AbortSignal.timeout(2000),
   });
   if (!res.ok) throw new Error(`Redis answered ${res.status}`);
