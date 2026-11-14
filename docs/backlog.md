@@ -47,9 +47,9 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 
 - ✅ MIT-licens, README på engelska, CONTRIBUTING, SECURITY, dokumentindex och en GitHub Action som kör kärntesterna (14 november).
 - ✅ Signeringen fungerar utan Apple-konto: ad hoc som standard, Developer ID läses från `Config/Signing.local.xcconfig`.
-- [ ] Beslut innan repot blir publikt: commit-adressen i historiken, licensen för Icomoon-ikonerna och `labb-referenser.jpg`.
+- ✅ Repot är publikt sedan 14 november, med historiken som den var. Kvar: `icomoon.ttf` saknar licenstext; lägg till en om produktägaren har en.
 - ✅ Beskrivning, webbplats och topics på GitHub (14 november).
-- [ ] När repot blivit publikt, på GitHub: slå på Private vulnerability reporting och ladda upp social förhandsbild (`docs/design/share-image/github-social-preview.jpg`, 1280×640). GitHub erbjuder ingen av dem för privata repon. Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
+- ✅ Private vulnerability reporting är påslaget och social förhandsbild uppladdad. Sajten har en GitHub-knapp i stället för "What's new" (14 november). Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
 
 ## Kvar efter 0.1.0
 
