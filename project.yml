@@ -59,7 +59,7 @@ targets:
         SWIFT_STRICT_CONCURRENCY: complete
         # The public EdDSA key for app updates. Empty until `sh scripts/release.sh --keys` has made
         # the key pair; until then the app says it can't update itself.
-        SPARKLE_PUBLIC_ED_KEY: ""
+        SPARKLE_PUBLIC_ED_KEY: "MDJQ0qDP1DFSGJ9rfSE2+P9gFwZduKRIQcdNRmtw9I4="
       configs:
         Release:
           # Notarization rejects builds that carry the debugger entitlement get-task-allow.

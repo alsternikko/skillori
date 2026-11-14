@@ -25,6 +25,9 @@
 #
 # Needs Config/Signing.local.xcconfig and scripts/notarize.conf.local (see scripts/notarize.sh),
 # and Xcode's Metal toolchain.
+
+# The script is zsh. Started as `sh scripts/release.sh`, it runs again in zsh.
+if [ -z "${ZSH_VERSION:-}" ]; then exec zsh "$0" "$@"; fi
 set -euo pipefail
 
 root="${0:A:h:h}"

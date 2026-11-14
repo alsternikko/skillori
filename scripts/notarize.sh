@@ -7,6 +7,9 @@
 #   NOTARY_APPLE_ID="you@example.com"
 #   NOTARY_KEYCHAIN_SERVICE="name-of-keychain-item-holding-an-app-specific-password"
 #   TEAM_ID="XXXXXXXXXX"
+
+# The script is zsh. Started as `sh scripts/notarize.sh`, it runs again in zsh.
+if [ -z "${ZSH_VERSION:-}" ]; then exec zsh "$0" "$@"; fi
 set -euo pipefail
 
 root="${0:A:h:h}"
