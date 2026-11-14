@@ -1,6 +1,6 @@
 # Backlog
 
-Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillori-produktbrief.md). Det som är levererat markeras ✅. Uppdaterad 14 november 2026. Appen läser inventeringen, kontrollerar källor och kan köra uppdateringar via `npx skills`. Sajten skillori.app är uppe, men ingen release är gjord ännu.
+Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillori-produktbrief.md). Det som är levererat markeras ✅. Uppdaterad 14 november 2026. Appen läser inventeringen, kontrollerar källor och kan köra uppdateringar via `npx skills`. Version 0.1.0 (första betan) släpptes 14 november och laddas ner från skillori.app, som nu indexeras av sökmotorer.
 
 ## Etapp 0 — Verifiera integrationskontrakt
 
@@ -41,7 +41,7 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 4. Diffvy (filnivå + textdiff, markering av scripts/exekveringsbit).
 5. SQLite/GRDB-lagring: policy, kandidater, notishistorik, check runs. Tills vidare ligger källsvar och "held back" i en JSON-fil (`~/Library/Application Support/Skillori/sources.json`).
 6. Schemaläggning (var 6:e timme, paus, efter sömn), deduplicerade notiser, sekretessläge. **Delvis ✅:** var 6:e timme medan appen körs och vid "Check now". Kvar: notiser, paus, kontroll efter sömn.
-7. Sparkle + DMG-pipeline + promosida (kan gå parallellt). **✅ byggt (14 november):** Sparkle 2.10.1 med egen användardriver, feed på `skillori.app/appcast.xml` och publik nyckel i `project.yml`. `scripts/release.sh` sköter version, bygge, notarisering, DMG, Dropbox, changelog och appcast. Sajten skillori.app har `/download` med nedladdningsräknare och `/changelog/`. Koncept B ("Three lights") är valt för promosidan, men detaljerna är inte godkända. Kvar: första releasen (`release.sh 0.1.0`, sedan `--link` och `--check`), backup av den privata Sparkle-nyckeln, att ta bort `noindex` vid lansering, och att prova hela uppdateringsflödet i appen.
+7. Sparkle + DMG-pipeline + promosida (kan gå parallellt). **✅ byggt (14 november):** Sparkle 2.10.1 med egen användardriver, feed på `skillori.app/appcast.xml` och publik nyckel i `project.yml`. `scripts/release.sh` sköter version, bygge, notarisering, DMG, Dropbox, changelog och appcast. Sajten skillori.app har `/download` med nedladdningsräknare och `/changelog/`. Koncept B ("Three lights") är valt för promosidan, men detaljerna är inte godkända. ✅ Release 0.1.0 är notariserad och ligger i Dropbox, appcast och changelog är publicerade, och `noindex` är borttaget (14 november). Kvar: backup av den privata Sparkle-nyckeln, och att prova hela uppdateringsflödet i appen när nästa version finns.
 
 ## Publikt repo
 
