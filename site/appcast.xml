@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written by scripts/release.sh. Skillori asks for this once a day (Sparkle). -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Skillori</title>
+    <link>https://skillori.app/changelog/</link>
+    <item>
+      <title>Skillori 0.1.0</title>
+      <pubDate>Sat, 14 Nov 2026 19:07:07 +0000</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.1.0</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>First beta. Skillori finds the agent skills on your Mac, works out where each one came from, and tells you when the original has moved on. Update a skill from its source in one click, link the ones it can’t place, and from now on Skillori keeps itself up to date too.</p>]]></description>
+      <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
+                 sparkle:edSignature="sFDqRXDuAWp7JNsLUCOm261kIZB5Q7ty1NXq9/wQltTw9PO4AVdnJAK9VL4gbf9GiX/UDAIF5u4nUDVBhj+KAA==" length="4552549"/>
+    </item>
+  </channel>
+</rss>

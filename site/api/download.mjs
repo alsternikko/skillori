@@ -10,7 +10,7 @@
 
 // Written by `sh scripts/release.sh --link "<Dropbox link>"`, together with DMG_URL in
 // scripts/release.conf. Empty until the first release is in Dropbox.
-const DMG_URL = "";
+const DMG_URL = "https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&dl=1";
 
 export async function GET() {
   if (!DMG_URL) return notYet();

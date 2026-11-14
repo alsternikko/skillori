@@ -195,8 +195,24 @@ xcodegen generate --quiet
 xcodebuild -project Skillori.xcodeproj -scheme Skillori -configuration Release \
   -derivedDataPath build/DerivedData clean build -quiet
 app="build/DerivedData/Build/Products/Release/Skillori.app"
+
+# Xcode re-signs Sparkle.framework but not the helpers inside it, which keep Sparkle's own
+# signature without a secure timestamp, and Apple's notary service refuses the app. Sign them
+# inside out with Developer ID, then the framework, then the app (keeping its entitlements).
+say "Signing Sparkle's helpers"
+sparkle_fw="$app/Contents/Frameworks/Sparkle.framework"
+sparkle_b="$sparkle_fw/Versions/B"
+sign() { codesign --force --sign "$identity" --options runtime --timestamp "$@"; }
+sign "$sparkle_b/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$sparkle_b/XPCServices/Downloader.xpc"
+sign "$sparkle_b/Autoupdate"
+sign "$sparkle_b/Updater.app"
+sign "$sparkle_fw"
+sign --preserve-metadata=entitlements,requirements,flags "$app"
+
 codesign --verify --strict --deep "$app" || fail "Signature check failed."
-codesign -dv "$app" 2>&1 | grep -qF "TeamIdentifier=$TEAM_ID" || fail "Not signed by team $TEAM_ID."
+# Read whole, not piped to grep -q, which with pipefail can fail on codesign's SIGPIPE.
+[[ "$(codesign -dv "$app" 2>&1)" == *"TeamIdentifier=$TEAM_ID"* ]] || fail "Not signed by team $TEAM_ID."
 built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 [[ "$built" == "$version" ]] || fail "The app says $built, not $version."
 [[ -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist" 2>/dev/null)" ]] \
@@ -205,10 +221,14 @@ built="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Co
 
 # The password only lives in this process's environment while notarytool runs.
 NOTARY_PASSWORD="$(security find-generic-password -s "$NOTARY_KEYCHAIN_SERVICE" -a "$NOTARY_APPLE_ID" -w)"
+# The answer is read whole before it is searched: piping it to grep -q would cut tee off with
+# SIGPIPE, and pipefail would then call an accepted submission a failure.
 notarize() {
-  xcrun notarytool submit "$1" --apple-id "$NOTARY_APPLE_ID" --team-id "$TEAM_ID" \
-    --password "$NOTARY_PASSWORD" --wait | tee /dev/stderr | grep -q "status: Accepted" \
-    || fail "Apple didn't accept $(basename "$1")."
+  local out
+  out="$(xcrun notarytool submit "$1" --apple-id "$NOTARY_APPLE_ID" --team-id "$TEAM_ID" \
+    --password "$NOTARY_PASSWORD" --wait 2>&1)" || true
+  print -r -- "$out"
+  [[ "$out" == *"status: Accepted"* ]] || fail "Apple didn't accept $(basename "$1"). See: xcrun notarytool log <id>"
 }
 
 say "Notarizing the app"
