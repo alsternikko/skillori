@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skillori changelog</title>
+<meta name="description" content="What each version of Skillori brought with it, newest first.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="Skillori changelog">
+<meta property="og:description" content="What each version of Skillori brought with it, newest first.">
+<meta property="og:url" content="https://skillori.app/changelog/">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Inter";src:url(/fonts/inter.woff2) format("woff2");font-weight:400 500;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(/fonts/geist-mono.woff2) format("woff2");font-weight:400 500;font-display:swap}
+/* The same tokens as the launch page (site/index.html). */
+:root{
+  --ground:#E6E6E8;--panel:#F1F1F3;--card:#FAFAFB;
+  --ink:#151516;--ink2:#6B6B70;--ink3:#A3A3A8;--on-ink:#FFFFFF;
+  --line:rgba(21,21,22,.1);--frame:rgba(21,21,22,.32);
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+  --mono:"Geist Mono","Inter",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#0E0E0F;--panel:#19191B;--card:#242427;
+    --ink:#F1F1F3;--ink2:#A3A3A8;--ink3:#6B6B70;--on-ink:#151516;
+    --line:rgba(241,241,243,.1);--frame:rgba(241,241,243,.32);
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ground);color:var(--ink);font:400 16px/1.5 var(--sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+a{color:inherit;text-decoration:none}
+svg{display:block}
+.wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono);font-size:10.5px;line-height:13px;letter-spacing:.06em;text-transform:uppercase}
+
+.top{display:flex;align-items:center;justify-content:space-between;height:76px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand svg{width:20px;height:20px}
+.brand span{font:500 16px/1 var(--sans);letter-spacing:-.012em}
+.btn{display:inline-flex;align-items:center;gap:9px;height:34px;padding:0 14px;border-radius:6px;background:var(--ink);color:var(--on-ink);font:500 11px/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;transition:opacity .12s ease-out,transform .12s ease-out}
+.btn svg{width:14px;height:14px;flex:none}
+.btn:hover{opacity:.86}
+.btn:active{transform:scale(.97)}
+.btn:focus-visible,.brand:focus-visible,.foot a:focus-visible,.rel h2 a:focus-visible{outline:1.5px solid var(--ink);outline-offset:3px}
+
+.head{padding:30px 0 40px}
+.eyebrow{color:var(--ink2)}
+h1{margin:16px 0 0;font:400 clamp(40px,6.3vw,70px)/1.01 var(--sans);letter-spacing:-.045em}
+.lede{margin:18px 0 0;max-width:30em;font-size:17px;line-height:1.5;color:var(--ink2);text-wrap:pretty}
+
+/* One release per row: the version and its date on the left, what changed on the right. */
+.list{background:var(--card);border-radius:16px;padding:6px 28px}
+.rel{display:grid;grid-template-columns:200px minmax(0,1fr);gap:8px 40px;padding:22px 0;border-top:1px solid var(--line);scroll-margin-top:24px}
+.rel:first-child{border-top:0}
+.rel h2{margin:0;font:500 13px/20px var(--mono);letter-spacing:.04em}
+.rel h2 a:hover{color:var(--ink2)}
+.rel time{display:block;margin-top:2px;color:var(--ink2)}
+.rel p{margin:0;max-width:38em;font-size:15.5px;line-height:1.55;text-wrap:pretty}
+.rel.is-latest h2::after{content:"Latest";margin-left:10px;padding:3px 7px;border-radius:4px;background:#F1C8F0;color:#151516;font:400 9.5px/13px var(--mono);letter-spacing:.06em;text-transform:uppercase;vertical-align:1px}
+.none p{color:var(--ink2)}
+
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 18px;padding:30px 0 60px;color:var(--ink2)}
+.foot a:hover{color:var(--ink)}
+
+@media (max-width:640px){
+  .list{padding:4px 18px}
+  .rel{grid-template-columns:1fr;gap:10px}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="mark-dots">
+      <circle cx="170" cy="50" r="50"/><circle cx="290" cy="50" r="50"/><circle cx="410" cy="50" r="50"/>
+      <circle cx="50" cy="170" r="50"/>
+      <circle cx="170" cy="290" r="50"/><circle cx="290" cy="290" r="50"/><circle cx="410" cy="290" r="50"/>
+      <circle cx="50" cy="410" r="50"/><circle cx="530" cy="410" r="50"/>
+      <circle cx="170" cy="530" r="50"/><circle cx="290" cy="530" r="50"/><circle cx="410" cy="530" r="50"/>
+      <path transform="translate(480 120)" fill-rule="nonzero" d="M22.775 49.999C22.775 44.917 24.022 40.277 26.515 36.079C29.009 31.881 32.339 28.551 36.506 26.089C40.704 23.595 45.344 22.348 50.426 22.348C54.845 22.348 58.933 23.311 62.689 25.236C66.446 27.13 69.555 29.735 72.017 33.049C74.479 36.363 75.978 40.088 76.515 44.223L64.204 44.223C63.636 41.287 62.026 38.888 59.375 37.026C56.755 35.132 53.772 34.185 50.426 34.185C47.522 34.185 44.871 34.895 42.472 36.316C40.073 37.736 38.163 39.646 36.743 42.045C35.322 44.412 34.612 47.064 34.612 49.999C34.612 52.903 35.322 55.555 36.743 57.954C38.163 60.353 40.073 62.263 42.472 63.683C44.871 65.103 47.522 65.814 50.426 65.814C53.772 65.814 56.629 64.882 58.996 63.02C61.364 61.126 62.847 58.711 63.447 55.776L75.757 55.776C75.221 59.911 73.784 63.636 71.449 66.95C69.113 70.264 66.13 72.884 62.5 74.81C58.87 76.704 54.845 77.651 50.426 77.651C45.344 77.651 40.704 76.42 36.506 73.957C32.339 71.464 29.009 68.118 26.515 63.92C24.022 59.722 22.775 55.081 22.775 49.999ZM50 99.999C43.119 99.999 36.648 98.705 30.587 96.116C24.558 93.528 19.24 89.945 14.631 85.368C10.054 80.76 6.456 75.441 3.836 69.412C1.247 63.383 -0.031 56.912 0.001 49.999C0.032 43.087 1.342 36.616 3.93 30.587C6.55 24.558 10.149 19.255 14.726 14.678C19.303 10.069 24.606 6.471 30.635 3.883C36.664 1.294 43.119 0 50 0C56.913 0 63.384 1.294 69.413 3.883C75.473 6.471 80.776 10.069 85.322 14.678C89.899 19.255 93.481 24.558 96.07 30.587C98.658 36.616 99.968 43.087 99.999 49.999C100.031 56.912 98.753 63.383 96.164 69.412C93.576 75.441 89.993 80.76 85.416 85.368C80.839 89.945 75.521 93.528 69.46 96.116C63.399 98.705 56.913 99.999 50 99.999ZM50 87.404C55.177 87.404 60.038 86.442 64.583 84.516C69.129 82.591 73.106 79.923 76.515 76.514C79.955 73.074 82.639 69.096 84.564 64.583C86.489 60.037 87.436 55.192 87.405 50.047C87.405 44.87 86.426 40.009 84.469 35.464C82.544 30.918 79.861 26.941 76.42 23.532C73.011 20.091 69.05 17.408 64.536 15.483C60.022 13.557 55.177 12.595 50 12.595C44.855 12.595 40.025 13.557 35.512 15.483C30.998 17.408 27.02 20.091 23.58 23.532C20.171 26.973 17.488 30.966 15.531 35.511C13.574 40.025 12.595 44.87 12.595 50.047C12.564 55.16 13.511 59.99 15.436 64.535C17.393 69.049 20.076 73.026 23.485 76.467C26.926 79.876 30.903 82.559 35.417 84.516C39.962 86.442 44.823 87.404 50 87.404Z"/>
+    </g>
+    <symbol id="mark" viewBox="0 0 580 580"><use href="#mark-dots"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M8 2v8.5M4.2 7 8 10.8 11.8 7M2.8 14h10.4"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/" aria-label="Skillori, back to the start page">
+      <svg aria-hidden="true"><use href="#mark" fill="currentColor"/></svg>
+      <span>Skillori</span>
+    </a>
+    <a class="btn" href="/download"><svg aria-hidden="true"><use href="#i-down"/></svg>Download</a>
+  </header>
+
+  <main>
+    <section class="head">
+      <div class="eyebrow mono">Changelog</div>
+      <h1>What’s new</h1>
+      <p class="lede">Every version of Skillori and what it brought along, newest first. The download button always hands you the latest one.</p>
+    </section>
+
+    <section class="list" aria-label="Versions">
+      <!-- scripts/release.sh adds each version here, newest first. -->
+      <article class="rel none" id="none">
+        <h2>Coming soon</h2>
+        <p>Nothing has shipped yet. The first version is on its way.</p>
+      </article>
+    </section>
+  </main>
+
+  <footer class="foot mono">
+    <span>© 2026 Skillori</span>
+    <a href="/">Back to Skillori</a>
+  </footer>
+</div>
+</body>
+</html>
