@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Skillori's release in one command. It bumps the version, builds a Release Skillori.app signed
 # with Developer ID, has Apple notarize the app and a .dmg around it, puts the version on the
-# launch page and the line on what is new on top of the changelog (site/changelog/), copies the
+# launch page and the line on what is new on top of the changelog (site/changelog/), rebuilds
+# the sitemap from the pages under site/, copies the
 # .dmg to Dropbox/Skillori under a fixed name and waits until Dropbox serves it. Review, commit,
 # tag and push yourself afterwards: the push publishes the site on Vercel.
 #
@@ -38,6 +39,7 @@ source "$conf"
 page="$root/site/index.html"
 changelog="$root/site/changelog/index.html"
 appcast="$root/site/appcast.xml"
+sitemap="$root/site/sitemap.xml"
 sparkle_bin="$root/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
 counter="$root/site/api/download.mjs"
 dropbox_file="$DROPBOX_DIR/$DMG_NAME"
@@ -268,9 +270,9 @@ signature="$("$sparkle_bin/sign_update" "$dmg")"
 build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
 
 say "The site"
-python3 -I - "$page" "$changelog" "$version" "$notes" "$appcast" "$DMG_URL" "$signature" "$build_number" <<'PY'
-import datetime, email.utils, html, re, sys
-page, changelog, version, notes, appcast, dmg_url, signature, build = sys.argv[1:9]
+python3 -I - "$page" "$changelog" "$version" "$notes" "$appcast" "$DMG_URL" "$signature" "$build_number" "$sitemap" <<'PY'
+import datetime, email.utils, html, os, re, sys
+page, changelog, version, notes, appcast, dmg_url, signature, build, sitemap = sys.argv[1:10]
 
 # Every version on the launch page (the line under the buttons, the closing block, the action bar).
 # Both pages are checked before either is written, so a failure leaves them as they were.
@@ -327,12 +329,44 @@ feed = f'''<?xml version="1.0" encoding="utf-8"?>
   </channel>
 </rss>
 '''
+# The sitemap: every page under site/, so a new page is listed without anyone remembering to.
+# Vercel serves x/index.html and x.html both as /x/ (cleanUrls, trailingSlash). The launch page and
+# the changelog change with every release and get today's date; the rest keep the date they had.
+# A page with <meta name="robots" content="noindex…"> stays out.
+site = os.path.dirname(sitemap)
+old = {}
+if os.path.exists(sitemap):
+    old = dict(re.findall(r'<loc>([^<]*)</loc>\s*<lastmod>([^<]*)</lastmod>', open(sitemap, encoding="utf-8").read()))
+touched = {os.path.realpath(page), os.path.realpath(changelog)}
+urls = []
+for d, dirs, files in os.walk(site):
+    dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in ("api", "fonts"))
+    for f in sorted(files):
+        if not f.endswith(".html"):
+            continue
+        path = os.path.join(d, f)
+        if re.search(r'<meta\s+name="robots"\s+content="[^"]*noindex', open(path, encoding="utf-8").read()):
+            continue
+        rel = os.path.relpath(path, site)[:-len(".html")]
+        rel = rel[:-len("index")] if rel == "index" or rel.endswith("/index") else rel + "/"
+        loc = "https://skillori.app/" + rel
+        when = day.isoformat() if os.path.realpath(path) in touched else old.get(loc, day.isoformat())
+        urls.append((loc, when))
+urls.sort(key=lambda u: (u[0].count("/"), u[0]))
+smap = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!-- Written by scripts/release.sh from the pages under site/. -->\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "".join(f'  <url><loc>{q(l)}</loc><lastmod>{w}</lastmod></url>\n' for l, w in urls)
+        + '</urlset>\n')
+
 open(page, "w", encoding="utf-8").write(launch)
 open(changelog, "w", encoding="utf-8").write(s)
 open(appcast, "w", encoding="utf-8").write(feed)
+open(sitemap, "w", encoding="utf-8").write(smap)
 print(f"The appcast offers v{version} (build {build}).")
 print(f"The launch page says v{version} in {places} places.")
 print(f"The changelog {'replaces' if n else 'adds'} v{version}.")
+print(f"The sitemap lists {len(urls)} pages.")
 PY
 
 say "Copying to Dropbox"
@@ -359,7 +393,7 @@ say "Done"
 cat <<EOF
 Skillori $version is in Dropbox, and the launch page and the changelog say so. Left for you:
 
-  git add project.yml site/index.html site/changelog/index.html site/appcast.xml scripts/release.conf site/api/download.mjs
+  git add project.yml site/index.html site/changelog/index.html site/appcast.xml site/sitemap.xml scripts/release.conf site/api/download.mjs
   git commit -m "Release $version"
   git tag v$version
   git push origin main --tags
