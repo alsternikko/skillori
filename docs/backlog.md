@@ -41,14 +41,32 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 4. Diffvy (filnivå + textdiff, markering av scripts/exekveringsbit).
 5. SQLite/GRDB-lagring: policy, kandidater, notishistorik, check runs. Tills vidare ligger källsvar och "held back" i en JSON-fil (`~/Library/Application Support/Skillori/sources.json`).
 6. Schemaläggning (var 6:e timme, paus, efter sömn), deduplicerade notiser, sekretessläge. **Delvis ✅:** var 6:e timme medan appen körs och vid "Check now". Kvar: notiser, paus, kontroll efter sömn.
-7. Sparkle + DMG-pipeline + promosida (kan gå parallellt). **✅ byggt (14 november):** Sparkle 2.10.1 med egen användardriver, feed på `skillori.app/appcast.xml` och publik nyckel i `project.yml`. `scripts/release.sh` sköter version, bygge, notarisering, DMG, Dropbox, changelog och appcast. Sajten skillori.app har `/download` med nedladdningsräknare och `/changelog/`. Koncept B ("Three lights") är valt för promosidan, men detaljerna är inte godkända. ✅ Release 0.1.0 är notariserad och ligger i Dropbox, appcast och changelog är publicerade, och `noindex` är borttaget (14 november). Kvar: backup av den privata Sparkle-nyckeln, och att prova hela uppdateringsflödet i appen när nästa version finns.
+7. Sparkle + DMG-pipeline + promosida (kan gå parallellt). **✅ byggt (14 november):** Sparkle 2.10.1 med egen användardriver, feed på `skillori.app/appcast.xml` och publik nyckel i `project.yml`. `scripts/release.sh` sköter version, bygge, notarisering, DMG, Dropbox, changelog och appcast. Sajten skillori.app har `/download` med nedladdningsräknare och `/changelog/`. Koncept B ("Three lights") är valt för promosidan, men detaljerna är inte godkända. ✅ Release 0.1.0 är notariserad och ligger i Dropbox, appcast och changelog är publicerade, och `noindex` är borttaget (14 november). Sajten har också sitemap och `robots.txt` (sitemapen byggs om av `release.sh`), share-bild (`site/og.jpg`) med og-taggar, och README beskriver release, nedladdningar och sitemap. Kvar: backup av den privata Sparkle-nyckeln, och att prova hela uppdateringsflödet i appen när nästa version finns.
 
 ## Publikt repo
 
 - ✅ MIT-licens, README på engelska, CONTRIBUTING, SECURITY, dokumentindex och en GitHub Action som kör kärntesterna (14 november).
 - ✅ Signeringen fungerar utan Apple-konto: ad hoc som standard, Developer ID läses från `Config/Signing.local.xcconfig`.
 - [ ] Beslut innan repot blir publikt: commit-adressen i historiken, licensen för Icomoon-ikonerna och `labb-referenser.jpg`.
-- [ ] På GitHub: Private vulnerability reporting, beskrivning, topics och social förhandsbild. Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
+- [ ] På GitHub: Private vulnerability reporting, beskrivning (tom i dag), topics och social förhandsbild (share-bilden kan återanvändas). Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
+
+## Kvar efter 0.1.0
+
+Att göra (produktägaren):
+- [ ] Flytta den privata Sparkle-nyckeln från `~/skillori-sparkle-private-key` till en lösenordshanterare eller krypterad volym, och radera filen. Det är den enda kopian.
+
+Att prova:
+- [ ] Hela uppdateringsflödet i appen: en installerad 0.1.0 ska hitta och installera 0.1.1.
+- [ ] Sitemap-steget i `release.sh` i en riktig release (det är bara provat på en kopia av sajten).
+- [ ] En riktig `npx skills update` via körknappen.
+- [ ] Klickflödet för Link source.
+- [ ] Att ändra panelens storlek.
+
+Beslut:
+- [ ] Sparkles standardval: daglig kontroll är påslagen, och installationen startar om appen direkt.
+- [ ] Påståendet "no tracking", med tanke på den dagliga uppdateringskontrollen och nedladdningsräknaren.
+- [ ] Detaljerna i promosidans koncept B: Orchid-rutans läge, texterna under rutorna, trädkortet och åtgärdsfältet.
+- [ ] Panelens skillrad visar bara den nya revisionen (`→ 6a0393c`), inte gammal → ny.
 
 ## Etapp 3 — Begränsade säkra uppdateringar
 
