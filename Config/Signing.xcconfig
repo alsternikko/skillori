@@ -1,0 +1,16 @@
+// Signing for the Skillori app target.
+//
+// The defaults below work on any Mac without an Apple developer account: the app gets an
+// ad-hoc signature ("Sign to Run Locally"). It runs on the Mac that built it, but it can't be
+// notarized or handed to other people.
+//
+// To sign with your own Developer ID, copy Signing.local.xcconfig.example to
+// Signing.local.xcconfig in this folder and fill it in. That file is not committed.
+
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+OTHER_CODE_SIGN_FLAGS =
+PRODUCT_BUNDLE_IDENTIFIER = com.niklaskarlsson.skillori
+
+#include? "Signing.local.xcconfig"

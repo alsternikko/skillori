@@ -75,6 +75,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             _ = store.updater.output
             _ = store.inventory?.scannedAt
             _ = store.isScanning
+            // A line about a new Skillori comes and goes in the panel.
+            _ = AppUpdater.shared.phase
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.observeStore()
@@ -107,6 +109,10 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Open Library…", action: #selector(menuLibrary), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Settings…", action: #selector(menuSettings), keyEquivalent: ",").target = self
+        // The answer shows where the reader will look for it: the updates card in settings.
+        if AppUpdater.shared.phase != .unavailable {
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(menuCheckForUpdates), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Skillori", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
@@ -114,6 +120,10 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     @objc private func menuLibrary() { windows.showLibrary() }
     @objc private func menuSettings() { windows.showSettings() }
+    @objc private func menuCheckForUpdates() {
+        windows.showSettings()
+        AppUpdater.shared.checkNow()
+    }
 
     // MARK: Panel
 

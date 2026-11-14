@@ -1,6 +1,6 @@
 # Backlog
 
-Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillwatch-produktbrief.md). Det som är levererat markeras ✅. Spike-versionen av appen finns. Den är läsande och visar inventering, källa och lokal status.
+Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillori-produktbrief.md). Det som är levererat markeras ✅. Spike-versionen av appen finns. Den är läsande och visar inventering, källa och lokal status.
 
 ## Etapp 0 — Verifiera integrationskontrakt
 

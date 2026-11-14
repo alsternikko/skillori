@@ -45,15 +45,21 @@ struct SettingsView: View {
                 .frame(height: 52)
             }
             folders
-            // The left column sets the height; the privacy block is laid over the space
-            // beside it, so it is exactly as tall.
+            // The left column sets the height; the right column is laid over the space beside
+            // it, and the privacy block takes what the updates card leaves, so both end level.
             VStack(spacing: 6) {
                 general
                 checking
             }
             .frame(width: Self.columnWidth)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .trailing) { privacy.frame(width: Self.columnWidth) }
+            .overlay(alignment: .trailing) {
+                VStack(spacing: 6) {
+                    privacy
+                    AppUpdatesCard()
+                }
+                .frame(width: Self.columnWidth)
+            }
             Text("All product names and logos belong to their owners. Skillori is not affiliated with or endorsed by them.")
                 .font(TypeRole.sans(11))
                 .foregroundStyle(Palette.ink3)
@@ -205,5 +211,127 @@ struct SettingsView: View {
 
     private var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+}
+
+// MARK: Skillori updates
+
+/// Skillori's own updates: whether it checks, and where the newest version is. Every step of
+/// an install shows here, so the reader never meets a window of Sparkle's.
+struct AppUpdatesCard: View {
+    private var updates: AppUpdater { AppUpdater.shared }
+
+    var body: some View {
+        LabeledCard("Skillori updates", note: stamp) {
+            if updates.phase != .unavailable {
+                SettingRow {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Check once a day")
+                        DataText("Sends only its version").foregroundStyle(Palette.ink2)
+                    }
+                    .help("Asks skillori.app if there is a newer Skillori. Nothing about you or your files is sent, and nothing installs until you press Install.")
+                } trailing: {
+                    SegmentedChoice([(false, "Off"), (true, "On")],
+                                    selection: Binding(get: { updates.checksAutomatically },
+                                                       set: { updates.checksAutomatically = $0 }))
+                }
+            }
+            status
+        }
+        .animation(Motion.swap, value: updates.phase)
+    }
+
+    private var stamp: String {
+        if case .available = updates.phase { return "New version" }
+        guard let date = updates.lastCheck else { return "v\(updates.currentVersion)" }
+        let calendar = Calendar.current
+        let time = calendar.isDateInToday(date) ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(.dateTime.day().month(.abbreviated))
+        return "Checked \(time)"
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch updates.phase {
+        case .idle, .upToDate:
+            row(updates.phase == .upToDate ? "Up to date" : "Version \(updates.currentVersion)",
+                detail: updates.phase == .upToDate ? "v\(updates.currentVersion) is the newest" : "Not checked yet") {
+                Button("Check now") { updates.checkNow() }.buttonStyle(PillButtonStyle())
+            }
+        case .checking:
+            row("Checking…", detail: "Asking skillori.app") {
+                Button("Check now") {}.buttonStyle(PillButtonStyle()).disabled(true)
+            }
+        case let .available(version, downloaded):
+            SettingRow(isLast: true) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        StatusChip("New", kind: .new)
+                        Text("Version \(version)").lineLimit(1)
+                    }
+                    Button("What's new") { updates.openChangelog() }
+                        .buttonStyle(HintButtonStyle(underlined: true))
+                        .help(updates.notes ?? "The changelog on skillori.app")
+                }
+            } trailing: {
+                Button(downloaded ? "Install and restart" : "Install") { updates.install() }
+                    .buttonStyle(PillButtonStyle(prominent: true))
+            }
+        case let .downloading(version, fraction):
+            SettingRow(isLast: true) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Downloading \(version)").lineLimit(1)
+                        Spacer(minLength: 8)
+                        DataText(fraction.map { "\(Int($0 * 100))%" } ?? "…").foregroundStyle(Palette.ink2)
+                    }
+                    ProgressLine(fraction: fraction ?? 0)
+                }
+            } trailing: {
+                Button("Cancel") { updates.cancel() }.buttonStyle(PillButtonStyle())
+            }
+        case let .preparing(version):
+            row("Checking \(version)", detail: "Verifying the signature") { EmptyView() }
+        case let .installing(version):
+            row("Installing \(version)", detail: "Skillori restarts on its own") { EmptyView() }
+        case let .failed(message):
+            row("Couldn't update", detail: message) {
+                Button("Try again") { updates.checkNow() }.buttonStyle(PillButtonStyle())
+            }
+        case .unavailable:
+            row("Version \(updates.currentVersion)", detail: "Not set up in this build") {
+                Button("Changelog") { updates.openChangelog() }.buttonStyle(PillButtonStyle())
+            }
+        }
+    }
+
+    private func row(_ title: String, detail: String, @ViewBuilder trailing: () -> some View) -> some View {
+        SettingRow(isLast: true) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).lineLimit(1)
+                DataText(detail).foregroundStyle(Palette.ink2).truncationMode(.tail).help(detail)
+            }
+        } trailing: {
+            trailing()
+        }
+    }
+}
+
+/// A hairline track with the part done drawn in ink.
+private struct ProgressLine: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.ink.opacity(0.1))
+                Capsule().fill(Palette.ink).frame(width: max(3, proxy.size.width * fraction))
+            }
+        }
+        .frame(height: 3)
+        .animation(.linear(duration: 0.2), value: fraction)
+        .accessibilityElement()
+        .accessibilityLabel("Downloaded")
+        .accessibilityValue("\(Int(fraction * 100)) percent")
     }
 }

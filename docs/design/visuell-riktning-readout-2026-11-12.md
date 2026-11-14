@@ -134,7 +134,7 @@ Märket och punktsnittets siffror bygger på samma rutnät, fem gånger sju. Det
 
 ## Första start, inställningar och lägen
 
-Tillagda 12 november. Innehållet följer [produktbriefen](../Skillwatch-produktbrief.md) §6 och §11 där inget annat sägs.
+Tillagda 12 november. Innehållet följer [produktbriefen](../Skillori-produktbrief.md) §6 och §11 där inget annat sägs.
 
 ### Första start (artboard 09)
 

@@ -13,3 +13,4 @@ Skillori.xcodeproj/
 
 # Local signing config (personal details)
 scripts/*.conf.local
+Config/Signing.local.xcconfig

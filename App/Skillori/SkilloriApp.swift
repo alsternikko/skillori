@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         SkilloriFonts.register()
         AppearanceSetting.current.apply()
+        AppUpdater.shared.start()
         let windows = WindowRouter(store: store)
         self.windows = windows
         statusPanel = StatusPanelController(store: store, windows: windows)

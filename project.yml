@@ -11,12 +11,15 @@ packages:
     path: Packages/SkilloriCore
   SkilloriUI:
     path: Packages/SkilloriUI
+  # App updates (docs/beslut/0002). EdDSA-signed, appcast at skillori.app/appcast.xml.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 settings:
   base:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.0.1"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: 9N465MGNW2
 targets:
   Skillori:
     type: application
@@ -26,6 +29,11 @@ targets:
     dependencies:
       - package: SkilloriCore
       - package: SkilloriUI
+      - package: Sparkle
+    # Signing lives in Config/Signing.xcconfig so a clone builds without an Apple account.
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     info:
       path: App/Skillori/Info.plist
       properties:
@@ -35,18 +43,23 @@ targets:
         LSUIElement: true
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: ""
+        # App updates (AppUpdater.swift). The feed is written by scripts/release.sh; Sparkle only
+        # installs what is signed with the private half of SPARKLE_PUBLIC_ED_KEY.
+        SUFeedURL: https://skillori.app/appcast.xml
+        SUPublicEDKey: $(SPARKLE_PUBLIC_ED_KEY)
+        SUEnableAutomaticChecks: true
+        SUScheduledCheckInterval: 86400
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.niklaskarlsson.skillori
         PRODUCT_NAME: Skillori
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
-        CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "Developer ID Application"
-        OTHER_CODE_SIGN_FLAGS: "--timestamp"
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_STRICT_CONCURRENCY: complete
+        # The public EdDSA key for app updates. Empty until `sh scripts/release.sh --keys` has made
+        # the key pair; until then the app says it can't update itself.
+        SPARKLE_PUBLIC_ED_KEY: "MDJQ0qDP1DFSGJ9rfSE2+P9gFwZduKRIQcdNRmtw9I4="
       configs:
         Release:
           # Notarization rejects builds that carry the debugger entitlement get-task-allow.

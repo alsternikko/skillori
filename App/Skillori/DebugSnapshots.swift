@@ -161,7 +161,6 @@ private struct PanelBackdrop<Content: View>: View {
         .clipped()
     }
 }
-#endif
 
 /// The mark as app icon and as menu bar image, at real size and enlarged.
 private struct MarkSheet: View {
@@ -215,3 +214,4 @@ struct AppIconArt: View {
             .frame(width: 1024 / Self.scale, height: 1024 / Self.scale)
     }
 }
+#endif
