@@ -64,7 +64,7 @@ Att prova:
 - [ ] Att ändra panelens storlek.
 
 Beslut:
-- [ ] Sparkles standardval: daglig kontroll är påslagen, och installationen startar om appen direkt.
+- ✅ Sparkles standardval (15 november): den dagliga kontrollen är påslagen från start och kan stängas av i inställningarna; Install startar om appen direkt. Inget ändras i koden.
 - [ ] Påståendet "no tracking", med tanke på den dagliga uppdateringskontrollen och nedladdningsräknaren.
 - [ ] Detaljerna i promosidans koncept B: Orchid-rutans läge, texterna under rutorna, trädkortet och åtgärdsfältet.
 - [ ] Panelens skillrad visar bara den nya revisionen (`→ 6a0393c`), inte gammal → ny.
