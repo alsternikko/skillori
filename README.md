@@ -16,7 +16,7 @@ Skillori is a small macOS menu bar app that shows which AI agent skills are on y
 ## Principles
 
 - Skill content is treated as untrusted data. Skillori never runs a script from a skill, neither while reading nor while comparing.
-- Nothing is uploaded. The only network request is the optional upstream check, and it carries the repository name and nothing else.
+- Nothing is uploaded. The app makes two kinds of request: a daily update check to skillori.app (can be turned off) and the optional upstream check, which carries only the repository name.
 - Skillori doesn't write to your skill folders. An update only happens when you press **Update**, and then it's `npx skills update` that writes the files.
 
 ## Status

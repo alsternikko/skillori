@@ -65,7 +65,7 @@ Att prova:
 
 Beslut:
 - ✅ Sparkles standardval (15 november): den dagliga kontrollen är påslagen från start och kan stängas av i inställningarna; Install startar om appen direkt. Inget ändras i koden.
-- [ ] Påståendet "no tracking", med tanke på den dagliga uppdateringskontrollen och nedladdningsräknaren.
+- ✅ Påståendet "no tracking" (15 november): står kvar, eftersom appen inte har identifierare, cookies eller analys och räknaren bara sparar siffror. Privacy-rutan, footern och README nämner nu den dagliga frågan till skillori.app och räknaren.
 - [ ] Detaljerna i promosidans koncept B: Orchid-rutans läge, texterna under rutorna, trädkortet och åtgärdsfältet.
 - [ ] Panelens skillrad visar bara den nya revisionen (`→ 6a0393c`), inte gammal → ny.
 
