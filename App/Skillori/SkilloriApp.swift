@@ -61,6 +61,8 @@ final class WindowRouter {
     private(set) var library: NSWindow?
     private(set) var settings: NSWindow?
     private var settingsHeight: CGFloat = 0
+    /// Window delegates that hold a window at its smallest size; a window keeps its delegate weakly.
+    private var minSizeKeepers: [MinSizeKeeper] = []
 
     init(store: InventoryStore) { self.store = store }
 
@@ -127,8 +129,29 @@ final class WindowRouter {
         host.sizingOptions = []
         window.contentView = host
         window.setContentSize(size)
-        if let minSize { window.contentMinSize = minSize }
+        if let minSize {
+            // The library's top row of six counts and its columns need this much room. The
+            // content minimum alone did not hold when dragging (seen in 0.1.0), so the window's
+            // own minimum and a delegate that clamps every resize hold it as well.
+            window.contentMinSize = minSize
+            window.minSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: minSize)).size
+            let keeper = MinSizeKeeper(minFrameSize: window.minSize)
+            window.delegate = keeper
+            minSizeKeepers.append(keeper)
+        }
         window.center()
         return window
+    }
+}
+
+/// Keeps a window from being dragged smaller than its minimum.
+@MainActor
+private final class MinSizeKeeper: NSObject, NSWindowDelegate {
+    let minFrameSize: NSSize
+
+    init(minFrameSize: NSSize) { self.minFrameSize = minFrameSize }
+
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        NSSize(width: max(frameSize.width, minFrameSize.width), height: max(frameSize.height, minFrameSize.height))
     }
 }

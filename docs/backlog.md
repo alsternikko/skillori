@@ -61,7 +61,7 @@ Att prova:
 - [ ] Sitemap-steget i `release.sh` i en riktig release (det är bara provat på en kopia av sajten).
 - [ ] En riktig `npx skills update` via körknappen.
 - [ ] Klickflödet för Link source.
-- [ ] Att ändra panelens storlek.
+- ✅ Att ändra bibliotekets storlek (15 november): fungerar, och fönstret stannar nu vid 900×520 när man drar det mindre (det krympte förbi gränsen i 0.1.0).
 
 Beslut:
 - ✅ Sparkles standardval (15 november): den dagliga kontrollen är påslagen från start och kan stängas av i inställningarna; Install startar om appen direkt. Inget ändras i koden.
