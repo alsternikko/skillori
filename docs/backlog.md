@@ -1,6 +1,6 @@
 # Backlog
 
-Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillori-produktbrief.md). Det som är levererat markeras ✅. Uppdaterad 14 november 2026. Appen läser inventeringen, kontrollerar källor och kan köra uppdateringar via `npx skills`. Version 0.1.0 (första betan) släpptes 14 november och laddas ner från skillori.app, som nu indexeras av sökmotorer.
+Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](Skillori-produktbrief.md). Det som är levererat markeras ✅. Uppdaterad 15 november 2026. Appen läser inventeringen, kontrollerar källor och kan köra uppdateringar via `npx skills`. Version 0.1.0 (första betan) släpptes 14 november och laddas ner från skillori.app, som nu indexeras av sökmotorer.
 
 ## Etapp 0 — Verifiera integrationskontrakt
 
@@ -49,7 +49,7 @@ Prioriterad i ordning inom varje etapp. Etapperna följer [produktbriefen §14](
 - ✅ Signeringen fungerar utan Apple-konto: ad hoc som standard, Developer ID läses från `Config/Signing.local.xcconfig`.
 - ✅ Repot är publikt sedan 14 november, med historiken som den var. Kvar: `icomoon.ttf` saknar licenstext; lägg till en om produktägaren har en.
 - ✅ Beskrivning, webbplats och topics på GitHub (14 november).
-- ✅ Private vulnerability reporting är påslaget och social förhandsbild uppladdad. Sajten har en GitHub-knapp i stället för "What's new" (14 november). Lägg tillbaka GitHub-knapparna på sajten när repot är publikt.
+- ✅ Private vulnerability reporting är påslaget och social förhandsbild uppladdad. Sajten har GitHub-knappar i stället för "What's new", versionsetiketten länkar till changelogen och startsidans footer har raden "made with ♥" (14 november).
 
 ## Kvar efter 0.1.0
 
