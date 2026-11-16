@@ -71,35 +71,18 @@ enum DebugSnapshots {
                 try? await Task.sleep(for: .seconds(6))
             }
             let lib = CGSize(width: 1120, height: 800)
+            // The library and the pages it clicks through to. AppKit draws the lists and icons but
+            // not the light; `picture` draws the light but no scrolling list, so the first has both.
+            for (index, (name, view)) in LibraryView.snapshots(store: store).enumerated() {
+                render(view.environment(store), size: lib, to: out.appendingPathComponent("\(name).png"))
+                if index == 0 { picture(view.environment(store), size: lib, to: out.appendingPathComponent("\(name)-light.png")) }
+            }
             let installs = store.inventory?.installations ?? []
-            let tracked = installs.first { if case .skillsLock = $0.provenance { true } else { false } }
-            render(LibraryView().environment(store), size: lib, to: out.appendingPathComponent("library.png"))
-            render(LibraryView(initialSelection: tracked?.id).environment(store), size: lib,
-                   to: out.appendingPathComponent("library-selected.png"))
-            render(LibraryView(initialSelection: tracked?.id).environment(store).environment(\.colorScheme, .dark),
-                   size: lib, to: out.appendingPathComponent("library-dark.png"))
-            render(LibraryView(initialFilter: .managed).environment(store), size: lib,
-                   to: out.appendingPathComponent("library-managed.png"))
-            render(LibraryView(initialFilter: .managed, initialGroup: "managed:Cursor",
-                               initialExpanded: ["managed:Cursor", "managed:Codex", "managed:Codex/quiet"]).environment(store),
-                   size: CGSize(width: 1120, height: 1400), to: out.appendingPathComponent("library-apps.png"))
-            render(LibraryView(initialGroup: "managed:Cursor", initialExpanded: ["managed:Cursor"]).environment(store),
-                   size: CGSize(width: 1120, height: 1100), to: out.appendingPathComponent("library-yours-and-apps.png"))
-            render(LibraryView(initialGroup: "managed:Claude Code", initialExpanded: ["managed:Claude Code"]).environment(store),
-                   size: CGSize(width: 1120, height: 1100), to: out.appendingPathComponent("library-claude-code.png"))
-            render(LibraryView(initialFilter: .coverage).environment(store), size: lib,
-                   to: out.appendingPathComponent("coverage.png"))
-            render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store), size: lib,
-                   to: out.appendingPathComponent("detail.png"))
-            render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store)
-                .environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("detail-dark.png"))
             render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 680),
                    to: out.appendingPathComponent("settings.png"))
             render(SettingsView(ownChrome: true).environment(store).environment(\.colorScheme, .dark),
                    size: CGSize(width: 640, height: 680), to: out.appendingPathComponent("settings-dark.png"))
             let unknown = installs.first { $0.provenance == .unknown }
-            render(LibraryView(initialSelection: unknown?.id, showsDetail: true).environment(store), size: lib,
-                   to: out.appendingPathComponent("detail-unknown.png"))
             if let unknown {
                 let found = InventoryStore.LinkSearch(
                     source: UpstreamSource(owner: "example", repository: "skills"), localHash: "aaa",
@@ -115,13 +98,6 @@ enum DebugSnapshots {
             }
             // The update command: waiting to be run, and after a run that printed something.
             if let target = store.updatable.first {
-                render(LibraryView(initialSelection: target.id, showsDetail: true).environment(store), size: lib,
-                       to: out.appendingPathComponent("detail-update.png"))
-                // The library with the cursor on a source that has updates: one button updates them all.
-                if case .skillsLock(let source, _, _, _, _) = target.provenance {
-                    render(LibraryView(initialGroup: "source:" + source).environment(store), size: lib,
-                           to: out.appendingPathComponent("library-source.png"))
-                }
                 // The panel with a source opened, and after a run for that source.
                 let first = PanelModel.live(from: store).groups.first
                 let open = PanelBackdrop { MenuPanel(opened: Set([first?.id].compactMap { $0 })).frame(width: StatusPanelController.panelWidth) }
@@ -142,13 +118,6 @@ enum DebugSnapshots {
                                         output: "Checking 1 skill for updates\nCould not reach the source\n")
                 render(open.environment(store), size: CGSize(width: 420, height: 820), to: out.appendingPathComponent("panel-update-one-failed.png"))
                 store.updater.setSample(names: [], phase: .idle, output: "")
-            }
-            let linked = installs.first { store.link(for: $0) != nil }
-            if let linked {
-                render(LibraryView(initialSelection: linked.id).environment(store), size: lib,
-                       to: out.appendingPathComponent("library-linked.png"))
-                render(LibraryView(initialSelection: linked.id, showsDetail: true).environment(store), size: lib,
-                       to: out.appendingPathComponent("detail-linked.png"))
             }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale
