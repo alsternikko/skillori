@@ -3,22 +3,17 @@ import SkilloriCore
 import SkilloriUI
 import SwiftUI
 
-/// The library, first take: three tiles over one list. The tile that is chosen lights up, and
-/// the list under it shows what that tile counts: what needs you, your skills, or the apps'.
+/// The library, second take: what needs you first, in one block of light, and under it two
+/// ways into the library, your skills and the apps'. With nothing to do the block says so.
 struct LibraryView: View {
-    enum Shelf: String { case todo, mine, apps }
-
     @Environment(InventoryStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The chosen tile; nil until the reader picks one, which opens on what needs them.
-    @State private var shelf: Shelf?
     /// The pages the reader has clicked into, the latest last.
     @State private var path: [LibraryPage]
     @State private var search = ""
     @State private var linking: Installation?
 
-    init(shelf: Shelf? = nil, path: [LibraryPage] = []) {
-        _shelf = State(initialValue: shelf)
+    init(path: [LibraryPage] = []) {
         _path = State(initialValue: path)
     }
 
@@ -28,8 +23,7 @@ struct LibraryView: View {
             if !search.isEmpty {
                 ListCard { SearchResults(query: search, open: { search = ""; open($0) }) }
             } else if let page = path.last {
-                LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 })
-                    .transition(.opacity)
+                pageView(page).transition(.opacity)
             } else {
                 home
             }
@@ -48,111 +42,117 @@ struct LibraryView: View {
     // MARK: Pages
 
     private func open(_ page: LibraryPage) {
-        switch page {
-        case .home: path = []
-        case .mine: shelf = .mine; path = []
-        case .apps: shelf = .apps; path = []
-        default: if path.last != page { path.append(page) }
-        }
+        if page == .home { path = [] } else if path.last != page { path.append(page) }
     }
 
     private func back() { if !path.isEmpty { path.removeLast() } }
 
     private var backTitle: String {
-        path.count >= 2 ? LibraryPaging.title(path[path.count - 2], store: store) : title(current)
+        path.count >= 2 ? LibraryPaging.title(path[path.count - 2], store: store) : "Library"
+    }
+
+    @ViewBuilder private func pageView(_ page: LibraryPage) -> some View {
+        switch page {
+        case .mine:
+            VStack(spacing: 6) {
+                Crumb(title: backTitle, action: back)
+                ListCard { MySkillsList(open: open) }
+            }
+        case .apps:
+            VStack(spacing: 6) {
+                Crumb(title: backTitle, action: back)
+                ListCard { AppsList(open: open) }
+            }
+        default:
+            LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 })
+        }
     }
 
     // MARK: Home
 
-    private var current: Shelf { shelf ?? (Assist.todos(store).isEmpty ? .mine : .todo) }
-
     private var home: some View {
         let todos = Assist.todos(store)
-        let mine = Assist.mine(store)
-        let fromApps = (store.inventory?.installations ?? []).filter(Assist.isManaged).count
-        return VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                tile(.todo, number: todos.count, caption: todos.isEmpty ? "nothing to do" : todos.count == 1 ? "thing to do" : "things to do")
-                tile(.mine, number: mine.count, caption: "installed by you")
-                tile(.apps, number: fromApps, caption: "kept current by " + Assist.names(Assist.apps(store).map(\.name)))
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            ListCard {
-                switch current {
-                case .todo: todoList(todos)
-                case .mine: MySkillsList(open: open)
-                case .apps: AppsList(open: open)
-                }
-            }
-        }
-    }
-
-    private func title(_ shelf: Shelf) -> String {
-        switch shelf {
-        case .todo: "For you"
-        case .mine: "Your skills"
-        case .apps: "From your apps"
-        }
-    }
-
-    private func tile(_ item: Shelf, number: Int, caption: String) -> some View {
-        let on = current == item
-        let tone: Tone = item == .todo && number > 0 ? .new : .rest
-        return Button {
-            withAnimation(reduceMotion ? nil : Motion.swap) { shelf = item }
-        } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    LabelText(title(item)).foregroundStyle(on ? tone.blockSecondary : Palette.ink2)
-                    if item == .todo, !on, number > 0 {
-                        Circle().fill(Color(hex: 0xC555DD)).frame(width: 7, height: 7).accessibilityHidden(true)
-                    }
-                }
-                DotNumber(store.inventory == nil ? "--" : "\(number)", size: 40).padding(.top, 14)
-                Text(caption).font(TypeRole.sans(12)).lineLimit(1)
-                    .foregroundStyle(on ? tone.blockSecondary : Palette.ink2)
-                    .padding(.top, 8)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-            .foregroundStyle(on ? tone.blockForeground : Palette.ink)
-            .background {
-                if on {
-                    tone.blockBackground(phase: item == .todo ? 3 : item == .mine ? 31 : 61)
-                } else {
-                    RoundedRectangle(cornerRadius: Radius.block, style: .circular).fill(Palette.card)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
-    }
-
-    @ViewBuilder private func todoList(_ todos: [Todo]) -> some View {
-        if todos.isEmpty {
+        return ScrollView {
             VStack(spacing: 6) {
-                Text("Nothing needs you").font(TypeRole.sans(15, .medium))
-                Text(store.checksEnabled ? store.checkStamp + ". Skillori keeps looking." : "Skillori keeps looking.")
-                    .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
+                if store.inventory != nil { today(todos) }
+                door(app: nil, title: "Your skills", note: mineNote, number: Assist.mine(store).count) { open(.mine) }
+                door(app: Assist.apps(store).first?.name, title: "From your apps",
+                     note: Assist.names(Assist.apps(store).map(\.name)) + " keep these current themselves.",
+                     number: (store.inventory?.installations ?? []).filter(Assist.isManaged).count) { open(.apps) }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 48)
-        } else {
-            ScrollView {
+        }
+        .scrollIndicators(.never)
+    }
+
+    private var mineNote: String {
+        let mine = Assist.mine(store)
+        let off = mine.filter { Assist.note(for: $0, store: store).map { $0.kind != .outline } ?? false }.count
+        return off == 0 ? "Installed by you. Skillori checks them against their source."
+            : "Installed by you. \(off == 1 ? "One needs" : "\(off) need") a look."
+    }
+
+    /// One block for what needs the reader: a sentence and a button per thing. With nothing to
+    /// do it says so, in the resting light.
+    private func today(_ todos: [Todo]) -> some View {
+        let updates = todos.contains { $0.id.hasPrefix("skills:") || $0.id.hasPrefix("plugins:") }
+        let tone: Tone = todos.isEmpty ? .rest : updates ? .new : .attention
+        return VStack(alignment: .leading, spacing: 0) {
+            LabelText(store.checksEnabled ? store.checkStamp : "Today").foregroundStyle(tone.blockSecondary)
+            Text(todos.isEmpty ? "You’re all set" : todos.count == 1 ? "One thing for you" : "\(Assist.spelled(todos.count)) things for you")
+                .font(TypeRole.sans(24, .medium)).tracking(-0.4)
+                .padding(.top, 8)
+            if todos.isEmpty {
+                Text("\(Assist.mine(store).count) skills of yours and \((store.inventory?.installations ?? []).filter(Assist.isManaged).count) from your apps. Nothing needs you.")
+                    .font(TypeRole.sans(13)).foregroundStyle(tone.blockSecondary)
+                    .padding(.top, 4).padding(.bottom, 6)
+            } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(todos.enumerated()), id: \.element.id) { index, todo in
-                        if index > 0 { Palette.line.frame(height: 1).padding(.horizontal, 12) }
-                        TodoLine(todo: todo, open: open)
+                    ForEach(todos) { todo in
+                        tone.blockForeground.opacity(0.2).frame(height: 1)
+                        TodoLine(todo: todo, tone: tone, open: open)
                     }
-                    Text("That’s all for now.").font(TypeRole.sans(12)).foregroundStyle(Palette.ink3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 12).padding(.vertical, 14)
                 }
-                .padding(6)
+                .padding(.top, 12)
             }
-            .scrollIndicators(.never)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: 18, leading: 22, bottom: todos.isEmpty ? 18 : 6, trailing: 22))
+        .foregroundStyle(tone.blockForeground)
+        .background { tone.blockBackground(phase: 3) }
+    }
+
+    /// A way into the library: a name, one line on what is there, and how many.
+    private func door(app: String?, title: String, note: String, number: Int, action: @escaping () -> Void) -> some View {
+        Door(app: app, title: title, note: note, number: number, action: action)
+    }
+
+    private struct Door: View {
+        let app: String?
+        let title: String
+        let note: String
+        let number: Int
+        var action: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 14) {
+                    AppMark(app: app)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(TypeRole.sans(15, .medium))
+                        Text(note).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    }
+                    Spacer(minLength: 12)
+                    DotNumber("\(number)", size: 22)
+                    DataText("›").foregroundStyle(Palette.ink3)
+                }
+                .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
+                .background(hovering ? Palette.card.opacity(0.7) : Palette.card,
+                            in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+                .contentShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
         }
     }
 }
@@ -170,19 +170,19 @@ extension LibraryView {
         let plugin = all.first { if case .ownerUpdate = store.status(for: $0) { true } else { false } }
         var list: [(String, LibraryView)] = [
             ("library", LibraryView()),
-            ("library-mine", LibraryView(shelf: .mine)),
-            ("library-apps", LibraryView(shelf: .apps)),
-            ("library-app-cursor", LibraryView(shelf: .apps, path: [.app("Cursor")])),
-            ("library-app-claude-code", LibraryView(shelf: .apps, path: [.app("Claude Code")])),
+            ("library-mine", LibraryView(path: [.mine])),
+            ("library-apps", LibraryView(path: [.apps])),
+            ("library-app-cursor", LibraryView(path: [.apps, .app("Cursor")])),
+            ("library-app-claude-code", LibraryView(path: [.apps, .app("Claude Code")])),
             ("library-folders", LibraryView(path: [.folders])),
         ]
         if let tracked {
-            list.append(("library-skill", LibraryView(shelf: .mine, path: [.skill(tracked.id)])))
-            list.append(("library-details", LibraryView(shelf: .mine, path: [.skill(tracked.id), .details(tracked.id)])))
+            list.append(("library-skill", LibraryView(path: [.mine, .skill(tracked.id)])))
+            list.append(("library-details", LibraryView(path: [.mine, .skill(tracked.id), .details(tracked.id)])))
         }
-        if let unknown { list.append(("library-skill-unknown", LibraryView(shelf: .mine, path: [.skill(unknown.id)]))) }
-        if let twice { list.append(("library-skill-twice", LibraryView(shelf: .mine, path: [.skill(twice.id)]))) }
-        if let plugin { list.append(("library-skill-plugin", LibraryView(shelf: .apps, path: [.app(Assist.app(of: plugin)), .skill(plugin.id)]))) }
+        if let unknown { list.append(("library-skill-unknown", LibraryView(path: [.mine, .skill(unknown.id)]))) }
+        if let twice { list.append(("library-skill-twice", LibraryView(path: [.skill(twice.id)]))) }
+        if let plugin { list.append(("library-skill-plugin", LibraryView(path: [.apps, .app(Assist.app(of: plugin)), .skill(plugin.id)]))) }
         return list
     }
 }
