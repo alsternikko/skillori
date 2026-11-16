@@ -408,7 +408,7 @@ public struct StatTile: View {
         .animation(Motion.hover, value: hovering)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(number) \(caption)")
+        .accessibilityLabel("\(label): \(number), \(caption)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -465,7 +465,12 @@ public struct StatusChip: View {
 /// A row of thin ticks, one per thing, followed by the count. For "how many agents".
 public struct TickCount: View {
     let count: Int
-    public init(_ count: Int) { self.count = count }
+    /// What is counted, for VoiceOver ("3 agents").
+    let unit: String
+    public init(_ count: Int, unit: String = "") {
+        self.count = count
+        self.unit = unit
+    }
 
     public var body: some View {
         HStack(spacing: 8) {
@@ -478,7 +483,7 @@ public struct TickCount: View {
             DataText("\(count)")
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(count)")
+        .accessibilityLabel(unit.isEmpty ? "\(count)" : "\(count) \(unit)")
     }
 }
 
@@ -500,10 +505,13 @@ public struct StatusLine<Content: View>: View {
 public struct SegmentedChoice<Value: Hashable>: View {
     let options: [(value: Value, label: String)]
     @Binding var selection: Value
+    /// What is being chosen, for VoiceOver, which otherwise reads only "Off" or "On".
+    let label: String?
 
-    public init(_ options: [(value: Value, label: String)], selection: Binding<Value>) {
+    public init(_ options: [(value: Value, label: String)], selection: Binding<Value>, label: String? = nil) {
         self.options = options
         _selection = selection
+        self.label = label
     }
 
     public var body: some View {
@@ -523,9 +531,12 @@ public struct SegmentedChoice<Value: Hashable>: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(label.map { "\($0): \(option.label)" } ?? option.label)
                 .accessibilityAddTraits(chosen ? .isSelected : [])
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(label ?? "")
         .padding(3)
         .fixedSize()
         .background(Palette.ink.opacity(0.07), in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))

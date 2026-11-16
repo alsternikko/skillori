@@ -27,7 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // macOS thickens text a little when it smooths it ("font smoothing"). The design is
         // drawn without that, so the app turns it off for itself, before any text is drawn.
         // It has to be a stored value of the app's own: the text system does not read registered defaults.
-        if UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleFontSmoothing"] == nil {
+        // A reader who asks for more contrast gets the system's smoothing, which is easier to read.
+        let wantsContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let stored = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?["AppleFontSmoothing"]
+        if wantsContrast {
+            if stored != nil { UserDefaults.standard.removeObject(forKey: "AppleFontSmoothing") }
+        } else if stored == nil {
             UserDefaults.standard.set(0, forKey: "AppleFontSmoothing")
         }
         super.init()

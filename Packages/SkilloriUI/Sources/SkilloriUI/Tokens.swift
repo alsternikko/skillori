@@ -8,10 +8,13 @@ public enum Palette {
     public static let panel = Color(light: 0xF1F1F3, dark: 0x19191B)
     public static let card = Color(light: 0xFAFAFB, dark: 0x242427)
     public static let softBlock = Color(light: 0xDCDCE0, dark: 0x2E2E32)
-    public static let line = Color(light: 0xEBEBEE, dark: 0x303034)
+    public static let line = Color(light: 0xEBEBEE, dark: 0x303034, contrast: (0xC4C4C9, 0x55555A))
     public static let ink = Color(light: 0x151516, dark: 0xF1F1F3)
-    public static let ink2 = Color(light: 0x6B6B70, dark: 0xA3A3A8)
-    public static let ink3 = Color(light: 0xA3A3A8, dark: 0x6B6B70)
+    /// Secondary text. At least 4.5:1 on cards and panels, in both appearances.
+    public static let ink2 = Color(light: 0x6B6B70, dark: 0xA3A3A8, contrast: (0x4E4E53, 0xC2C2C7))
+    /// Faint text and marks. At least 3:1 on cards and panels; with Increase Contrast it is
+    /// as strong as `ink2`. (It was #A3A3A8 on light, 2.4:1, until the audit of 2026-11-16.)
+    public static let ink3 = Color(light: 0x86868B, dark: 0x86868B, contrast: (0x6B6B70, 0xA3A3A8))
     /// Text and marks on a filled control; flips with `ink`.
     public static let onInk = Color(light: 0xFFFFFF, dark: 0x151516)
 
@@ -89,10 +92,15 @@ public extension Color {
                   opacity: opacity)
     }
 
-    init(light: UInt32, dark: UInt32) {
+    /// A colour for light and dark mode. `contrast` gives stronger values for when the reader
+    /// has turned on Increase Contrast in System Settings.
+    init(light: UInt32, dark: UInt32, contrast: (light: UInt32, dark: UInt32)? = nil) {
         self.init(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let hex = isDark ? dark : light
+            let match = appearance.bestMatch(from: [.darkAqua, .aqua, .accessibilityHighContrastDarkAqua,
+                                                    .accessibilityHighContrastAqua])
+            let isDark = match == .darkAqua || match == .accessibilityHighContrastDarkAqua
+            let high = match == .accessibilityHighContrastAqua || match == .accessibilityHighContrastDarkAqua
+            let hex = high && contrast != nil ? (isDark ? contrast!.dark : contrast!.light) : (isDark ? dark : light)
             return NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
                            green: CGFloat((hex >> 8) & 0xFF) / 255,
                            blue: CGFloat(hex & 0xFF) / 255,

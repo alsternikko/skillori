@@ -94,6 +94,10 @@ public struct DiscoveryEngine: Sendable {
         self.system = system
     }
 
+    private func treeID(at url: URL) throws -> String {
+        try GitTreeHash.hashDirectory(at: url).treeID
+    }
+
     public func scan() -> Inventory {
         let start = Date()
         var builder = Builder()
@@ -358,7 +362,7 @@ public struct DiscoveryEngine: Sendable {
             guard let key = fileIdentity(dir), var installation = builder.installations[key] else { continue }
             let local: Provenance.LocalState
             do {
-                let hash = try GitTreeHash.hashDirectory(at: dir).treeID
+                let hash = try treeID(at: dir)
                 local = hash == entry.skillFolderHash ? .matchesBaseline : .modified(localHash: hash)
             } catch {
                 local = .hashFailed(String(describing: error))
@@ -388,7 +392,7 @@ public struct DiscoveryEngine: Sendable {
         for (_, group) in byName where group.count > 1 {
             for (key, installation) in group {
                 let url = URL(fileURLWithPath: installation.canonicalPath)
-                builder.installations[key]?.contentHash = try? GitTreeHash.hashDirectory(at: url).treeID
+                builder.installations[key]?.contentHash = try? treeID(at: url)
             }
         }
     }
