@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.1</title>
-      <pubDate>Mon, 16 Nov 2026 16:06:25 +0000</pubDate>
-      <sparkle:version>6</sparkle:version>
-      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+      <title>Skillori 0.2.2</title>
+      <pubDate>Mon, 16 Nov 2026 18:59:52 +0000</pubDate>
+      <sparkle:version>7</sparkle:version>
+      <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.1</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skillori now rests when you aren’t looking: the light in its panel stops when the panel is closed, so it no longer uses your CPU in the background. Faint text is easier to read, and VoiceOver says more about what it reads.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.2</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skillori now checks Cursor and Codex plugins too, and tells you which app to update them in. It also learned to count: an older version at the source is no longer called an update.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="oixEHBF4CEbCZMujCsdLjE4ZUlSAvI6K+p5CL81hU6N4dipFiiGrVYudLR1ExETy1o2UPN6HqHbL2inNWvk9CA==" length="4797238"/>
+                 sparkle:edSignature="9NE2vYd/MxLqeUD33Thy0rm2WinwLV7EiZr19ob1MMq/1m68IiwSQ+SpAUKvqY0jItg/HbNKDoSpvtNa2YHWBg==" length="4824183"/>
     </item>
   </channel>
 </rss>
