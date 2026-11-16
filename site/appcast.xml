@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.1.1</title>
-      <pubDate>Sun, 15 Nov 2026 22:49:25 +0000</pubDate>
-      <sparkle:version>3</sparkle:version>
-      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+      <title>Skillori 0.1.2</title>
+      <pubDate>Mon, 16 Nov 2026 13:40:42 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.1.1</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>The Library window stops at a sensible size now, instead of folding itself into a postage stamp.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.1.2</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skillori now finds the skills the Claude app installs through plugins, skills from more agents, and skill folders that have moved. If it told you that you had zero skills, it was wrong, and it’s sorry.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="WMc2wVOJa0LGkAL5s2yOCrIIVe4Yk7DL6GU5thu/BiQOn8InTV0qFaywoNUvd7xV9c50iBb4WQc1Vf1iaE9MCQ==" length="4558531"/>
+                 sparkle:edSignature="beddiGL/RpVWh6yMBWajmeqbf+yX+0p+yEbmmeAM70nKRdAX6aRWNnUgnMkbJZcvPVc2gSM2m1M859iupgvUDQ==" length="4588690"/>
     </item>
   </channel>
 </rss>
