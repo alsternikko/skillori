@@ -52,7 +52,8 @@ struct LibraryView: View {
     @FocusState private var listFocused: Bool
 
     init(initialFilter: LibraryFilter = .yours, initialSelection: Installation.ID? = nil, showsDetail: Bool = false,
-         initialGroup: String? = nil) {
+         initialGroup: String? = nil, initialExpanded: Set<String> = []) {
+        _expanded = State(initialValue: initialExpanded)
         _filter = State(initialValue: initialFilter)
         _selection = State(initialValue: initialSelection)
         _showsDetail = State(initialValue: showsDetail)
@@ -172,17 +173,30 @@ struct LibraryView: View {
     private var tiles: some View {
         HStack(spacing: 6) {
             tile(.yours, "Yours", "installed by you")
-            tile(.updates, "Updates", "newer at the source", tone: count(.updates) > 0 ? .new : nil)
+            tile(.updates, "Updates", updatesCaption, tone: updateUnits > 0 ? .new : nil)
             tile(.upToDate, "Up to date", "match their source")
             tile(.heldBack, "Held back", "kept by you")
             tile(.unverified, "Not verified", "can't be checked")
-            tile(.managed, "Managed", "owned by apps")
+            tile(.managed, "From apps", "in \(store.pluginRecords.count) plugins")
         }
     }
 
     private func tile(_ item: LibraryFilter, _ label: String, _ caption: String, tone: Tone? = nil) -> some View {
-        StatTile(label: label, number: store.inventory == nil ? "--" : "\(count(item))", caption: caption,
-                 tone: tone, isSelected: filter == item) { filter = item }
+        // Updates counts what can be updated: a skill of yours, or a whole plugin.
+        let number = item == .updates ? updateUnits : count(item)
+        return StatTile(label: label, number: store.inventory == nil ? "--" : "\(number)", caption: caption,
+                        tone: tone, isSelected: filter == item) { filter = item }
+    }
+
+    /// Skills of yours with something new at their source, and plugins with a newer version.
+    private var updateUnits: Int { store.updateCount + store.pluginUpdates.count }
+
+    private var updatesCaption: String {
+        let skills = store.updateCount
+        let plugins = store.pluginUpdates.count
+        guard plugins > 0 else { return "newer at the source" }
+        guard skills > 0 else { return plugins == 1 ? "1 plugin" : "\(plugins) plugins" }
+        return "\(skills) skill\(skills == 1 ? "" : "s") · \(plugins) plugin\(plugins == 1 ? "" : "s")"
     }
 
     private func count(_ item: LibraryFilter) -> Int {
@@ -247,42 +261,10 @@ struct LibraryView: View {
                                 sectionHeader("Installed by you · \(count(.yours))", note: nil)
                             }
                             if group.id == firstManaged, filter != .managed {
-                                sectionHeader("Managed by apps · \(count(.managed))",
-                                              note: "Read-only here. Each app updates its own.")
+                                sectionHeader("From your apps · \(count(.managed)) skills",
+                                              note: "Each app updates its own")
                             }
-                            GroupRow(group: group, statuses: group.items.map(store.status(for:)),
-                                     isOpen: open, isLast: lastInSection, hasCursor: groupCursor == group.id)
-                                .id(group.id)
-                                .onTapGesture { toggle(group, among: groups) }
-                            if open {
-                                ForEach(group.items) { installation in
-                                    InstallationRow(installation: installation,
-                                                    status: store.status(for: installation),
-                                                    link: store.link(for: installation),
-                                                    copies: store.copies(of: installation),
-                                                    isSelected: installation.id == selection,
-                                                    trunk: !lastInSection,
-                                                    isLast: installation.id == group.items.last?.id)
-                                        .id(installation.id)
-                                        // A single click selects at once; it does not wait to see
-                                        // whether a second click follows.
-                                        .onTapGesture {
-                                            groupCursor = nil
-                                            selection = installation.id == selection ? nil : installation.id
-                                            listFocused = true
-                                        }
-                                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                                            selection = installation.id
-                                            showsDetail = true
-                                        })
-                                        .accessibilityAddTraits(.isButton)
-                                        .accessibilityHint("Opens the skill's details")
-                                        .accessibilityAction {
-                                            selection = installation.id
-                                            showsDetail = true
-                                        }
-                                }
-                            }
+                            branch(group, guides: [], isLast: lastInSection, among: groups)
                         }
                         if rows.isEmpty, store.inventory != nil { emptyState }
                         Color.clear.frame(height: selected == nil ? 8 : 64)
@@ -306,7 +288,7 @@ struct LibraryView: View {
         .onKeyPress(.rightArrow) { setCursorGroup(open: true, among: groups) }
         .onKeyPress(.leftArrow) { setCursorGroup(open: false, among: groups) }
         .onKeyPress(.return) {
-            if let id = groupCursor, let group = groups.first(where: { $0.id == id }) {
+            if let id = groupCursor, let group = allGroups(groups).first(where: { $0.id == id }) {
                 toggle(group, among: groups)
                 return .handled
             }
@@ -318,6 +300,79 @@ struct LibraryView: View {
             guard selection != nil || groupCursor != nil else { return .ignored }
             if showsDetail { showsDetail = false } else { selection = nil; groupCursor = nil }
             return .handled
+        }
+    }
+
+    /// One branch of the tree with what is open below it: branches inside it, or its skills.
+    /// `guides` are the tree lines of the branches above it.
+    private func branch(_ group: SkillGroup, guides: [TreeGuide.Branch], isLast: Bool, among groups: [SkillGroup]) -> AnyView {
+        let open = isExpanded(group, among: groups)
+        let below = guides + [isLast ? .none : .pipe]
+        return AnyView(VStack(spacing: 0) {
+            GroupRow(group: group, statuses: group.items.map(store.status(for:)),
+                     guides: guides + [isLast ? .corner : .tee],
+                     summary: summary(of: group),
+                     isOpen: open, hasCursor: groupCursor == group.id)
+                .id(group.id)
+                .onTapGesture { toggle(group, among: groups) }
+            if open {
+                if group.children.isEmpty {
+                    skillRows(group.items, guides: below)
+                } else {
+                    ForEach(group.children) { child in
+                        branch(child, guides: below, isLast: child.id == group.children.last?.id, among: groups)
+                    }
+                }
+            }
+        })
+    }
+
+    /// The skills of one branch. `guides` are the tree lines of the branches above them.
+    @ViewBuilder private func skillRows(_ items: [Installation], guides: [TreeGuide.Branch]) -> some View {
+        ForEach(items) { installation in
+            InstallationRow(installation: installation,
+                            status: store.status(for: installation),
+                            link: store.link(for: installation),
+                            copies: store.copies(of: installation),
+                            isSelected: installation.id == selection,
+                            guides: guides,
+                            isLast: installation.id == items.last?.id)
+                .id(installation.id)
+                // A single click selects at once; it does not wait to see
+                // whether a second click follows.
+                .onTapGesture {
+                    groupCursor = nil
+                    selection = installation.id == selection ? nil : installation.id
+                    listFocused = true
+                }
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    selection = installation.id
+                    showsDetail = true
+                })
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens the skill's details")
+                .accessibilityAction {
+                    selection = installation.id
+                    showsDetail = true
+                }
+        }
+    }
+
+    /// What an app or plugin branch says about its plugins, counted per plugin.
+    private func summary(of group: SkillGroup) -> GroupRow.Summary {
+        switch group.kind {
+        case .managed:
+            let plugins = Set(group.items.compactMap(\.plugin?.id))
+            let updates = store.pluginUpdates.filter { plugins.contains($0.id) }.count
+            return .app(plugins: plugins.count, updates: updates)
+        case .plugin:
+            guard let plugin = group.plugin else {
+                return group.children.isEmpty ? .builtIn : .fold(group.app == "Codex" ? "Updated by Codex" : "Not checked")
+            }
+            let state = store.checksEnabled ? store.pluginReadings[plugin.id]?.state : nil
+            return .plugin(plugin, state: state)
+        case .source, .unknown:
+            return .none
         }
     }
 
@@ -338,7 +393,9 @@ struct LibraryView: View {
                 } else {
                     ("unknown", "No known source", .unknown)
                 }
-            case .managed(let owner): ("managed:" + owner, owner, .managed)
+            case .managed(let owner):
+                // One branch per app, whether a skill came with a plugin or with the app itself.
+                ("managed:" + Self.app(of: installation, owner: owner), Self.app(of: installation, owner: owner), .managed)
             }
             if byID[id] == nil {
                 byID[id] = SkillGroup(id: id, title: title, kind: kind, items: [])
@@ -346,18 +403,97 @@ struct LibraryView: View {
             }
             byID[id]?.items.append(installation)
         }
-        return order.compactMap { byID[$0] }.sorted { a, b in
+        let updating = Set(store.pluginUpdates.map(\.id))
+        func updates(_ group: SkillGroup) -> Int { Set(group.items.compactMap(\.plugin?.id)).intersection(updating).count }
+        return order.compactMap { byID[$0] }.map { group in
+            guard group.kind == .managed else { return group }
+            var group = group
+            group.app = group.title
+            group.children = pluginBranches(of: group, updating: updating)
+            return group
+        }
+        .sorted { a, b in
             if a.kind != b.kind { return a.kind.rawValue < b.kind.rawValue }
+            // Among apps, the ones with something to update come first.
+            if a.kind == .managed, updates(a) != updates(b) { return updates(a) > updates(b) }
             if a.items.count != b.items.count { return a.items.count > b.items.count }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
     }
 
+    /// The product that owns a skill, by the name people know it by. The folder a skill was
+    /// found in gives an owner such as "Cursor plugin" or "Claude app"; the reader thinks of
+    /// Claude Code, Claude, Cursor and Codex.
+    static func app(of installation: Installation, owner: String) -> String {
+        if let app = installation.plugin?.app { return app }
+        switch owner {
+        case "Claude Code plugin", "claude.ai": return "Claude Code"
+        case "Claude app", "Claude app plugin": return "Claude"
+        default:
+            for suffix in [" plugin", " extension"] where owner.hasSuffix(suffix) {
+                return String(owner.dropLast(suffix.count))
+            }
+            return owner
+        }
+    }
+
+    /// The name of the branch for skills that came with an app but not in a recorded plugin.
+    private static func branchTitle(owner: String) -> String {
+        switch owner {
+        case "claude.ai": return "Synced from claude.ai"
+        case "Claude app": return "From your Claude account"
+        default: return owner.hasSuffix(" plugin") || owner.hasSuffix(" extension") ? "Plugins" : "Built in"
+        }
+    }
+
+    /// Whether Skillori can ask anyone about this plugin. A plugin that ships with its app,
+    /// or names no source, is the app's business alone.
+    private static func isCheckable(_ plugin: PluginRecord) -> Bool {
+        plugin.manifestPath == nil ? plugin.marketplaceRepository != nil : plugin.repository != nil
+    }
+
+    /// An app's skills in branches: one per plugin, plugins that can't be checked folded into
+    /// one, and the app's own skills by where they came from. Plugins with an update first.
+    private func pluginBranches(of app: SkillGroup, updating: Set<String>) -> [SkillGroup] {
+        let byPlugin = Dictionary(grouping: app.items) { $0.plugin?.id ?? "" }
+        var plugins: [SkillGroup] = byPlugin.compactMap { id, items in
+            guard !id.isEmpty, let record = items.first?.plugin else { return nil }
+            return SkillGroup(id: app.id + "/" + id, title: record.title, kind: .plugin, items: items,
+                              plugin: record, app: app.title)
+        }
+        .sorted { a, b in
+            let x = updating.contains(a.plugin!.id), y = updating.contains(b.plugin!.id)
+            if x != y { return x }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
+        let quiet = plugins.filter { !Self.isCheckable($0.plugin!) }
+        if quiet.count > 1 {
+            plugins.removeAll { !Self.isCheckable($0.plugin!) }
+            let title = app.title == "Codex" ? "\(quiet.count) plugins updated by Codex" : "\(quiet.count) plugins with no source to ask"
+            plugins.append(SkillGroup(id: app.id + "/quiet", title: title, kind: .plugin,
+                                      items: quiet.flatMap(\.items), children: quiet, app: app.title))
+        }
+        let rest = (byPlugin[""] ?? []).reduce(into: [String: [Installation]]()) { result, installation in
+            if case .managed(let owner) = installation.provenance { result[Self.branchTitle(owner: owner), default: []].append(installation) }
+        }
+        let others = rest.keys.sorted { a, b in (a == "Built in") != (b == "Built in") ? b == "Built in" : a < b }.map { title in
+            SkillGroup(id: app.id + "/" + title, title: title, kind: .plugin, items: rest[title]!, app: app.title)
+        }
+        // An app with nothing but its own skills needs no branch level.
+        if plugins.isEmpty, others.count == 1 { return [] }
+        return plugins + others
+    }
+
     /// A group is open when the reader opened it, when it is the only one, while searching,
     /// or when it holds the selected skill.
     private func isExpanded(_ group: SkillGroup, among groups: [SkillGroup]) -> Bool {
-        expanded.contains(group.id) || groups.count == 1 || !search.isEmpty
+        expanded.contains(group.id) || (groups.count == 1 && group.kind != .plugin) || !search.isEmpty
             || group.items.contains { $0.id == selection }
+    }
+
+    /// Every group, with the branches inside apps, in the order they are drawn.
+    private func allGroups(_ groups: [SkillGroup]) -> [SkillGroup] {
+        groups.flatMap { [$0] + allGroups($0.children) }
     }
 
     private func toggle(_ group: SkillGroup, among groups: [SkillGroup]) {
@@ -376,7 +512,7 @@ struct LibraryView: View {
     }
 
     private func setCursorGroup(open: Bool, among groups: [SkillGroup]) -> KeyPress.Result {
-        guard let id = groupCursor, let group = groups.first(where: { $0.id == id }),
+        guard let id = groupCursor, let group = allGroups(groups).first(where: { $0.id == id }),
               isExpanded(group, among: groups) != open else { return .ignored }
         toggle(group, among: groups)
         return .handled
@@ -384,8 +520,14 @@ struct LibraryView: View {
 
     /// What the arrow keys step through: every group, and the skills of the open ones.
     private func entries(in groups: [SkillGroup]) -> [Entry] {
-        groups.flatMap { group in
-            [Entry.group(group.id)] + (isExpanded(group, among: groups) ? group.items.map { .skill($0.id) } : [])
+        entries(of: groups, among: groups)
+    }
+
+    private func entries(of branches: [SkillGroup], among groups: [SkillGroup]) -> [Entry] {
+        branches.flatMap { group -> [Entry] in
+            guard isExpanded(group, among: groups) else { return [.group(group.id)] }
+            if group.children.isEmpty { return [.group(group.id)] + group.items.map { .skill($0.id) } }
+            return [.group(group.id)] + entries(of: group.children, among: groups)
         }
     }
 
@@ -583,11 +725,18 @@ struct LibraryView: View {
 
 /// Skills that share an origin.
 struct SkillGroup: Identifiable {
-    enum Kind: Int { case source, unknown, managed }
+    /// `managed` is one app; `plugin` is one plugin of that app, or the app's own skills.
+    enum Kind: Int { case source, unknown, managed, plugin }
     let id: String
     let title: String
     let kind: Kind
     var items: [Installation]
+    /// For an app: one branch per plugin, and one for what the app ships itself.
+    var children: [SkillGroup] = []
+    /// For a plugin branch: what its app recorded about it.
+    var plugin: PluginRecord? = nil
+    /// For an app and its branches: the app's name.
+    var app: String? = nil
 
     @MainActor var agents: Set<Agent> { Set(items.flatMap(\.installedAgents)) }
     var changed: Int {
@@ -632,29 +781,42 @@ private struct TreeGuide: Shape {
 /// A branch of the tree: where a set of skills comes from, how many there are, and a
 /// plus or minus that opens it one level further.
 private struct GroupRow: View {
+    /// What a branch of apps' skills has to say about plugins, counted per plugin.
+    enum Summary {
+        case none
+        case app(plugins: Int, updates: Int)
+        case plugin(PluginRecord, state: UpstreamState?)
+        case builtIn
+        /// Plugins nobody can be asked about, folded into one branch.
+        case fold(String)
+    }
+
     let group: SkillGroup
     /// The status of each skill in the group.
     let statuses: [SkillStatus]
+    /// The tree lines of the branches above this one, and this branch's own as the last.
+    let guides: [TreeGuide.Branch]
+    let summary: Summary
     let isOpen: Bool
-    let isLast: Bool
     let hasCursor: Bool
     @State private var hovering = false
 
     var body: some View {
+        let depth = CGFloat(guides.count - 1)
         HStack(spacing: 0) {
             ZStack(alignment: .leading) {
                 // An open branch sends a line down from its sign to its skills.
-                TreeGuide(branches: [isLast ? .corner : .tee]).stroke(Palette.ink2, lineWidth: 1)
+                TreeGuide(branches: guides).stroke(Palette.ink2, lineWidth: 1)
                 if isOpen {
-                    TreeGuide(branches: [.none, .pipe]).stroke(Palette.ink2, lineWidth: 1)
+                    TreeGuide(branches: Array(repeating: .none, count: guides.count) + [.pipe]).stroke(Palette.ink2, lineWidth: 1)
                         .mask(alignment: .bottom) { Rectangle().frame(height: 12) }
                 }
                 DataText(isOpen ? "−" : "+")
                     .foregroundStyle(Palette.ink)
                     .frame(width: 14)
-                    .offset(x: TreeGuide.first + TreeGuide.step - 7)
+                    .offset(x: TreeGuide.first + TreeGuide.step * CGFloat(guides.count) - 7)
             }
-            .frame(width: Column.number)
+            .frame(width: Column.number + depth * TreeGuide.step)
             .frame(maxHeight: .infinity)
             Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -662,7 +824,9 @@ private struct GroupRow: View {
                 .foregroundStyle(Palette.ink2)
                 .frame(width: Column.source, alignment: .leading)
             DataText(note)
-                .foregroundStyle(Palette.ink3)
+                .foregroundStyle(noteIsData ? Palette.ink2 : Palette.ink3)
+                .lineLimit(1)
+                .truncationMode(.middle)
                 .frame(width: Column.revision, alignment: .leading)
             TickCount(group.agents.count, unit: group.agents.count == 1 ? "agent" : "agents")
                 .frame(width: Column.agents, alignment: .leading)
@@ -686,11 +850,30 @@ private struct GroupRow: View {
     }
 
     private var note: String {
-        switch group.kind {
-        case .source: ""
-        case .unknown: "not linked"
-        case .managed: "set by the app"
+        switch summary {
+        case .app(let plugins, _) where plugins > 0: return "\(plugins) plugin\(plugins == 1 ? "" : "s")"
+        case .plugin(let plugin, let state):
+            let installed = plugin.version ?? plugin.commit.map { String($0.prefix(7)) } ?? "?"
+            guard case .updateAvailable(let latest) = state else { return installed }
+            // A version reads as one; a tree id only says that something is newer.
+            return Self.isVersion(latest) ? "\(installed) → \(latest)" : "\(installed) → newer"
+        default:
+            switch group.kind {
+            case .source: return ""
+            case .unknown: return "not linked"
+            case .managed, .plugin: return "set by the app"
+            }
         }
+    }
+
+    private var noteIsData: Bool {
+        if case .plugin = summary { return true }
+        if case .app(let plugins, _) = summary, plugins > 0 { return true }
+        return false
+    }
+
+    static func isVersion(_ text: String) -> Bool {
+        text.count < 24 && text.contains(".") && !(text.count == 40 && text.allSatisfy(\.isHexDigit))
     }
 
     /// What the branch says about its skills: the state that most needs a look comes first.
@@ -701,11 +884,17 @@ private struct GroupRow: View {
         let cant = statuses.filter { if case .cantCheck = $0 { true } else { false } }.count
         switch group.kind {
         case .unknown: StatusBadge(status: .noSource)
-        case .managed:
-            let plugin = statuses.filter { if case .ownerUpdate = $0 { true } else { false } }.count
-            if plugin > 0 {
-                StatusChip("\(plugin) plugin update\(plugin == 1 ? "" : "s")", kind: .new, mark: "▲")
-            } else {
+        case .managed, .plugin:
+            switch summary {
+            case .app(_, let updates) where updates > 0:
+                StatusChip("\(updates) plugin update\(updates == 1 ? "" : "s")", kind: .new, mark: "▲")
+            case .plugin(let plugin, .updateAvailable?):
+                StatusChip("Update in \(plugin.app)", kind: .new, mark: "▲")
+            case .plugin(_, .upToDate?):
+                StatusBadge(status: .upToDate)
+            case .fold(let text):
+                StatusChip(text, mark: "■")
+            default:
                 StatusBadge(status: .managed)
             }
         case .source:
@@ -743,8 +932,8 @@ private struct InstallationRow: View {
     let link: SourceLink?
     let copies: InventoryStore.Copies?
     let isSelected: Bool
-    /// The branch this skill hangs from has more branches below it.
-    let trunk: Bool
+    /// The tree lines of the branches this skill hangs from.
+    let guides: [TreeGuide.Branch]
     /// The last skill of its branch.
     let isLast: Bool
     @State private var hovering = false
@@ -754,9 +943,9 @@ private struct InstallationRow: View {
         let quiet = isSelected ? Tone.rest.foreground.opacity(0.72) : Palette.ink2
         let faint = isSelected ? Tone.rest.secondary : Palette.ink3
         HStack(spacing: 0) {
-            TreeGuide(branches: [trunk ? .pipe : .none, isLast ? .corner : .tee])
+            TreeGuide(branches: guides + [isLast ? .corner : .tee])
                 .stroke(isSelected ? quiet : Palette.ink2, lineWidth: 1)
-                .frame(width: Column.number + 6)
+                .frame(width: Column.number + 6 + CGFloat(guides.count - 1) * TreeGuide.step)
                 .frame(maxHeight: .infinity)
             HStack(spacing: 6) {
                 Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)

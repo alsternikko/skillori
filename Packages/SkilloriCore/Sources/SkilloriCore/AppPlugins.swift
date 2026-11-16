@@ -31,6 +31,9 @@ public enum AppPlugins {
                     if FileManager.default.fileExists(atPath: revision.appendingPathComponent(".orphaned_at").path) { continue }
                     let manifest = json(revision.appendingPathComponent(app.manifestPath))
                     let name = (manifest?["name"] as? String) ?? plugin.lastPathComponent
+                    // Codex manifests give a name for people, such as "Adobe" for `app-6931…`.
+                    let shown = ((manifest?["interface"] as? [String: Any])?["displayName"] as? String)
+                        .flatMap { $0.isEmpty ? nil : $0 }
                     let checkout = gitRemote(of: revision)
                     let claimed = (manifest?["repository"] as? String).flatMap(repositoryName)
                     let key = "\(plugin.lastPathComponent)@\(marketplace.lastPathComponent)"
@@ -41,6 +44,7 @@ public enum AppPlugins {
                         installPath: revision.path, scope: "user", projectPath: nil,
                         marketplaceRepository: nil, origin: nil)
                     record.app = app.name
+                    record.displayName = shown
                     // A marketplace kept as a local folder ships with the app and is updated with
                     // it; there is no source to ask, whatever its manifests claim.
                     let local = config.localMarketplaces.contains(marketplace.lastPathComponent)

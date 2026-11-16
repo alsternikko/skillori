@@ -31,6 +31,10 @@ public struct PluginRecord: Sendable, Hashable, Codable {
     public var isCheckout = false
     /// Whether the app has the plugin turned on, when the app records it.
     public var enabled: Bool? = nil
+    /// A name for people, when the manifest gives one apart from `name`.
+    public var displayName: String? = nil
+    /// The name to show: the manifest's name for people, or the plugin's own.
+    public var title: String { displayName ?? name }
 
     public init(id: String, name: String, marketplace: String, version: String?, commit: String?,
                 installPath: String, scope: String?, projectPath: String?,

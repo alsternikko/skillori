@@ -53,6 +53,11 @@ enum DebugSnapshots {
                    size: lib, to: out.appendingPathComponent("library-dark.png"))
             render(LibraryView(initialFilter: .managed).environment(store), size: lib,
                    to: out.appendingPathComponent("library-managed.png"))
+            render(LibraryView(initialFilter: .managed, initialGroup: "managed:Cursor",
+                               initialExpanded: ["managed:Cursor", "managed:Codex", "managed:Codex/quiet"]).environment(store),
+                   size: CGSize(width: 1120, height: 1400), to: out.appendingPathComponent("library-apps.png"))
+            render(LibraryView(initialGroup: "managed:Cursor", initialExpanded: ["managed:Cursor"]).environment(store),
+                   size: CGSize(width: 1120, height: 1100), to: out.appendingPathComponent("library-yours-and-apps.png"))
             render(LibraryView(initialFilter: .coverage).environment(store), size: lib,
                    to: out.appendingPathComponent("coverage.png"))
             render(LibraryView(initialSelection: tracked?.id, showsDetail: true).environment(store), size: lib,
