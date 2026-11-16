@@ -345,6 +345,13 @@ extension PanelModel {
 
         // Rows that say the same thing whatever the block shows.
         var tail: [Row] = []
+        let pluginUpdates = store.pluginUpdates
+        if !pluginUpdates.isEmpty {
+            // Claude Code updates its own plugins; Skillori only says that it can.
+            let text = pluginUpdates.count == 1 ? "\(pluginUpdates[0].name) has a plugin update"
+                : "\(pluginUpdates.count) plugins have updates"
+            tail.append(.line(text: text, data: "IN CLAUDE CODE", muted: false))
+        }
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
         }
@@ -353,6 +360,13 @@ extension PanelModel {
             let reasons = store.cantCheckReasons
             let why = reasons.count == 1 ? reasons.first!.short.uppercased() : "SEE LIBRARY"
             tail.append(.line(text: "\(store.cantCheckCount) can't be checked", data: why, muted: true))
+        }
+        let versions = store.differingCopyNames
+        if !versions.isEmpty {
+            // The same name in two folders with other files: an agent may load either one.
+            let text = versions.count == 1 ? "\(versions[0]) exists in more than one version"
+                : "\(versions.count) skills exist in different versions"
+            tail.append(.link(text: text, label: "Show", command: .library))
         }
         if unknown > 0 {
             tail.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
@@ -415,6 +429,24 @@ extension PanelModel {
                 rows: tail,
                 // Running the update is the main action here, so no button competes with it.
                 buttons: store.updatable.isEmpty ? buttons : buttons.map { Button(title: $0.title, prominent: false, command: $0.command) },
+                hint: hint, hintEnabled: !busy)
+        }
+
+        // The sources did not answer, so whatever the statuses say is from the last time they did.
+        if store.isStale, let reason = store.lastProblem {
+            var rows: [Row] = [.line(text: "Last attempt", data: reason.short.uppercased(), muted: true)]
+            if let last = store.lastCheck {
+                rows.append(.line(text: "Statuses shown are from", data: InventoryStore.stamp(last).uppercased(), muted: true))
+            }
+            rows += tail
+            return PanelModel(
+                tone: .attention, label: reason == .rateLimited ? "Asked to wait" : "No contact",
+                stamp: store.checkStamp, number: "\(tracked)", dimmed: true,
+                lead: tracked == 1 ? "source could not be asked" : "sources could not be asked",
+                note: store.lastCheck == nil ? "No status yet." : "The statuses are older than they look.",
+                rows: rows,
+                buttons: [Button(title: "Try again", prominent: true, command: .rescan),
+                          Button(title: "Library", prominent: false, command: .library)],
                 hint: hint, hintEnabled: !busy)
         }
 

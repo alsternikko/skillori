@@ -63,12 +63,14 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private func observeStore() {
         withObservationTracking {
             // A plate in the flat accent for what needs the reader or for something new at a source, plain otherwise.
-            let updates = store.checksEnabled ? store.updateCount : 0
-            let state: SkilloriMark.MenuBarState = store.needsAttention ? .attention : updates > 0 ? .new : .rest
+            let updates = store.checksEnabled ? store.updateCount + store.pluginUpdates.count : 0
+            let state: SkilloriMark.MenuBarState = store.needsAttention ? .attention : updates > 0 ? .new
+                : store.isStale ? .stale : .rest
             statusItem.button?.image = SkilloriMark.menuBarImage(state)
             statusItem.button?.setAccessibilityLabel(
                 store.needsAttention ? "Skillori, local changes"
-                    : updates > 0 ? "Skillori, \(updates) update\(updates == 1 ? "" : "s")" : "Skillori")
+                    : updates > 0 ? "Skillori, \(updates) update\(updates == 1 ? "" : "s")"
+                    : store.isStale ? "Skillori, sources not reached" : "Skillori")
             _ = store.isChecking
             // The panel grows when an update prints something.
             _ = store.updater.phase

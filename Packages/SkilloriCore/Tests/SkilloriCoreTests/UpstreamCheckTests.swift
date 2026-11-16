@@ -44,7 +44,11 @@ import Testing
             await asked.add(request)
             let url = request.url!
             if url.path.contains("/gone/") { return (Data(), Self.response(url, 404)) }
-            if url.path.contains("/busy/") { return (Data(), Self.response(url, 403, ["x-ratelimit-remaining": "0"])) }
+            if url.path.contains("/busy/") {
+                // Answers last, so the wait it asks for cannot stop the others, which were already sent.
+                try? await Task.sleep(for: .milliseconds(100))
+                return (Data(), Self.response(url, 403, ["x-ratelimit-remaining": "0"]))
+            }
             if url.path.contains("/down/") { throw URLError(.notConnectedToInternet) }
             let body = #"{"sha":"root","truncated":false,"tree":[{"path":"skills/a","type":"tree","sha":"aaa"},{"path":"skills/a/SKILL.md","type":"blob","sha":"f"},{"path":"skills/b","type":"tree","sha":"new"}]}"#
             return (Data(body.utf8), Self.response(url, 200))
@@ -156,5 +160,31 @@ private actor Counter {
 private extension Result where Failure == UpstreamState.Reason {
     var failureReason: UpstreamState.Reason? {
         if case .failure(let reason) = self { reason } else { nil }
+    }
+}
+
+@Suite struct FileChangeTests {
+    @Test func listsWhatAnUpdateWouldChangeWithRunnableFilesFirst() throws {
+        let tree = try TempTree()
+        defer { tree.remove() }
+        try tree.file("SKILL.md", "---\nname: x\n---\n")
+        try tree.file("notes.md", "old\n")
+        try tree.file("gone.txt", "bye\n")
+        try tree.file("run.sh", "echo\n")
+        let local = try GitTreeHash.hashDirectory(at: tree.root).entries
+        let ids = Dictionary(uniqueKeysWithValues: local.map { ($0.path, $0.objectID) })
+        let upstream = SourceTree(rootHash: "r", folders: [:], files: [
+            "skills/x/SKILL.md": SourceFile(id: ids["SKILL.md"]!, mode: "100644"),
+            "skills/x/notes.md": SourceFile(id: "different", mode: "100644"),
+            "skills/x/run.sh": SourceFile(id: ids["run.sh"]!, mode: "100755"),
+            "skills/x/scripts/new.py": SourceFile(id: "n", mode: "100644"),
+            "skills/other/SKILL.md": SourceFile(id: "o", mode: "100644"),
+        ])
+        let changes = FileChanges.compare(local: local, upstream: upstream, subpath: "skills/x")
+        #expect(changes.map(\.path) == ["run.sh", "scripts/new.py", "gone.txt", "notes.md"])
+        #expect(changes.first { $0.path == "run.sh" }?.modeOnly == true)
+        #expect(changes.first { $0.path == "scripts/new.py" }?.kind == .added)
+        #expect(changes.first { $0.path == "gone.txt" }?.kind == .removed)
+        #expect(changes.first { $0.path == "notes.md" }?.runnable == false)
     }
 }

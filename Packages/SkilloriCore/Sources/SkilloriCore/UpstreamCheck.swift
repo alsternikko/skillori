@@ -134,18 +134,90 @@ public struct SourceTree: Sendable, Equatable {
     public let skillFolders: [String]
     /// The source cut the listing short, so a missing folder proves nothing.
     public let truncated: Bool
+    /// Every file in the source, by path: its blob id and git mode (`100644`, `100755`, `120000`).
+    public let files: [String: SourceFile]
 
-    public init(rootHash: String, folders: [String: String], skillFolders: [String] = [], truncated: Bool = false) {
+    public init(rootHash: String, folders: [String: String], skillFolders: [String] = [], truncated: Bool = false,
+                files: [String: SourceFile] = [:]) {
         self.rootHash = rootHash
         self.folders = folders
         self.skillFolders = skillFolders
         self.truncated = truncated
+        self.files = files
     }
 
     /// The tree id of a folder; the empty string or nil is the top of the source.
     public func hash(of subpath: String?) -> String? {
         let path = (subpath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return path.isEmpty ? rootHash : folders[path]
+    }
+}
+
+/// One file in a source: its git blob id and mode.
+public struct SourceFile: Sendable, Equatable {
+    public let id: String
+    public let mode: String
+
+    public init(id: String, mode: String) {
+        self.id = id
+        self.mode = mode
+    }
+}
+
+/// One file that an update would add, change or remove, told from file ids alone: nothing is
+/// downloaded or opened to say it.
+public struct FileChange: Sendable, Equatable, Identifiable {
+    public enum Kind: String, Sendable { case added, changed, removed }
+    public let path: String
+    public let kind: Kind
+    /// The file can be run: marked executable, or a script by its name.
+    public let runnable: Bool
+    /// Only the executable bit changed.
+    public let modeOnly: Bool
+    public var id: String { path }
+
+    /// File names that are programs, whatever their mode.
+    static let scriptExtensions: Set<String> = ["sh", "bash", "zsh", "fish", "py", "rb", "pl", "js", "mjs", "cjs",
+                                                "ts", "php", "ps1", "bat", "cmd", "applescript", "scpt", "swift", "go", "lua"]
+
+    static func isRunnable(path: String, executable: Bool) -> Bool {
+        executable || scriptExtensions.contains((path as NSString).pathExtension.lowercased())
+    }
+}
+
+public enum FileChanges {
+    /// What would change if the folder on this Mac were replaced by the folder in the source.
+    /// Runnable files come first, then by path.
+    public static func compare(local: [GitTreeHash.Entry], upstream tree: SourceTree, subpath: String?) -> [FileChange] {
+        let prefix = (subpath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        var remote: [String: SourceFile] = [:]
+        for (path, file) in tree.files {
+            if prefix.isEmpty { remote[path] = file }
+            else if path.hasPrefix(prefix + "/") { remote[String(path.dropFirst(prefix.count + 1))] = file }
+        }
+        var here: [String: GitTreeHash.Entry] = [:]
+        for entry in local where entry.kind != .directory { here[entry.path] = entry }
+
+        var changes: [FileChange] = []
+        for (path, file) in remote {
+            let executable = file.mode == "100755"
+            guard let mine = here[path] else {
+                changes.append(FileChange(path: path, kind: .added, runnable: FileChange.isRunnable(path: path, executable: executable), modeOnly: false))
+                continue
+            }
+            let sameContent = mine.objectID == file.id
+            let sameMode = (mine.kind == .executable) == executable && (mine.kind == .symlink) == (file.mode == "120000")
+            if !sameContent || !sameMode {
+                changes.append(FileChange(path: path, kind: .changed,
+                                          runnable: FileChange.isRunnable(path: path, executable: executable || mine.kind == .executable),
+                                          modeOnly: sameContent))
+            }
+        }
+        for (path, mine) in here where remote[path] == nil {
+            changes.append(FileChange(path: path, kind: .removed,
+                                      runnable: FileChange.isRunnable(path: path, executable: mine.kind == .executable), modeOnly: false))
+        }
+        return changes.sorted { a, b in a.runnable != b.runnable ? a.runnable : a.path < b.path }
     }
 }
 
@@ -168,17 +240,27 @@ public enum UpstreamComparer {
 public struct GitHubTrees: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
     private let transport: Transport
+    private let budget: GitHubBudget
 
-    public init(transport: @escaping Transport = GitHubTrees.network) {
+    /// `budget` is what this asker remembers of GitHub's answers. The app passes `.shared`, so
+    /// every check builds on the last; a fresh one remembers nothing, which tests want.
+    public init(transport: @escaping Transport = GitHubTrees.network, budget: GitHubBudget = GitHubBudget()) {
         self.transport = transport
+        self.budget = budget
     }
 
-    public static let network: Transport = { request in
+    /// One session for every request: no cookies, no stored credentials, nothing kept on disk.
+    private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
-        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
+    }()
+
+    public static let network: Transport = { request in
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         return (data, http)
     }
@@ -208,9 +290,27 @@ public struct GitHubTrees: Sendable {
         return response.value(forHTTPHeaderField: "retry-after") != nil
     }
 
+    /// When GitHub said to wait, the time it said to wait until.
+    static func retryDate(_ response: HTTPURLResponse, now: Date = Date()) -> Date {
+        if let seconds = response.value(forHTTPHeaderField: "retry-after").flatMap(TimeInterval.init) {
+            return now.addingTimeInterval(seconds)
+        }
+        if response.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0",
+           let reset = response.value(forHTTPHeaderField: "x-ratelimit-reset").flatMap(TimeInterval.init) {
+            return Date(timeIntervalSince1970: reset)
+        }
+        // GitHub's advice when it gives no time: wait at least a minute.
+        return now.addingTimeInterval(60)
+    }
+
     public func tree(of source: UpstreamSource) async -> Result<SourceTree, UpstreamState.Reason> {
-        guard let request = Self.request(for: source) else { return .failure(.unsupported) }
-        let data: Data
+        guard var request = Self.request(for: source) else { return .failure(.unsupported) }
+        // GitHub said to wait: asking anyway only makes the wait longer.
+        if await budget.mustWait() { return .failure(.rateLimited) }
+        let url = request.url!.absoluteString
+        let cached = await budget.cached(url)
+        if let cached { request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
+        var data: Data
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport(request)
@@ -222,14 +322,21 @@ public struct GitHubTrees: Sendable {
             return .failure(.offline)
         }
         switch response.statusCode {
-        case 200: break
+        case 200:
+            if let etag = response.value(forHTTPHeaderField: "etag") { await budget.store(url, etag: etag, data: data) }
+        case 304 where cached != nil:
+            // Unchanged since the last answer. A conditional request like this does not count
+            // against GitHub's hourly limit.
+            data = cached!.data
         case 404: return .failure(.notFound)
         case 403, 429:
-            return .failure(Self.isRateLimit(response) ? .rateLimited : .notFound)
+            guard Self.isRateLimit(response) else { return .failure(.notFound) }
+            await budget.wait(until: Self.retryDate(response))
+            return .failure(.rateLimited)
         default: return .failure(.failed)
         }
         struct Listing: Decodable {
-            struct Item: Decodable { let path: String; let type: String; let sha: String }
+            struct Item: Decodable { let path: String; let type: String; let sha: String; let mode: String? }
             let sha: String
             let tree: [Item]
             let truncated: Bool?
@@ -241,8 +348,60 @@ public struct GitHubTrees: Sendable {
             .filter { $0.type == "blob" && ($0.path == "SKILL.md" || $0.path.hasSuffix("/SKILL.md")) }
             .map { ($0.path as NSString).deletingLastPathComponent }
             .sorted()
+        let files = Dictionary(listing.tree.filter { $0.type == "blob" }.map { ($0.path, SourceFile(id: $0.sha, mode: $0.mode ?? "100644")) },
+                               uniquingKeysWith: { first, _ in first })
         return .success(SourceTree(rootHash: listing.sha, folders: folders, skillFolders: skillFolders,
-                                   truncated: listing.truncated ?? false))
+                                   truncated: listing.truncated ?? false, files: files))
+    }
+}
+
+/// What GitHub has said about how much to ask: answers it gave with an ETag, so the same
+/// question can be asked conditionally, and a time not to ask before after it said to wait.
+/// Kept in memory only; the app asks every few hours, which is long enough to matter.
+public actor GitHubBudget {
+    public static let shared = GitHubBudget()
+
+    public struct Cached: Sendable {
+        public let etag: String
+        public let data: Data
+    }
+
+    private var answers: [String: Cached] = [:]
+    private var order: [String] = []
+    private var bytes = 0
+    private let maxBytes: Int
+    /// GitHub asked not to be asked again before this.
+    public private(set) var retryAt: Date?
+
+    public init(maxBytes: Int = 32_000_000) {
+        self.maxBytes = maxBytes
+    }
+
+    func cached(_ url: String) -> Cached? { answers[url] }
+
+    func store(_ url: String, etag: String, data: Data) {
+        if let old = answers[url] {
+            bytes -= old.data.count
+            order.removeAll { $0 == url }
+        }
+        guard data.count <= maxBytes else { return }
+        answers[url] = Cached(etag: etag, data: data)
+        order.append(url)
+        bytes += data.count
+        while bytes > maxBytes, let oldest = order.first {
+            order.removeFirst()
+            bytes -= answers.removeValue(forKey: oldest)?.data.count ?? 0
+        }
+    }
+
+    func wait(until date: Date) {
+        retryAt = max(retryAt ?? date, date)
+    }
+
+    func mustWait(now: Date = Date()) -> Bool {
+        guard let retryAt else { return false }
+        if retryAt <= now { self.retryAt = nil; return false }
+        return true
     }
 }
 
@@ -263,7 +422,10 @@ public struct UpstreamQuestion: Sendable {
 
 public enum UpstreamChecker {
     /// Answers every question, asking each source once.
-    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees()) async -> [String: UpstreamState] {
+    /// How many sources are asked at the same time.
+    public static let maxConcurrent = 4
+
+    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared)) async -> [String: UpstreamState] {
         var answers: [String: UpstreamState] = [:]
         var bySource: [UpstreamSource: [UpstreamQuestion]] = [:]
         for question in questions {
@@ -274,10 +436,17 @@ public enum UpstreamChecker {
             }
         }
         await withTaskGroup(of: (UpstreamSource, Result<SourceTree, UpstreamState.Reason>).self) { group in
-            for source in bySource.keys {
+            // A few at a time: GitHub counts concurrent requests too, and once it says to wait,
+            // the rest are answered from that without being sent.
+            var pending = bySource.keys.sorted { $0.name < $1.name }[...]
+            for _ in 0..<min(maxConcurrent, pending.count) {
+                let source = pending.removeFirst()
                 group.addTask { (source, await trees.tree(of: source)) }
             }
             for await (source, result) in group {
+                if let next = pending.popFirst() {
+                    group.addTask { (next, await trees.tree(of: next)) }
+                }
                 for question in bySource[source] ?? [] {
                     switch result {
                     case .success(let tree):

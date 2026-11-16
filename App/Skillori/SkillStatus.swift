@@ -24,6 +24,16 @@ enum SkillStatus: Equatable {
     case checkFailed
     case noSource
     case managed
+    /// Owned by an app (a Claude Code plugin) whose source has a newer version. Updated there, not here.
+    case ownerUpdate(owner: String, upstream: String)
+
+    /// Owned by an app, whatever its source says.
+    var isManaged: Bool {
+        switch self {
+        case .managed, .ownerUpdate: true
+        default: false
+        }
+    }
 
     var word: String {
         switch self {
@@ -37,6 +47,7 @@ enum SkillStatus: Equatable {
         case .checkFailed: "Check failed"
         case .noSource: "No source"
         case .managed: "Managed"
+        case .ownerUpdate: "Plugin update"
         }
     }
 
@@ -52,12 +63,13 @@ enum SkillStatus: Equatable {
         case .notChecked: "○"
         case .noSource: "◌"
         case .managed: "■"
+        case .ownerUpdate: "▲"
         }
     }
 
     var chipKind: StatusChip.Kind {
         switch self {
-        case .updateAvailable, .differs: .new
+        case .updateAvailable, .differs, .ownerUpdate: .new
         case .changedHere, .checkFailed: .attention
         case .cantCheck, .notChecked, .noSource: .outline
         case .heldBack, .upToDate, .managed: .neutral
@@ -67,7 +79,7 @@ enum SkillStatus: Equatable {
     /// The block colour for a skill in this state.
     var tone: Tone {
         switch self {
-        case .updateAvailable, .differs: .new
+        case .updateAvailable, .differs, .ownerUpdate: .new
         case .changedHere, .checkFailed: .attention
         case .upToDate, .heldBack: .rest
         case .cantCheck, .notChecked, .noSource, .managed: .quiet
@@ -88,6 +100,7 @@ enum SkillStatus: Equatable {
         case .checkFailed: "The files on this Mac could not be read for comparison."
         case .noSource: "Nothing on this Mac says where this came from."
         case .managed: "The app that owns it keeps it up to date."
+        case .ownerUpdate(let owner, _): "\(owner) has a newer version of this plugin. Update it in \(owner)."
         }
     }
 

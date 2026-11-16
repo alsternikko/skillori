@@ -40,6 +40,11 @@ public struct Installation: Sendable, Identifiable {
     public var sourceRef: String? = nil
     /// The kind of source the installer recorded (`github`, `gitlab`, `local`, …), if any.
     public var sourceType: String? = nil
+    /// The Claude Code plugin this skill came with, when Claude Code recorded one.
+    public var plugin: PluginRecord? = nil
+    /// The git tree id of the files, when another skill of yours has the same name. It tells
+    /// an identical copy from a different version without anyone opening the folders.
+    public var contentHash: String? = nil
 
     public var displayName: String { frontmatter.name ?? directoryName }
     public var agents: [Agent] { Array(Set(bindings.flatMap(\.agents))).sorted() }
@@ -110,6 +115,8 @@ public struct DiscoveryEngine: Sendable {
         }
 
         let lockURL = applySkillsLock(to: &builder)
+        applyPluginRecords(to: &builder)
+        hashSameNameCopies(in: &builder)
 
         let installations = builder.order.compactMap { builder.installations[$0] }
             .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
@@ -366,6 +373,40 @@ public struct DiscoveryEngine: Sendable {
             builder.installations[key] = installation
         }
         return url
+    }
+
+    /// Hashes the skills of yours that share a name with another, so copies can be told apart.
+    /// Skills managed by apps are left out: plugins often ship the same skill to several agents,
+    /// and those copies are the apps' business.
+    private func hashSameNameCopies(in builder: inout Builder) {
+        let own = builder.order.compactMap { key -> (String, Installation)? in
+            guard let installation = builder.installations[key] else { return nil }
+            if case .managed = installation.provenance { return nil }
+            return (key, installation)
+        }
+        let byName = Dictionary(grouping: own) { $0.1.displayName.lowercased() }
+        for (_, group) in byName where group.count > 1 {
+            for (key, installation) in group {
+                let url = URL(fileURLWithPath: installation.canonicalPath)
+                builder.installations[key]?.contentHash = try? GitTreeHash.hashDirectory(at: url).treeID
+            }
+        }
+    }
+
+    /// Ties each skill inside a recorded Claude Code plugin to that plugin's record.
+    private func applyPluginRecords(to builder: inout Builder) {
+        let folders = [home.appendingPathComponent(".claude/plugins")] + relocated(".claude/plugins").map {
+            $0.base.appendingPathComponent($0.pattern)
+        }
+        let records = folders.flatMap { ClaudePlugins.records(in: $0) }
+        guard !records.isEmpty else { return }
+        let byPath = records.map { (URL(fileURLWithPath: $0.installPath).resolvingSymlinksInPath().path + "/", $0) }
+        for key in builder.order {
+            guard var installation = builder.installations[key],
+                  let match = byPath.first(where: { installation.canonicalPath.hasPrefix($0.0) }) else { continue }
+            installation.plugin = match.1
+            builder.installations[key] = installation
+        }
     }
 
     private static func parseDate(_ text: String) -> Date? {

@@ -5,11 +5,90 @@ import SkilloriCore
 import SkilloriUI
 import SwiftUI
 
+/// Lets whoever started a shell command stop it, with everything it started.
+final class ShellControl: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+    private var stopped = false
+    private var timedOut = false
+
+    var wasStopped: Bool { lock.withLock { stopped } }
+    var didTimeOut: Bool { lock.withLock { timedOut } }
+
+    fileprivate func attach(_ process: Process) -> Bool {
+        lock.withLock {
+            self.process = process
+            return !stopped
+        }
+    }
+
+    /// Stops the command and the processes it started (npx starts node, node starts git).
+    func stop() { end(timedOut: false) }
+
+    fileprivate func timeOut() { end(timedOut: true) }
+
+    private func end(timedOut: Bool) {
+        let running: Process? = lock.withLock {
+            stopped = true
+            if timedOut { self.timedOut = true }
+            return process
+        }
+        guard let running, running.isRunning else { return }
+        let pid = running.processIdentifier
+        for child in Self.descendants(of: pid) { kill(child, SIGTERM) }
+        running.terminate()
+    }
+
+    /// Every process below `pid`, found with `pgrep -P`, deepest first.
+    private static func descendants(of pid: pid_t) -> [pid_t] {
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-P", String(pid)]
+        let out = Pipe()
+        pgrep.standardOutput = out
+        pgrep.standardError = FileHandle.nullDevice
+        guard (try? pgrep.run()) != nil else { return [] }
+        pgrep.waitUntilExit()
+        let text = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let children = text.split(whereSeparator: \.isNewline).compactMap { pid_t($0) }
+        return children.flatMap { descendants(of: $0) + [$0] }
+    }
+}
+
+/// Turns chunks of bytes into text without breaking a character that two chunks share.
+struct UTF8Chunks {
+    private var pending = Data()
+
+    mutating func text(from chunk: Data) -> String {
+        pending.append(chunk)
+        guard !pending.isEmpty else { return "" }
+        // A UTF-8 character is at most four bytes; keep an unfinished one for the next chunk.
+        var cut = pending.count
+        for back in 1...min(3, pending.count) {
+            let byte = pending[pending.count - back]
+            if byte & 0b1100_0000 == 0b1000_0000 { continue } // continuation byte
+            let length = byte & 0b1000_0000 == 0 ? 1 : byte & 0b1110_0000 == 0b1100_0000 ? 2
+                : byte & 0b1111_0000 == 0b1110_0000 ? 3 : 4
+            if length > back { cut = pending.count - back }
+            break
+        }
+        let text = String(decoding: pending.prefix(cut), as: UTF8.self)
+        pending = Data(pending.suffix(from: pending.startIndex + cut))
+        return text
+    }
+
+    mutating func rest() -> String {
+        defer { pending = Data() }
+        return String(decoding: pending, as: UTF8.self)
+    }
+}
+
 /// Runs a command through the reader's login shell, the way Terminal would, and passes on
 /// what it prints. The arguments are handed over as arguments, never pasted into a script.
 enum Shell {
     /// `script` is fixed text from this app. `arguments` become `$1…` in it.
     static func run(script: String, arguments: [String] = [], interactive: Bool = false, timeout: TimeInterval = 180,
+                    control: ShellControl = ShellControl(),
                     onOutput: @escaping @Sendable (String) -> Void = { _ in }) async -> Int32 {
         await withCheckedContinuation { continuation in
             let process = Process()
@@ -25,29 +104,60 @@ enum Shell {
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe
-            pipe.fileHandleForReading.readabilityHandler = { handle in
+            let reader = pipe.fileHandleForReading
+            let decoder = Protected(UTF8Chunks())
+            reader.readabilityHandler = { handle in
                 let data = handle.availableData
-                if !data.isEmpty, let text = String(data: data, encoding: .utf8) { onOutput(text) }
+                guard !data.isEmpty else { return }
+                let text = decoder.with { $0.text(from: data) }
+                if !text.isEmpty { onOutput(text) }
             }
             process.terminationHandler = { finished in
-                pipe.fileHandleForReading.readabilityHandler = nil
-                if let rest = try? pipe.fileHandleForReading.readToEnd(), !rest.isEmpty,
-                   let text = String(data: rest, encoding: .utf8) { onOutput(text) }
+                reader.readabilityHandler = nil
+                // Read what is left without waiting: a process the command started in the
+                // background may hold the pipe open long after the command itself ended.
+                let fd = reader.fileDescriptor
+                _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK)
+                var buffer = [UInt8](repeating: 0, count: 65_536)
+                var rest = Data()
+                while rest.count < 1_000_000 {
+                    let count = read(fd, &buffer, buffer.count)
+                    guard count > 0 else { break }
+                    rest.append(buffer, count: count)
+                }
+                let text = decoder.with { $0.text(from: rest) + $0.rest() }
+                if !text.isEmpty { onOutput(text) }
                 continuation.resume(returning: finished.terminationStatus)
+            }
+            guard control.attach(process) else {
+                reader.readabilityHandler = nil
+                continuation.resume(returning: SIGTERM)
+                return
             }
             do {
                 try process.run()
             } catch {
-                pipe.fileHandleForReading.readabilityHandler = nil
+                reader.readabilityHandler = nil
                 onOutput("Could not start the shell: \(error.localizedDescription)\n")
                 continuation.resume(returning: -1)
                 return
             }
-            nonisolated(unsafe) let running = process
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                if running.isRunning { running.terminate() }
-            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { control.timeOut() }
         }
+    }
+}
+
+/// A value several threads use, one at a time.
+final class Protected<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) { self.value = value }
+
+    func with<T>(_ body: (inout Value) -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
     }
 }
 
@@ -72,20 +182,34 @@ final class UpdateRunner {
     private(set) var output = ""
 
     var isRunning: Bool { phase == .running }
+    /// Stops the run in progress. Nil when nothing runs.
+    private var control: ShellControl?
+
+    /// The version of the installer that runs. A fixed version, not whatever npm has today:
+    /// npx runs the package with the reader's rights, so a new release is taken on only after
+    /// it has been out for a while and its `update` still takes names, `-g` and `-y`.
+    /// Checked in the package source: 1.7.6, released 2026-11-03.
+    nonisolated static let installerVersion = "1.7.6"
+    nonisolated static var installerPackage: String { "skills@\(installerVersion)" }
 
     /// What is run, as it would be typed. `--yes` and `-y` keep it from asking questions;
     /// `-g` keeps it to the skills installed for every project, which are the ones Skillori tracks.
     nonisolated static func arguments(for names: [String]) -> [String] {
-        ["--yes", "skills", "update"] + names + ["-g", "-y"]
+        ["--yes", installerPackage, "update"] + names + ["-g", "-y"]
     }
 
     nonisolated static func commandText(for names: [String]) -> String {
-        (["npx", "skills", "update"] + names + ["-g", "-y"]).joined(separator: " ")
+        (["npx", installerPackage, "update"] + names + ["-g", "-y"]).joined(separator: " ")
+    }
+
+    /// Stops the installer and what it started. The run then reports that it was stopped.
+    func stop() {
+        control?.stop()
     }
 
     /// A skill's folder name is passed to a command, so only plain names are accepted.
     nonisolated static func isSafeName(_ name: String) -> Bool {
-        !name.isEmpty && !name.hasPrefix("-")
+        !name.isEmpty && !name.hasPrefix("-") && name != "." && name != ".."
             && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") }
     }
 
@@ -99,24 +223,33 @@ final class UpdateRunner {
             return false
         }
         phase = .running
+        let control = ShellControl()
+        self.control = control
+        defer { self.control = nil }
         // Node is usually on the path the login shell sets; some setups only add it for interactive shells.
         var interactive = false
-        if await Shell.run(script: "command -v npx >/dev/null", timeout: 20) != 0 {
+        if await Shell.run(script: "command -v npx >/dev/null", timeout: 20, control: control) != 0 {
             interactive = true
-            if await Shell.run(script: "command -v npx >/dev/null", interactive: true, timeout: 20) != 0 {
-                phase = .failed("npx was not found. Updating needs Node. You can still copy the command.")
+            if await Shell.run(script: "command -v npx >/dev/null", interactive: true, timeout: 20, control: control) != 0 {
+                phase = .failed(control.wasStopped ? "Stopped." : "npx was not found. Updating needs Node. You can still copy the command.")
                 return false
             }
         }
-        let status = await Shell.run(script: "exec npx \"$@\"", arguments: Self.arguments(for: names), interactive: interactive) { [weak self] text in
+        // A first run downloads the installer, which can take a while on a slow line.
+        let status = await Shell.run(script: "exec npx \"$@\"", arguments: Self.arguments(for: names),
+                                     interactive: interactive, timeout: 300, control: control) { [weak self] text in
             Task { @MainActor in self?.append(text) }
         }
         // Let the last lines land before the verdict.
         try? await Task.sleep(for: .milliseconds(120))
-        switch status {
-        case 0: phase = .succeeded
-        case 15: phase = .failed("Stopped after three minutes without finishing.")
-        default: phase = .failed("The installer ended with code \(status).")
+        if status == 0 {
+            phase = .succeeded
+        } else if control.didTimeOut {
+            phase = .failed("Stopped after five minutes without finishing.")
+        } else if control.wasStopped {
+            phase = .failed("Stopped. The installer may have updated some of the files; Skillori reads them again now.")
+        } else {
+            phase = .failed("The installer ended with code \(status).")
         }
         return status == 0
     }
@@ -181,6 +314,11 @@ struct CommandFrame: View {
                 Spacer(minLength: 8)
                 if !compact, let first = installations.first, installations.count == 1 {
                     CopyUpdateCommandButton(installation: first, prominent: false, tone: tone)
+                }
+                if phase == .running {
+                    Button("Stop") { runner.stop() }
+                        .buttonStyle(PillButtonStyle(prominent: false, on: tone, compact: compact))
+                        .help("Stops the installer and what it started")
                 }
                 Button(label(for: phase)) { Task { await store.update(installations) } }
                     .buttonStyle(PillButtonStyle(prominent: phase != .succeeded, on: tone, compact: compact))

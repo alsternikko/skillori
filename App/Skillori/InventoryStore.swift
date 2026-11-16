@@ -22,6 +22,10 @@ final class InventoryStore {
     private(set) var held: [String: Date] = [:]
     /// Sources the reader has pointed out for skills that came with no record, by `sourceKey`.
     private(set) var links: [String: SourceLink] = [:]
+    /// What each Claude Code plugin's marketplace last said, by plugin id (`name@marketplace`).
+    private(set) var pluginReadings: [String: UpstreamReading] = [:]
+    /// Folder hashes at installed plugin commits. They never change, so each is asked for once.
+    private var pluginBaselines: [String: String] = [:]
     private(set) var isChecking = false
     /// Set when a forced check was asked for while another was running.
     private var checkAgain = false
@@ -38,7 +42,10 @@ final class InventoryStore {
         didSet {
             guard checksEnabled != oldValue else { return }
             UserDefaults.standard.set(checksEnabled, forKey: Self.checksKey)
-            if checksEnabled { Task { await checkSources(force: true) } }
+            if checksEnabled {
+                Notifier.shared.requestPermission()
+                Task { await checkSources(force: true) }
+            }
         }
     }
 
@@ -65,15 +72,55 @@ final class InventoryStore {
         Task {
             await rescan()
             await followLoginShell()
-            // While the app runs, ask again when the last answer has grown old.
+            // While the app runs, read again now and then, in case a change was not reported,
+            // and ask the sources again when the last answer has grown old.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30 * 60))
+                await rescan()
                 await checkSources()
             }
         }
+        // After sleep the last answer may be hours old and the folders may have changed.
+        NotificationCenter.default.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
+                                               queue: .main, using: { [weak self] _ in
+            Task { @MainActor in
+                // The network is often not back the moment the Mac wakes.
+                try? await Task.sleep(for: .seconds(20))
+                await self?.rescan()
+                await self?.checkSources()
+            }
+        })
+    }
+
+    // MARK: Watching
+
+    @ObservationIgnored private lazy var watcher = FolderWatcher { [weak self] in
+        Task { @MainActor in await self?.rescan() }
+    }
+
+    /// The folders whose changes make the app read again: every folder that holds skills,
+    /// and the folder of the installer's lock file. Folders inside another watched one are
+    /// left out, since FSEvents reports changes in subfolders too.
+    private func watchFolders(of inventory: Inventory) {
+        guard ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_DIR"] == nil else { return }
+        var paths = inventory.roots.filter { $0.state == .found }
+            .map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path }
+        if let lock = inventory.lockFile {
+            paths.append(URL(fileURLWithPath: lock).deletingLastPathComponent().resolvingSymlinksInPath().path)
+        }
+        let sorted = Array(Set(paths)).sorted()
+        var kept: [String] = []
+        for path in sorted where !kept.contains(where: { path.hasPrefix($0 + "/") }) {
+            kept.append(path)
+        }
+        watcher.watch(kept)
     }
 
     var needsAttention: Bool { localChangeCount > 0 }
+
+    /// The latest attempt to ask the sources got no answer, so the statuses shown are older
+    /// than they look. Only meaningful while checks are on and something has a source.
+    var isStale: Bool { checksEnabled && (trackedCount > 0 || !pluginRecords.isEmpty) && lastProblem != nil && !isChecking }
 
     // MARK: Sources
 
@@ -119,7 +166,12 @@ final class InventoryStore {
 
     func status(for installation: Installation) -> SkillStatus {
         switch installation.provenance {
-        case .managed: return .managed
+        case .managed(let owner):
+            if checksEnabled, let plugin = installation.plugin,
+               case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state {
+                return .ownerUpdate(owner: owner, upstream: upstream)
+            }
+            return .managed
         case .unknown:
             guard link(for: installation) != nil else { return .noSource }
             // Linked by the reader: there is no installer baseline, so "differs" is all that can be said.
@@ -134,9 +186,12 @@ final class InventoryStore {
             case .cannotCheck(let reason): return .cantCheck(reason)
             case nil: return .notChecked
             }
-        case .skillsLock(_, _, _, _, let local):
+        case .skillsLock(_, _, _, let baseline, let local):
             if case .hashFailed = local { return .checkFailed }
-            let state = reading(for: installation)?.state
+            var state = reading(for: installation)?.state
+            // Updated since the source was asked, for instance in Terminal: the installed
+            // baseline is now what the source had, so there is nothing new to fetch.
+            if case .updateAvailable(let upstream) = state, upstream == baseline { state = .upToDate }
             if isHeld(installation) {
                 if case .updateAvailable = state { return .heldBack(sourceMoved: true) }
                 return .heldBack(sourceMoved: false)
@@ -194,13 +249,69 @@ final class InventoryStore {
         own.filter { if case .updateAvailable = status(for: $0) { true } else { false } }
     }
 
+    /// How the skills of yours that share this skill's name compare with it.
+    enum Copies: Equatable {
+        /// Several folders, the same files in each.
+        case identical(count: Int)
+        /// Several folders with this name, and the files differ between them.
+        case different(count: Int)
+    }
+
+    func copies(of installation: Installation) -> Copies? {
+        let name = installation.displayName.lowercased()
+        let same = own.filter { $0.displayName.lowercased() == name }
+        guard same.count > 1 else { return nil }
+        let hashes = Set(same.map { $0.contentHash ?? $0.id })
+        return hashes.count == 1 ? .identical(count: same.count) : .different(count: same.count)
+    }
+
+    /// Names of yours that exist as more than one version.
+    var differingCopyNames: [String] {
+        let groups = Dictionary(grouping: own) { $0.displayName.lowercased() }
+        return groups.compactMap { _, group in
+            group.count > 1 && Set(group.map { $0.contentHash ?? $0.id }).count > 1 ? group[0].displayName : nil
+        }.sorted()
+    }
+
+    /// The Claude Code plugins on this Mac, one record per plugin, whatever number of skills it brings.
+    var pluginRecords: [PluginRecord] {
+        var seen = Set<String>()
+        return (inventory?.installations ?? []).compactMap(\.plugin).filter { seen.insert($0.id).inserted }
+    }
+
+    /// Plugins whose marketplace has a newer version than the one installed.
+    var pluginUpdates: [PluginRecord] {
+        guard checksEnabled else { return [] }
+        return pluginRecords.filter {
+            if case .updateAvailable = pluginReadings[$0.id]?.state { true } else { false }
+        }
+    }
+
     /// Runs the installer's update for these skills, then reads this Mac and asks the sources
     /// again, so every status shows what is true afterwards.
     func update(_ installations: [Installation]) async {
         let names = installations.map(\.directoryName)
         guard !names.isEmpty, !updater.isRunning else { return }
         _ = await updater.run(names: names)
+        Notifier.shared.runEnded(names: names, phase: updater.phase)
         await refresh()
+    }
+
+    /// Hands the current updates to the notifier, which tells only about the new ones.
+    private func notifyUpdates() {
+        let found = updates.compactMap { installation -> Notifier.Found? in
+            guard let key = sourceKey(for: installation) else { return nil }
+            let upstream: String
+            switch status(for: installation) {
+            case .updateAvailable(let hash), .differs(let hash): upstream = hash
+            default: return nil
+            }
+            return Notifier.Found(key: key, source: upstreamSource(for: installation)?.name ?? "A source", upstream: upstream)
+        } + pluginUpdates.compactMap { plugin -> Notifier.Found? in
+            guard case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state else { return nil }
+            return Notifier.Found(key: "plugin:" + plugin.id, source: "Claude Code plugin \(plugin.name)", upstream: upstream)
+        }
+        Notifier.shared.updatesFound(found)
     }
 
     /// Reads this Mac again and then asks the sources, whatever the age of the last answer.
@@ -230,7 +341,8 @@ final class InventoryStore {
         }
         #endif
         let tracked = inventory.installations.filter { sourceKey(for: $0) != nil }
-        guard !tracked.isEmpty else { return }
+        let plugins = pluginRecords
+        guard !tracked.isEmpty || !plugins.isEmpty else { return }
         isChecking = true
         defer { isChecking = false }
 
@@ -260,9 +372,27 @@ final class InventoryStore {
             return UpstreamQuestion(key: key, source: upstreamSource(for: installation), subpath: subpath, baseline: baseline)
         }
         let answers = await UpstreamChecker.check(questions)
+        var baselines = pluginBaselines
+        let pluginAnswers = await PluginChecker().check(plugins, baselines: &baselines)
+        pluginBaselines = baselines
         let now = Date()
         var problem: UpstreamState.Reason?
         var answered = false
+        var nextPlugins = pluginReadings
+        for (id, state) in pluginAnswers {
+            switch state {
+            case .cannotCheck(.cancelled):
+                continue
+            case .cannotCheck(let reason) where reason == .offline || reason == .rateLimited:
+                problem = reason
+                if nextPlugins[id] == nil { nextPlugins[id] = UpstreamReading(state: state, checkedAt: now) }
+            default:
+                answered = true
+                nextPlugins[id] = UpstreamReading(state: state, checkedAt: now)
+            }
+        }
+        let installedPlugins = Set(plugins.map(\.id))
+        pluginReadings = nextPlugins.filter { installedPlugins.contains($0.key) }
         // Start from what is known now, not from before the network wait: a link made while
         // the sources were being asked keeps the answer its search gave.
         var next = readings
@@ -293,9 +423,31 @@ final class InventoryStore {
         lastProblem = problem
         if answered { lastCheck = now }
         save()
+        notifyUpdates()
         if checkAgain {
             checkAgain = false
             await checkSources(force: true)
+        }
+    }
+
+    // MARK: What an update changes
+
+    /// The files an update would add, change or remove, told by comparing file ids in the
+    /// source with the files on this Mac. Asks the source again, which GitHub answers from
+    /// its "unchanged" reply when nothing moved since the last check.
+    func fileChanges(for installation: Installation) async -> Result<[FileChange], UpstreamState.Reason> {
+        guard let source = upstreamSource(for: installation) else { return .failure(.unsupported) }
+        let subpath = sourceSubpath(for: installation)
+        let path = installation.canonicalPath
+        async let local = Task.detached(priority: .utility) {
+            try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).entries
+        }.value
+        switch await GitHubTrees(budget: .shared).tree(of: source) {
+        case .failure(let reason): return .failure(reason)
+        case .success(let tree):
+            guard let entries = await local else { return .failure(.failed) }
+            if tree.truncated, tree.hash(of: subpath) == nil { return .failure(.failed) }
+            return .success(FileChanges.compare(local: entries, upstream: tree, subpath: subpath))
         }
     }
 
@@ -332,7 +484,7 @@ final class InventoryStore {
         async let local = Task.detached(priority: .utility) {
             try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).treeID
         }.value
-        switch await GitHubTrees().tree(of: source) {
+        switch await GitHubTrees(budget: .shared).tree(of: source) {
         case .failure(let reason): return .failure(.source(reason))
         case .success(let tree):
             let localHash = await local
@@ -371,6 +523,8 @@ final class InventoryStore {
         var held: [String: Date]
         var lastCheck: Date?
         var links: [String: SourceLink]?
+        var pluginReadings: [String: UpstreamReading]?
+        var pluginBaselines: [String: String]?
     }
 
     private static var savedURL: URL? {
@@ -385,12 +539,15 @@ final class InventoryStore {
         held = saved.held
         lastCheck = saved.lastCheck
         links = saved.links ?? [:]
+        pluginReadings = saved.pluginReadings ?? [:]
+        pluginBaselines = saved.pluginBaselines ?? [:]
     }
 
     private func save() {
         guard !usesSampleReadings, let url = Self.savedURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links)
+        let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
+                          pluginReadings: pluginReadings, pluginBaselines: pluginBaselines)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 
@@ -453,7 +610,10 @@ final class InventoryStore {
             let again = DiscoveryEngine(home: engine.home, projects: projects, environment: environment, system: engine.system)
             result = await Task.detached(priority: .utility) { again.scan() }.value
         }
+        // Which agents are here decides which agent marks a skill shows.
+        AgentPresence.refresh(among: Array(Set(result.installations.flatMap(\.agents))))
         inventory = result
+        watchFolders(of: result)
         Task { await checkSources() }
         // A read takes about 150 ms. Hold the "reading" state a little longer so it can be seen.
         let shown = Date().timeIntervalSince(started)

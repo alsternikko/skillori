@@ -76,6 +76,24 @@ if checkSources {
     }
 }
 
+if checkSources {
+    var seen = Set<String>()
+    let plugins = inventory.installations.compactMap(\.plugin).filter { seen.insert($0.id).inserted }
+    var baselines: [String: String] = [:]
+    let answers = await PluginChecker().check(plugins, baselines: &baselines)
+    print("\nClaude Code plugins asked: \(plugins.count)")
+    for plugin in plugins {
+        let text: String
+        switch answers[plugin.id] {
+        case .upToDate: text = "up to date"
+        case .updateAvailable(let hash): text = "UPDATE AVAILABLE · now \(hash.prefix(7))"
+        case .cannotCheck(let reason): text = "CAN'T CHECK · \(reason.rawValue)"
+        case nil: text = "no answer"
+        }
+        print("  \(plugin.id) [\(plugin.marketplaceRepository ?? "?") · installed \(plugin.commit?.prefix(7) ?? "?")] — \(text)")
+    }
+}
+
 if let findSource {
     print("\nLooking for \(findSource.skill) in \(findSource.repository)")
     guard let (source, _) = UpstreamSource.parse(findSource.repository) else { print("  not a GitHub repository"); exit(1) }

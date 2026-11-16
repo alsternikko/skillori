@@ -3,8 +3,8 @@ import SkilloriCore
 import SkilloriUI
 import SwiftUI
 
-/// First start, in three steps: what Skillori does, where it looks, and the first reading.
-/// A fourth step about checking and notifications waits for backlog etapp 2.
+/// First start, in four steps: what Skillori does, where it looks, the first reading, and
+/// whether to ask sources about changes. Asking is off until the reader turns it on.
 struct FirstStartView: View {
     @Environment(InventoryStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -15,7 +15,7 @@ struct FirstStartView: View {
     var onLibrary: () -> Void = {}
 
     static let width: CGFloat = 320
-    private static let steps = 3
+    private static let steps = 4
 
     var body: some View {
         PanelSurface {
@@ -34,7 +34,8 @@ struct FirstStartView: View {
             switch step {
             case 1: welcome
             case 2: whereToLook
-            default: firstReading
+            case 3: firstReading
+            default: checking
             }
         }
         // Every step is the same height, so the window never has to change size.
@@ -136,10 +137,43 @@ struct FirstStartView: View {
             }
         }
         footer {
-            Button("Done", action: onDone).buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
+            Button("Continue") { step = 4 }.buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
             Button("Open Library", action: onLibrary).buttonStyle(PillButtonStyle())
             Spacer(minLength: 0)
             Button("Back") { step = 2 }.buttonStyle(HintButtonStyle())
+        }
+    }
+
+    // MARK: Step 4
+
+    @ViewBuilder private var checking: some View {
+        let tracked = store.trackedCount
+        let on = store.checksEnabled
+        hero(.new, label: "Changes") {
+            DotNumber("\(tracked)", size: 72).padding(.top, 22)
+            Spacer(minLength: 0)
+            lead(tracked == 1 ? "skill has a source to ask" : "skills have a source to ask")
+            note(on ? "Checks are on. Skillori asks every six hours while it runs."
+                    : "Skillori can ask GitHub whether they changed. Off until you turn it on.", tone: .new)
+        }
+        PlainList {
+            bullet("Sends only the repository name")
+            bullet("No account and no token")
+            bullet("Nothing is updated until you say so", isLast: true)
+        }
+        footer {
+            if on {
+                Button("Done", action: onDone).buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
+            } else {
+                Button("Turn on checks") {
+                    store.checksEnabled = true
+                    onDone()
+                }
+                .buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
+                Button("Not now", action: onDone).buttonStyle(PillButtonStyle())
+            }
+            Spacer(minLength: 0)
+            Button("Back") { step = 3 }.buttonStyle(HintButtonStyle())
         }
     }
 
