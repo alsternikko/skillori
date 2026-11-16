@@ -76,7 +76,9 @@ struct LibraryView: View {
                                    onStep: { step in _ = move(step, in: rows) })
             } else {
                 if !store.checksEnabled, store.trackedCount > 0 { checksOffNotice }
-                tiles
+                // The library opens on what needs the reader; the whole inventory is below it.
+                if filter == .yours, search.isEmpty, store.inventory != nil { todoList }
+                filterStrip
                 listCard
             }
         }
@@ -168,36 +170,152 @@ struct LibraryView: View {
         .background(Tone.quiet.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 
-    // MARK: Tiles
+    // MARK: To do
 
-    private var tiles: some View {
-        HStack(spacing: 6) {
-            tile(.yours, "Yours", "installed by you")
-            tile(.updates, "Updates", updatesCaption, tone: updateUnits > 0 ? .new : nil)
-            tile(.upToDate, "Up to date", "match their source")
-            tile(.heldBack, "Held back", "kept by you")
-            tile(.unverified, "Not verified", "can't be checked")
-            tile(.managed, "From apps", "in \(store.pluginRecords.count) plugins")
+    /// One thing that needs the reader, and where it is done.
+    private struct Todo: Identifiable {
+        let id: String
+        let mark: String
+        let title: String
+        let detail: String
+        var tone: Tone? = nil
+        var button: String? = nil
+        var prominent = false
+        var disabled = false
+        var action: () -> Void = {}
+    }
+
+    /// What needs the reader now, most pressing first: updates, then things only they can sort out.
+    private var todos: [Todo] {
+        var list: [Todo] = []
+        // Skills of yours the installer can update, one line per source.
+        let updatable = store.updatable
+        let bySource = Dictionary(grouping: updatable) { store.upstreamSource(for: $0)?.name ?? "" }
+        for source in bySource.keys.sorted() {
+            let skills = bySource[source]!.sorted { $0.displayName < $1.displayName }
+            let running = store.updater.isRunning && Set(store.updater.names) == Set(skills.map(\.directoryName))
+            list.append(Todo(id: "skills:" + source, mark: "▲",
+                             title: skills.count == 1 ? "1 skill to update from \(source)" : "\(skills.count) skills to update from \(source)",
+                             detail: skills.map(\.displayName).joined(separator: " · "), tone: .new,
+                             button: running ? "Updating…" : "▶ Update", prominent: true, disabled: store.updater.isRunning,
+                             action: { Task { await store.update(skills) } }))
+        }
+        // Plugins, one line per app, each saying where the update is made.
+        let byApp = Dictionary(grouping: store.pluginUpdates, by: \.app)
+        for app in byApp.keys.sorted() {
+            let plugins = byApp[app]!.sorted { $0.title < $1.title }
+            let steps = plugins.map { "\($0.title) " + Self.versionStep($0, latest: store.pluginReadings[$0.id]?.state) }
+            var todo = Todo(id: "plugins:" + app, mark: "▲",
+                            title: plugins.count == 1 ? "1 plugin to update in \(app)" : "\(plugins.count) plugins to update in \(app)",
+                            detail: steps.joined(separator: "  ·  "), tone: .new)
+            if app == "Claude Code" {
+                let runner = store.pluginUpdater
+                todo.button = runner.isRunning ? "Updating…" : "▶ Update"
+                todo.prominent = true
+                todo.disabled = runner.isRunning
+                todo.action = { Task { await store.updatePlugins(plugins) } }
+            } else if let url = Self.appURL(app) {
+                todo.button = "Open \(app)"
+                todo.action = { NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) }
+            }
+            list.append(todo)
+        }
+        if store.isStale, let reason = store.lastProblem {
+            list.append(Todo(id: "stale", mark: "✕", title: "Sources could not be asked",
+                             detail: reason.sentence + " The statuses below are from the last answer.", tone: .attention,
+                             button: "Try again", action: { Task { await store.refresh() } }))
+        }
+        if store.localChangeCount > 0 {
+            let changed = (store.inventory?.installations ?? []).filter { store.status(for: $0) == .changedHere }
+            list.append(Todo(id: "changed", mark: "◐",
+                             title: changed.count == 1 ? "\(changed[0].displayName) was changed on this Mac" : "\(changed.count) skills were changed on this Mac",
+                             detail: "An update would replace those changes. Look before you update.", tone: .attention,
+                             button: "Show", action: { if let first = changed.first { selection = first.id } }))
+        }
+        let versions = store.differingCopyNames
+        if !versions.isEmpty {
+            list.append(Todo(id: "versions", mark: "≠",
+                             title: versions.count == 1 ? "\(versions[0]) exists in more than one version"
+                                 : "\(versions.count) skills exist in more than one version",
+                             detail: (versions.count > 1 ? versions.joined(separator: " · ") + " · " : "")
+                                 + "folders hold different files under one name, and an agent may load either",
+                             tone: .attention, button: "Show", action: { search = versions[0] }))
+        }
+        if store.unknownCount > 0 {
+            let count = store.unknownCount
+            list.append(Todo(id: "unknown", mark: "○",
+                             title: count == 1 ? "1 skill has no known source" : "\(count) skills have no known source",
+                             detail: "Link them to a GitHub repository to hear when they change.",
+                             button: "Show", action: { filter = .unverified }))
+        }
+        return list
+    }
+
+    private var todoList: some View {
+        let list = todos
+        return VStack(spacing: 6) {
+            if list.isEmpty {
+                HStack(spacing: 12) {
+                    DataText("●").frame(width: 20)
+                    Text("Nothing needs you").font(TypeRole.sans(13, .medium))
+                    Spacer(minLength: 8)
+                    LabelText(store.checksEnabled ? store.checkStamp : "Read \(store.inventory?.scannedAt.formatted(date: .omitted, time: .shortened) ?? "")")
+                        .foregroundStyle(Palette.ink2)
+                }
+                .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+            } else {
+                ForEach(list) { todo in todoRow(todo) }
+            }
         }
     }
 
-    private func tile(_ item: LibraryFilter, _ label: String, _ caption: String, tone: Tone? = nil) -> some View {
-        // Updates counts what can be updated: a skill of yours, or a whole plugin.
-        let number = item == .updates ? updateUnits : count(item)
-        return StatTile(label: label, number: store.inventory == nil ? "--" : "\(number)", caption: caption,
-                        tone: tone, isSelected: filter == item) { filter = item }
+    private func todoRow(_ todo: Todo) -> some View {
+        let foreground = todo.tone?.foreground ?? Palette.ink
+        let secondary = todo.tone?.secondary ?? Palette.ink2
+        return HStack(spacing: 12) {
+            DataText(todo.mark).frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(todo.title).font(TypeRole.sans(13, .medium)).lineLimit(1)
+                Text(todo.detail).font(TypeRole.mono(11)).foregroundStyle(secondary).lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 12)
+            if let button = todo.button {
+                Button(button, action: todo.action)
+                    .buttonStyle(PillButtonStyle(prominent: todo.prominent, on: todo.tone))
+                    .disabled(todo.disabled)
+            }
+        }
+        .foregroundStyle(foreground)
+        .padding(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 10))
+        .background(todo.tone?.background ?? Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+        .accessibilityElement(children: .combine)
     }
+
+    /// The filters, as a row of counts over the list.
+    private var filterStrip: some View {
+        HStack(spacing: 6) {
+            strip(.yours, "Everything", (store.inventory?.installations.count ?? 0))
+            strip(.updates, "Updates", updateUnits)
+            strip(.upToDate, "Up to date", count(.upToDate))
+            strip(.heldBack, "Held back", count(.heldBack))
+            strip(.unverified, "Not verified", count(.unverified))
+            strip(.managed, "From apps", count(.managed))
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 6)
+    }
+
+    private func strip(_ item: LibraryFilter, _ label: String, _ number: Int) -> some View {
+        Button("\(label) \(store.inventory == nil ? "--" : "\(number)")") { filter = item }
+            .buttonStyle(PillButtonStyle(prominent: filter == item))
+            .accessibilityAddTraits(filter == item ? .isSelected : [])
+    }
+
+    // MARK: Counts
 
     /// Skills of yours with something new at their source, and plugins with a newer version.
     private var updateUnits: Int { store.updateCount + store.pluginUpdates.count }
-
-    private var updatesCaption: String {
-        let skills = store.updateCount
-        let plugins = store.pluginUpdates.count
-        guard plugins > 0 else { return "newer at the source" }
-        guard skills > 0 else { return plugins == 1 ? "1 plugin" : "\(plugins) plugins" }
-        return "\(skills) skill\(skills == 1 ? "" : "s") · \(plugins) plugin\(plugins == 1 ? "" : "s")"
-    }
 
     private func count(_ item: LibraryFilter) -> Int {
         store.inventory?.installations.filter { item.includes(store.status(for: $0)) }.count ?? 0
