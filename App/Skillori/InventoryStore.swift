@@ -37,6 +37,8 @@ final class InventoryStore {
     private(set) var lastProblem: UpstreamState.Reason?
     /// Runs the installer's update command when the reader asks for it.
     let updater = UpdateRunner()
+    /// Runs Claude Code's update for its plugins when the reader asks for it.
+    let pluginUpdater = PluginUpdateRunner()
     /// Asking sources is the reader's choice and is off until they turn it on.
     var checksEnabled: Bool {
         didSet {
@@ -294,6 +296,20 @@ final class InventoryStore {
         guard !names.isEmpty, !updater.isRunning else { return }
         _ = await updater.run(names: names)
         Notifier.shared.runEnded(names: names, phase: updater.phase)
+        await refresh()
+    }
+
+    /// Runs Claude Code's update for these plugins, then reads this Mac and asks again.
+    func updatePlugins(_ plugins: [PluginRecord]) async {
+        guard !plugins.isEmpty, !pluginUpdater.isRunning else { return }
+        _ = await pluginUpdater.run(plugins)
+        let names = plugins.map(\.title)
+        switch pluginUpdater.phase {
+        case .succeeded: Notifier.shared.runEnded(names: names, phase: .succeeded)
+        case .needsReview: Notifier.shared.runEnded(names: names, phase: .failed("Claude Code wants your approval. Run the update in Terminal."))
+        case .failed(let why): Notifier.shared.runEnded(names: names, phase: .failed(why))
+        default: break
+        }
         await refresh()
     }
 

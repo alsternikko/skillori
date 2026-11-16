@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// An update that is still running would go on without anyone to see how it ends.
     func applicationWillTerminate(_ notification: Notification) {
         store.updater.stop()
+        store.pluginUpdater.stop()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

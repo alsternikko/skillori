@@ -224,6 +224,10 @@ struct LibraryView: View {
             } else if filter != .coverage, let (group, updatable) = cursorGroupWithUpdates {
                 // A source under the cursor offers its updates in one go.
                 groupBar(group, updatable: updatable).transition(.opacity)
+            } else if filter != .coverage, let (group, plugins) = cursorPluginsWithUpdates {
+                // An app or a plugin under the cursor says where its updates are made, and makes
+                // them when the app lets Skillori ask it to.
+                pluginBar(group, plugins: plugins).transition(.opacity)
             }
         }
         .animation(reduceMotion ? nil : Motion.swap, value: selected?.id)
@@ -601,6 +605,82 @@ struct LibraryView: View {
         guard let groupCursor, let group = groups.first(where: { $0.id == groupCursor }), group.kind == .source else { return nil }
         let updatable = group.items.filter { isUpdate(store.status(for: $0)) }
         return updatable.isEmpty ? nil : (group, updatable)
+    }
+
+    /// The app or plugin under the cursor, and those of its plugins with a newer version.
+    private var cursorPluginsWithUpdates: (SkillGroup, [PluginRecord])? {
+        guard let groupCursor, let group = allGroups(groups).first(where: { $0.id == groupCursor }),
+              group.kind == .managed || group.kind == .plugin else { return nil }
+        let inside = Set(group.items.compactMap(\.plugin?.id))
+        let plugins = store.pluginUpdates.filter { inside.contains($0.id) }.sorted { $0.title < $1.title }
+        return plugins.isEmpty ? nil : (group, plugins)
+    }
+
+    /// Claude Code updates its plugins from the command line, so Skillori can start that. Cursor
+    /// and Codex update theirs in the app, so the bar opens the app.
+    private func pluginBar(_ group: SkillGroup, plugins: [PluginRecord]) -> some View {
+        let app = plugins[0].app
+        let runner = store.pluginUpdater
+        let mine = Set(runner.ids) == Set(plugins.map(\.id))
+        let one = plugins.count == 1 ? plugins[0] : nil
+        var text = one.map { "\(app) plugin · " + Self.versionStep($0, latest: store.pluginReadings[$0.id]?.state) }
+            ?? "\(plugins.count) plugins have updates: " + plugins.map(\.title).joined(separator: ", ")
+        if app == "Claude Code" { text += " · start a new session afterwards" } else { text += " · \(app) updates its own plugins" }
+        if mine {
+            switch runner.phase {
+            case .running: text = runner.lastLines(1).first ?? "Running Claude Code's update…"
+            case .succeeded: text = "Updated. Start a new Claude Code session to load the new version."
+            case .needsReview: text = "Claude Code wants your approval for a change in how this installs. Run it in Terminal to review."
+            case .failed(let why): text = "The update did not finish. \(why)"
+            case .idle: break
+            }
+        }
+        let title = one?.title ?? (group.kind == .managed ? group.title : app)
+        return StatusLine {
+            Text(title).font(TypeRole.sans(13, .medium)).lineLimit(1)
+            Text(text)
+                .font(TypeRole.sans(12))
+                .foregroundStyle(Tone.rest.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.leading, 6)
+            Spacer(minLength: 10)
+            if app == "Claude Code" {
+                if mine, runner.isRunning {
+                    Button("Stop") { runner.stop() }.buttonStyle(PillButtonStyle(on: .rest))
+                }
+                Button(mine && runner.isRunning ? "Updating…" : "▶ Update\(plugins.count > 1 ? " \(plugins.count)" : "")") {
+                    Task { await store.updatePlugins(plugins) }
+                }
+                .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
+                .disabled(runner.isRunning)
+                .help(PluginUpdateRunner.commandText(for: plugins))
+                Button("Copy command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(PluginUpdateRunner.commandText(for: plugins), forType: .string)
+                }
+                .buttonStyle(PillButtonStyle(on: .rest))
+            } else if let url = Self.appURL(app) {
+                Button("Open \(app)") { NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration()) }
+                    .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
+            }
+        }
+    }
+
+    /// "0.53.0 → 0.55.1", or "→ newer" when the source gives a tree id rather than a version.
+    static func versionStep(_ plugin: PluginRecord, latest state: UpstreamState?) -> String {
+        let installed = plugin.version ?? plugin.commit.map { String($0.prefix(7)) } ?? "?"
+        guard case .updateAvailable(let latest) = state else { return installed }
+        return installed + " → " + (GroupRow.isVersion(latest) ? latest : "newer")
+    }
+
+    /// Where an app that updates its own plugins is installed.
+    static func appURL(_ app: String) -> URL? {
+        switch app {
+        case "Cursor": AgentPresence.appURL(for: .cursor)
+        case "Codex": AgentPresence.appURL(for: .codex)
+        default: nil
+        }
     }
 
     /// One press runs the installer's update for every skill of a source that has one.
