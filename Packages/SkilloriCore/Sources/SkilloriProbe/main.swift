@@ -16,7 +16,8 @@ if let index = arguments.firstIndex(of: "--find-source"), arguments.count > inde
 }
 let projects = arguments.filter { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
 let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
-                             projects: projects, environment: ProcessInfo.processInfo.environment)
+                             projects: projects, environment: ProcessInfo.processInfo.environment,
+                             system: URL(fileURLWithPath: "/"))
 let inventory = engine.scan()
 
 print("Rules: \(AdapterRules.rulesVersion)")

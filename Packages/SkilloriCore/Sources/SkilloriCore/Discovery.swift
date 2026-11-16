@@ -76,11 +76,15 @@ public struct DiscoveryEngine: Sendable {
     public let home: URL
     public let projects: [URL]
     public let environment: [String: String]
+    /// The disk root, for places an administrator sets up. Nil leaves those unread, which
+    /// keeps tests away from the machine they run on.
+    public let system: URL?
 
-    public init(home: URL, projects: [URL] = [], environment: [String: String] = [:]) {
+    public init(home: URL, projects: [URL] = [], environment: [String: String] = [:], system: URL? = nil) {
         self.home = home
         self.projects = projects
         self.environment = environment
+        self.system = system
     }
 
     public func scan() -> Inventory {
@@ -88,15 +92,18 @@ public struct DiscoveryEngine: Sendable {
         var builder = Builder()
 
         for rule in AdapterRules.personal {
-            for root in expand(pattern: rule.pattern, under: home) {
-                scanRoot(root, rule: rule, projectName: nil, into: &builder)
+            scan(rule, under: home, projectName: nil, into: &builder)
+            for place in relocated(rule.pattern) {
+                scan(rule, pattern: place.pattern, under: place.base, projectName: nil, into: &builder)
             }
+        }
+        scanRecordedClaudePlugins(into: &builder)
+        if let system {
+            for rule in AdapterRules.system { scan(rule, under: system, projectName: nil, into: &builder) }
         }
         for project in projects {
             for rule in AdapterRules.project {
-                for root in expand(pattern: rule.pattern, under: project) {
-                    scanRoot(root, rule: rule, projectName: project.lastPathComponent, into: &builder)
-                }
+                scan(rule, under: project, projectName: project.lastPathComponent, into: &builder)
             }
         }
 
@@ -115,6 +122,111 @@ public struct DiscoveryEngine: Sendable {
         var order: [String] = []
         var roots: [RootReport] = []
         var diagnostics: [Diagnostic] = []
+        /// Folders already read, by resolved path, so no folder is counted twice.
+        var seen: Set<String> = []
+    }
+
+    private func scan(_ rule: RootRule, pattern: String? = nil, under base: URL, projectName: String?,
+                      into builder: inout Builder) {
+        for location in expand(pattern: pattern ?? rule.pattern, under: base) {
+            if let layout = rule.plugin {
+                scanPlugin(location, layout: layout, rule: rule, projectName: projectName, into: &builder)
+            } else {
+                scanRoot(location, rule: rule, markerDirectory: location.deletingLastPathComponent(),
+                         projectName: projectName, into: &builder)
+            }
+        }
+    }
+
+    /// The other places a personal pattern can be, from variables that move a settings folder.
+    func relocated(_ pattern: String) -> [(base: URL, pattern: String)] {
+        AdapterRules.relocations.compactMap { relocation in
+            guard let value = environment[relocation.variable], value.hasPrefix("/"),
+                  pattern == relocation.prefix || pattern.hasPrefix(relocation.prefix + "/") else { return nil }
+            var base = URL(fileURLWithPath: value, isDirectory: true)
+            if !relocation.subpath.isEmpty { base.appendPathComponent(relocation.subpath) }
+            return (base, String(pattern.dropFirst(relocation.prefix.count)))
+        }
+    }
+
+    /// Claude Code records where each plugin is installed. Most are in its cache, which the
+    /// rules already read; one from a local marketplace is loaded from where it lies.
+    private func scanRecordedClaudePlugins(into builder: inout Builder) {
+        let rule = AdapterRules.claudeCodePlugins
+        guard let layout = rule.plugin else { return }
+        let folders = [home.appendingPathComponent(".claude/plugins")] + relocated(".claude/plugins").map {
+            $0.base.appendingPathComponent($0.pattern)
+        }
+        for folder in folders {
+            let record = folder.appendingPathComponent("installed_plugins.json")
+            guard let data = try? Data(contentsOf: record),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let plugins = json["plugins"] as? [String: Any] else { continue }
+            for name in plugins.keys.sorted() {
+                for entry in plugins[name] as? [[String: Any]] ?? [] {
+                    guard let path = entry["installPath"] as? String, path.hasPrefix("/") else { continue }
+                    scanPlugin(URL(fileURLWithPath: path, isDirectory: true), layout: layout, rule: rule,
+                               projectName: nil, into: &builder)
+                }
+            }
+        }
+    }
+
+    /// Reads one plugin folder: `skills/`, plus or instead the folders its manifest names.
+    private func scanPlugin(_ plugin: URL, layout: PluginLayout, rule: RootRule, projectName: String?,
+                            into builder: inout Builder) {
+        let fm = FileManager.default
+        guard isDirectory(plugin) else { return }
+        let standard = plugin.appendingPathComponent("skills")
+        if let marker = rule.inactiveMarker, fm.fileExists(atPath: plugin.appendingPathComponent(marker).path) {
+            builder.roots.append(RootReport(path: standard.path, rule: rule.note, projectName: projectName, state: .inactive, skillCount: 0))
+            return
+        }
+        let named = layout.manifests.lazy.compactMap { manifestSkillPaths(plugin.appendingPathComponent($0)) }.first
+        var folders: [URL] = []
+        if named == nil || !layout.customPathsReplaceDefault { folders.append(standard) }
+        let inside = plugin.standardizedFileURL.path
+        for path in named ?? [] {
+            let folder = URL(fileURLWithPath: path, relativeTo: plugin).standardizedFileURL
+            // A manifest may only point inside its own plugin.
+            guard folder.path == inside || folder.path.hasPrefix(inside + "/") else { continue }
+            folders.append(folder)
+        }
+        var found = false
+        for folder in folders where isDirectory(folder) {
+            found = true
+            if fm.fileExists(atPath: folder.appendingPathComponent("SKILL.md").path) {
+                scanSingle(folder, rule: rule, projectName: projectName, into: &builder)
+            } else {
+                scanRoot(folder, rule: rule, markerDirectory: nil, projectName: projectName, into: &builder)
+            }
+        }
+        // A plugin with nothing but a SKILL.md at its top is one skill.
+        if !found, named == nil, fm.fileExists(atPath: plugin.appendingPathComponent("SKILL.md").path) {
+            scanSingle(plugin, rule: rule, projectName: projectName, into: &builder)
+        }
+    }
+
+    /// The `skills` entry of a plugin manifest: one path or a list of them. Nil when the file
+    /// is missing, unreadable or names none.
+    func manifestSkillPaths(_ manifest: URL) -> [String]? {
+        guard let data = try? Data(contentsOf: manifest),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let paths: [String]
+        switch json["skills"] {
+        case let one as String: paths = [one]
+        case let many as [Any]: paths = many.compactMap { $0 as? String }
+        default: return nil
+        }
+        let usable = paths.filter { !$0.isEmpty && !$0.hasPrefix("/") }
+        return usable.isEmpty ? nil : usable
+    }
+
+    /// A folder that is itself one skill.
+    private func scanSingle(_ skill: URL, rule: RootRule, projectName: String?, into builder: inout Builder) {
+        guard builder.seen.insert(skill.resolvingSymlinksInPath().path).inserted else { return }
+        let added = register(skill, rule: rule, projectName: projectName, into: &builder)
+        builder.roots.append(RootReport(path: skill.path, rule: rule.note, projectName: projectName, state: .found, skillCount: added ? 1 : 0))
     }
 
     /// Expands `*` components. Literal components are not required to exist; the root report
@@ -135,8 +247,10 @@ public struct DiscoveryEngine: Sendable {
         return current
     }
 
-    private func scanRoot(_ root: URL, rule: RootRule, projectName: String?, into builder: inout Builder) {
+    private func scanRoot(_ root: URL, rule: RootRule, markerDirectory: URL?, projectName: String?,
+                          into builder: inout Builder) {
         let fm = FileManager.default
+        guard builder.seen.insert(root.resolvingSymlinksInPath().path).inserted else { return }
         guard fm.fileExists(atPath: root.path) else {
             // Only report literal roots as missing; unmatched wildcards simply have no instances.
             if !rule.pattern.contains("*") {
@@ -144,7 +258,8 @@ public struct DiscoveryEngine: Sendable {
             }
             return
         }
-        if let marker = rule.inactiveMarker, hasMarker(marker, near: root) {
+        if let marker = rule.inactiveMarker, let markerDirectory,
+           fm.fileExists(atPath: markerDirectory.appendingPathComponent(marker).path) {
             builder.roots.append(RootReport(path: root.path, rule: rule.note, projectName: projectName, state: .inactive, skillCount: 0))
             return
         }
@@ -159,41 +274,46 @@ public struct DiscoveryEngine: Sendable {
 
         var count = 0
         for name in names.sorted() where !name.hasPrefix(".") {
-            let entry = root.appendingPathComponent(name)
-            let isLink = (try? entry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? false
-            let resolved = entry.resolvingSymlinksInPath()
-            guard isDirectory(resolved) else {
-                if isLink && !fm.fileExists(atPath: resolved.path) {
-                    builder.diagnostics.append(Diagnostic(path: entry.path, message: "Broken link"))
-                }
-                continue
-            }
-            let skillFile = resolved.appendingPathComponent("SKILL.md")
-            guard fm.fileExists(atPath: skillFile.path) else { continue }
-            guard let key = fileIdentity(resolved) else {
-                builder.diagnostics.append(Diagnostic(path: entry.path, message: "Can't read file identity"))
-                continue
-            }
-            count += 1
-
-            let binding = AgentBinding(discoveredPath: entry.path, agents: rule.agents, scope: rule.scope,
-                                       projectName: projectName, viaSymlink: isLink)
-            if var existing = builder.installations[key] {
-                existing.bindings.append(binding)
-                if case .managed = rule.ownership, existing.provenance == .unknown {
-                    existing.provenance = provenance(for: rule.ownership)
-                }
-                builder.installations[key] = existing
-            } else {
-                let frontmatter = SkillFrontmatter.parse(fileAt: skillFile)
-                builder.installations[key] = Installation(
-                    id: key, canonicalPath: resolved.path, directoryName: resolved.lastPathComponent,
-                    frontmatter: frontmatter, bindings: [binding], provenance: provenance(for: rule.ownership))
-                builder.order.append(key)
-            }
+            if register(root.appendingPathComponent(name), rule: rule, projectName: projectName, into: &builder) { count += 1 }
         }
         builder.roots.append(RootReport(path: root.path, rule: rule.note, projectName: projectName, state: .found, skillCount: count))
     }
+
+    /// Records the skill at `entry`, if it is one. Returns whether it was.
+    private func register(_ entry: URL, rule: RootRule, projectName: String?, into builder: inout Builder) -> Bool {
+        let fm = FileManager.default
+        let isLink = (try? entry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? false
+        let resolved = entry.resolvingSymlinksInPath()
+        guard isDirectory(resolved) else {
+            if isLink && !fm.fileExists(atPath: resolved.path) {
+                builder.diagnostics.append(Diagnostic(path: entry.path, message: "Broken link"))
+            }
+            return false
+        }
+        let skillFile = resolved.appendingPathComponent("SKILL.md")
+        guard fm.fileExists(atPath: skillFile.path) else { return false }
+        guard let key = fileIdentity(resolved) else {
+            builder.diagnostics.append(Diagnostic(path: entry.path, message: "Can't read file identity"))
+            return false
+        }
+
+        let binding = AgentBinding(discoveredPath: entry.path, agents: rule.agents, scope: rule.scope,
+                                   projectName: projectName, viaSymlink: isLink)
+        if var existing = builder.installations[key] {
+            existing.bindings.append(binding)
+            if case .managed = rule.ownership, existing.provenance == .unknown {
+                existing.provenance = provenance(for: rule.ownership)
+            }
+            builder.installations[key] = existing
+        } else {
+            let frontmatter = SkillFrontmatter.parse(fileAt: skillFile)
+            builder.installations[key] = Installation(
+                id: key, canonicalPath: resolved.path, directoryName: resolved.lastPathComponent,
+                frontmatter: frontmatter, bindings: [binding], provenance: provenance(for: rule.ownership))
+            builder.order.append(key)
+        }
+        return true
+}
 
     private func provenance(for ownership: Ownership) -> Provenance {
         switch ownership {
@@ -239,12 +359,6 @@ public struct DiscoveryEngine: Sendable {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return withFraction.date(from: text) ?? ISO8601DateFormatter().date(from: text)
-    }
-
-    private func hasMarker(_ marker: String, near root: URL) -> Bool {
-        // The marker sits in the version directory, which is the parent of `skills`.
-        let parent = root.deletingLastPathComponent()
-        return FileManager.default.fileExists(atPath: parent.appendingPathComponent(marker).path)
     }
 
     private func isDirectory(_ url: URL) -> Bool {

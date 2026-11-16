@@ -44,6 +44,9 @@ final class InventoryStore {
     /// How long an answer stands before the sources are asked again.
     static let checkInterval: TimeInterval = 6 * 60 * 60
     private let usesSampleReadings: Bool
+    /// The variables the scan reads. Starts as this app's own, which lack what the reader's
+    /// shell sets when the app was opened from Finder; `followLoginShell` fills those in.
+    private var environment = ProcessInfo.processInfo.environment
 
     init() {
         let paths = UserDefaults.standard.stringArray(forKey: Self.projectsKey) ?? []
@@ -57,6 +60,7 @@ final class InventoryStore {
         if !usesSampleReadings { loadSaved() }
         Task {
             await rescan()
+            await followLoginShell()
             // While the app runs, ask again when the last answer has grown old.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30 * 60))
@@ -407,7 +411,8 @@ final class InventoryStore {
         let started = Date()
         let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
                                      projects: projects,
-                                     environment: ProcessInfo.processInfo.environment)
+                                     environment: environment,
+                                     system: URL(fileURLWithPath: "/"))
         // Disk work stays off the main actor.
         let result = await Task.detached(priority: .utility) { engine.scan() }.value
         inventory = result
@@ -418,6 +423,36 @@ final class InventoryStore {
             try? await Task.sleep(for: .seconds(Self.minimumScanDisplay - shown))
         }
         isScanning = false
+    }
+
+    /// Asks the reader's login shell for the variables that move an agent's settings folder,
+    /// and reads again if any of them says something this app did not already know.
+    private func followLoginShell() async {
+        let own = ProcessInfo.processInfo.environment
+        guard own["SKILLORI_SNAPSHOT_DIR"] == nil, own["SKILLORI_SELFTEST"] == nil else { return }
+        let names = AdapterRules.relocations.map(\.variable) + ["XDG_STATE_HOME"]
+        let found = await Self.loginShellValues(of: names)
+        let changed = found.filter { environment[$0.key] != $0.value }
+        guard !changed.isEmpty else { return }
+        environment.merge(changed) { _, new in new }
+        while isScanning { try? await Task.sleep(for: .milliseconds(100)) }
+        await rescan()
+    }
+
+    /// The values the login shell gives the named variables. Unset and empty ones are left out.
+    nonisolated static func loginShellValues(of names: [String]) async -> [String: String] {
+        let mark = "__SKILLORI__"
+        let output = OutputBox()
+        // The names are passed as arguments; the script itself is fixed.
+        _ = await Shell.run(script: "for name in \"$@\"; do print -r -- \"\(mark)${name}=${(P)name}\"; done",
+                            arguments: names, interactive: true, timeout: 8) { output.append($0) }
+        var values: [String: String] = [:]
+        for line in output.text.split(whereSeparator: \.isNewline) where line.hasPrefix(mark) {
+            let pair = line.dropFirst(mark.count).split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard pair.count == 2, names.contains(String(pair[0])), !pair[1].isEmpty else { continue }
+            values[String(pair[0])] = String(pair[1])
+        }
+        return values
     }
 
     func addProject() {
@@ -444,5 +479,23 @@ final class InventoryStore {
 
     private func persistProjects() {
         UserDefaults.standard.set(projects.map(\.path), forKey: Self.projectsKey)
+    }
+}
+
+/// Collects what a shell prints, from whichever thread it arrives on.
+private final class OutputBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var collected = ""
+
+    func append(_ text: String) {
+        lock.lock()
+        collected += text
+        lock.unlock()
+    }
+
+    var text: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return collected
     }
 }
