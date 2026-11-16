@@ -44,7 +44,11 @@ import Testing
             await asked.add(request)
             let url = request.url!
             if url.path.contains("/gone/") { return (Data(), Self.response(url, 404)) }
-            if url.path.contains("/busy/") { return (Data(), Self.response(url, 403, ["x-ratelimit-remaining": "0"])) }
+            if url.path.contains("/busy/") {
+                // Answers last, so the wait it asks for cannot stop the others, which were already sent.
+                try? await Task.sleep(for: .milliseconds(100))
+                return (Data(), Self.response(url, 403, ["x-ratelimit-remaining": "0"]))
+            }
             if url.path.contains("/down/") { throw URLError(.notConnectedToInternet) }
             let body = #"{"sha":"root","truncated":false,"tree":[{"path":"skills/a","type":"tree","sha":"aaa"},{"path":"skills/a/SKILL.md","type":"blob","sha":"f"},{"path":"skills/b","type":"tree","sha":"new"}]}"#
             return (Data(body.utf8), Self.response(url, 200))

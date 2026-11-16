@@ -345,6 +345,13 @@ extension PanelModel {
 
         // Rows that say the same thing whatever the block shows.
         var tail: [Row] = []
+        let pluginUpdates = store.pluginUpdates
+        if !pluginUpdates.isEmpty {
+            // Claude Code updates its own plugins; Skillori only says that it can.
+            let text = pluginUpdates.count == 1 ? "\(pluginUpdates[0].name) has a plugin update"
+                : "\(pluginUpdates.count) plugins have updates"
+            tail.append(.line(text: text, data: "IN CLAUDE CODE", muted: false))
+        }
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
         }

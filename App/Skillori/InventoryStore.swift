@@ -22,6 +22,10 @@ final class InventoryStore {
     private(set) var held: [String: Date] = [:]
     /// Sources the reader has pointed out for skills that came with no record, by `sourceKey`.
     private(set) var links: [String: SourceLink] = [:]
+    /// What each Claude Code plugin's marketplace last said, by plugin id (`name@marketplace`).
+    private(set) var pluginReadings: [String: UpstreamReading] = [:]
+    /// Folder hashes at installed plugin commits. They never change, so each is asked for once.
+    private var pluginBaselines: [String: String] = [:]
     private(set) var isChecking = false
     /// Set when a forced check was asked for while another was running.
     private var checkAgain = false
@@ -116,7 +120,7 @@ final class InventoryStore {
 
     /// The latest attempt to ask the sources got no answer, so the statuses shown are older
     /// than they look. Only meaningful while checks are on and something has a source.
-    var isStale: Bool { checksEnabled && trackedCount > 0 && lastProblem != nil && !isChecking }
+    var isStale: Bool { checksEnabled && (trackedCount > 0 || !pluginRecords.isEmpty) && lastProblem != nil && !isChecking }
 
     // MARK: Sources
 
@@ -162,7 +166,12 @@ final class InventoryStore {
 
     func status(for installation: Installation) -> SkillStatus {
         switch installation.provenance {
-        case .managed: return .managed
+        case .managed(let owner):
+            if checksEnabled, let plugin = installation.plugin,
+               case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state {
+                return .ownerUpdate(owner: owner, upstream: upstream)
+            }
+            return .managed
         case .unknown:
             guard link(for: installation) != nil else { return .noSource }
             // Linked by the reader: there is no installer baseline, so "differs" is all that can be said.
@@ -240,6 +249,20 @@ final class InventoryStore {
         own.filter { if case .updateAvailable = status(for: $0) { true } else { false } }
     }
 
+    /// The Claude Code plugins on this Mac, one record per plugin, whatever number of skills it brings.
+    var pluginRecords: [PluginRecord] {
+        var seen = Set<String>()
+        return (inventory?.installations ?? []).compactMap(\.plugin).filter { seen.insert($0.id).inserted }
+    }
+
+    /// Plugins whose marketplace has a newer version than the one installed.
+    var pluginUpdates: [PluginRecord] {
+        guard checksEnabled else { return [] }
+        return pluginRecords.filter {
+            if case .updateAvailable = pluginReadings[$0.id]?.state { true } else { false }
+        }
+    }
+
     /// Runs the installer's update for these skills, then reads this Mac and asks the sources
     /// again, so every status shows what is true afterwards.
     func update(_ installations: [Installation]) async {
@@ -260,6 +283,9 @@ final class InventoryStore {
             default: return nil
             }
             return Notifier.Found(key: key, source: upstreamSource(for: installation)?.name ?? "A source", upstream: upstream)
+        } + pluginUpdates.compactMap { plugin -> Notifier.Found? in
+            guard case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state else { return nil }
+            return Notifier.Found(key: "plugin:" + plugin.id, source: "Claude Code plugin \(plugin.name)", upstream: upstream)
         }
         Notifier.shared.updatesFound(found)
     }
@@ -291,7 +317,8 @@ final class InventoryStore {
         }
         #endif
         let tracked = inventory.installations.filter { sourceKey(for: $0) != nil }
-        guard !tracked.isEmpty else { return }
+        let plugins = pluginRecords
+        guard !tracked.isEmpty || !plugins.isEmpty else { return }
         isChecking = true
         defer { isChecking = false }
 
@@ -321,9 +348,27 @@ final class InventoryStore {
             return UpstreamQuestion(key: key, source: upstreamSource(for: installation), subpath: subpath, baseline: baseline)
         }
         let answers = await UpstreamChecker.check(questions)
+        var baselines = pluginBaselines
+        let pluginAnswers = await PluginChecker().check(plugins, baselines: &baselines)
+        pluginBaselines = baselines
         let now = Date()
         var problem: UpstreamState.Reason?
         var answered = false
+        var nextPlugins = pluginReadings
+        for (id, state) in pluginAnswers {
+            switch state {
+            case .cannotCheck(.cancelled):
+                continue
+            case .cannotCheck(let reason) where reason == .offline || reason == .rateLimited:
+                problem = reason
+                if nextPlugins[id] == nil { nextPlugins[id] = UpstreamReading(state: state, checkedAt: now) }
+            default:
+                answered = true
+                nextPlugins[id] = UpstreamReading(state: state, checkedAt: now)
+            }
+        }
+        let installedPlugins = Set(plugins.map(\.id))
+        pluginReadings = nextPlugins.filter { installedPlugins.contains($0.key) }
         // Start from what is known now, not from before the network wait: a link made while
         // the sources were being asked keeps the answer its search gave.
         var next = readings
@@ -394,7 +439,7 @@ final class InventoryStore {
         async let local = Task.detached(priority: .utility) {
             try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).treeID
         }.value
-        switch await GitHubTrees().tree(of: source) {
+        switch await GitHubTrees(budget: .shared).tree(of: source) {
         case .failure(let reason): return .failure(.source(reason))
         case .success(let tree):
             let localHash = await local
@@ -433,6 +478,8 @@ final class InventoryStore {
         var held: [String: Date]
         var lastCheck: Date?
         var links: [String: SourceLink]?
+        var pluginReadings: [String: UpstreamReading]?
+        var pluginBaselines: [String: String]?
     }
 
     private static var savedURL: URL? {
@@ -447,12 +494,15 @@ final class InventoryStore {
         held = saved.held
         lastCheck = saved.lastCheck
         links = saved.links ?? [:]
+        pluginReadings = saved.pluginReadings ?? [:]
+        pluginBaselines = saved.pluginBaselines ?? [:]
     }
 
     private func save() {
         guard !usesSampleReadings, let url = Self.savedURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links)
+        let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
+                          pluginReadings: pluginReadings, pluginBaselines: pluginBaselines)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 

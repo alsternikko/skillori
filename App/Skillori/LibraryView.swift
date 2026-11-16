@@ -20,16 +20,16 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
 
     func includes(_ status: SkillStatus) -> Bool {
         switch self {
-        case .yours: status != .managed
+        case .yours: !status.isManaged
         case .updates:
             switch status {
-            case .updateAvailable, .differs: true
+            case .updateAvailable, .differs, .ownerUpdate: true
             default: false
             }
         case .upToDate: status == .upToDate
         case .heldBack: if case .heldBack = status { true } else { false }
         case .unverified: status.isUnverified
-        case .managed: status == .managed
+        case .managed: status.isManaged
         case .coverage: false
         }
     }
@@ -694,7 +694,13 @@ private struct GroupRow: View {
         let cant = statuses.filter { if case .cantCheck = $0 { true } else { false } }.count
         switch group.kind {
         case .unknown: StatusBadge(status: .noSource)
-        case .managed: StatusBadge(status: .managed)
+        case .managed:
+            let plugin = statuses.filter { if case .ownerUpdate = $0 { true } else { false } }.count
+            if plugin > 0 {
+                StatusChip("\(plugin) plugin update\(plugin == 1 ? "" : "s")", kind: .new, mark: "▲")
+            } else {
+                StatusBadge(status: .managed)
+            }
         case .source:
             if updates > 0 {
                 StatusChip("\(updates) update\(updates == 1 ? "" : "s")", kind: .new, mark: "▲")

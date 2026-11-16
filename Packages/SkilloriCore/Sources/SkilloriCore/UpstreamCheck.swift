@@ -168,17 +168,27 @@ public enum UpstreamComparer {
 public struct GitHubTrees: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
     private let transport: Transport
+    private let budget: GitHubBudget
 
-    public init(transport: @escaping Transport = GitHubTrees.network) {
+    /// `budget` is what this asker remembers of GitHub's answers. The app passes `.shared`, so
+    /// every check builds on the last; a fresh one remembers nothing, which tests want.
+    public init(transport: @escaping Transport = GitHubTrees.network, budget: GitHubBudget = GitHubBudget()) {
         self.transport = transport
+        self.budget = budget
     }
 
-    public static let network: Transport = { request in
+    /// One session for every request: no cookies, no stored credentials, nothing kept on disk.
+    private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.httpCookieStorage = nil
         configuration.urlCredentialStorage = nil
-        let (data, response) = try await URLSession(configuration: configuration).data(for: request)
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
+    }()
+
+    public static let network: Transport = { request in
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
         return (data, http)
     }
@@ -208,9 +218,27 @@ public struct GitHubTrees: Sendable {
         return response.value(forHTTPHeaderField: "retry-after") != nil
     }
 
+    /// When GitHub said to wait, the time it said to wait until.
+    static func retryDate(_ response: HTTPURLResponse, now: Date = Date()) -> Date {
+        if let seconds = response.value(forHTTPHeaderField: "retry-after").flatMap(TimeInterval.init) {
+            return now.addingTimeInterval(seconds)
+        }
+        if response.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0",
+           let reset = response.value(forHTTPHeaderField: "x-ratelimit-reset").flatMap(TimeInterval.init) {
+            return Date(timeIntervalSince1970: reset)
+        }
+        // GitHub's advice when it gives no time: wait at least a minute.
+        return now.addingTimeInterval(60)
+    }
+
     public func tree(of source: UpstreamSource) async -> Result<SourceTree, UpstreamState.Reason> {
-        guard let request = Self.request(for: source) else { return .failure(.unsupported) }
-        let data: Data
+        guard var request = Self.request(for: source) else { return .failure(.unsupported) }
+        // GitHub said to wait: asking anyway only makes the wait longer.
+        if await budget.mustWait() { return .failure(.rateLimited) }
+        let url = request.url!.absoluteString
+        let cached = await budget.cached(url)
+        if let cached { request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
+        var data: Data
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport(request)
@@ -222,10 +250,17 @@ public struct GitHubTrees: Sendable {
             return .failure(.offline)
         }
         switch response.statusCode {
-        case 200: break
+        case 200:
+            if let etag = response.value(forHTTPHeaderField: "etag") { await budget.store(url, etag: etag, data: data) }
+        case 304 where cached != nil:
+            // Unchanged since the last answer. A conditional request like this does not count
+            // against GitHub's hourly limit.
+            data = cached!.data
         case 404: return .failure(.notFound)
         case 403, 429:
-            return .failure(Self.isRateLimit(response) ? .rateLimited : .notFound)
+            guard Self.isRateLimit(response) else { return .failure(.notFound) }
+            await budget.wait(until: Self.retryDate(response))
+            return .failure(.rateLimited)
         default: return .failure(.failed)
         }
         struct Listing: Decodable {
@@ -246,6 +281,56 @@ public struct GitHubTrees: Sendable {
     }
 }
 
+/// What GitHub has said about how much to ask: answers it gave with an ETag, so the same
+/// question can be asked conditionally, and a time not to ask before after it said to wait.
+/// Kept in memory only; the app asks every few hours, which is long enough to matter.
+public actor GitHubBudget {
+    public static let shared = GitHubBudget()
+
+    public struct Cached: Sendable {
+        public let etag: String
+        public let data: Data
+    }
+
+    private var answers: [String: Cached] = [:]
+    private var order: [String] = []
+    private var bytes = 0
+    private let maxBytes: Int
+    /// GitHub asked not to be asked again before this.
+    public private(set) var retryAt: Date?
+
+    public init(maxBytes: Int = 32_000_000) {
+        self.maxBytes = maxBytes
+    }
+
+    func cached(_ url: String) -> Cached? { answers[url] }
+
+    func store(_ url: String, etag: String, data: Data) {
+        if let old = answers[url] {
+            bytes -= old.data.count
+            order.removeAll { $0 == url }
+        }
+        guard data.count <= maxBytes else { return }
+        answers[url] = Cached(etag: etag, data: data)
+        order.append(url)
+        bytes += data.count
+        while bytes > maxBytes, let oldest = order.first {
+            order.removeFirst()
+            bytes -= answers.removeValue(forKey: oldest)?.data.count ?? 0
+        }
+    }
+
+    func wait(until date: Date) {
+        retryAt = max(retryAt ?? date, date)
+    }
+
+    func mustWait(now: Date = Date()) -> Bool {
+        guard let retryAt else { return false }
+        if retryAt <= now { self.retryAt = nil; return false }
+        return true
+    }
+}
+
 /// One tracked skill to ask about.
 public struct UpstreamQuestion: Sendable {
     public let key: String
@@ -263,7 +348,10 @@ public struct UpstreamQuestion: Sendable {
 
 public enum UpstreamChecker {
     /// Answers every question, asking each source once.
-    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees()) async -> [String: UpstreamState] {
+    /// How many sources are asked at the same time.
+    public static let maxConcurrent = 4
+
+    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared)) async -> [String: UpstreamState] {
         var answers: [String: UpstreamState] = [:]
         var bySource: [UpstreamSource: [UpstreamQuestion]] = [:]
         for question in questions {
@@ -274,10 +362,17 @@ public enum UpstreamChecker {
             }
         }
         await withTaskGroup(of: (UpstreamSource, Result<SourceTree, UpstreamState.Reason>).self) { group in
-            for source in bySource.keys {
+            // A few at a time: GitHub counts concurrent requests too, and once it says to wait,
+            // the rest are answered from that without being sent.
+            var pending = bySource.keys.sorted { $0.name < $1.name }[...]
+            for _ in 0..<min(maxConcurrent, pending.count) {
+                let source = pending.removeFirst()
                 group.addTask { (source, await trees.tree(of: source)) }
             }
             for await (source, result) in group {
+                if let next = pending.popFirst() {
+                    group.addTask { (next, await trees.tree(of: next)) }
+                }
                 for question in bySource[source] ?? [] {
                     switch result {
                     case .success(let tree):
