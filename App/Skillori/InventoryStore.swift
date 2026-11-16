@@ -23,6 +23,10 @@ final class InventoryStore {
     /// Sources the reader has pointed out for skills that came with no record, by `sourceKey`.
     private(set) var links: [String: SourceLink] = [:]
     private(set) var isChecking = false
+    /// Set when a forced check was asked for while another was running.
+    private var checkAgain = false
+    /// Set when a rescan was asked for while another was running.
+    private var scanAgain = false
     /// When sources last gave a real answer.
     private(set) var lastCheck: Date?
     /// Why the latest attempt got no answer, if it did not.
@@ -95,7 +99,7 @@ final class InventoryStore {
     func upstreamSource(for installation: Installation) -> UpstreamSource? {
         if let link = link(for: installation) { return link.source }
         guard case .skillsLock(let source, let url, _, _, _) = installation.provenance else { return nil }
-        return UpstreamSource(source: source, sourceURL: url, ref: installation.sourceRef)
+        return UpstreamSource(source: source, sourceURL: url, ref: installation.sourceRef, sourceType: installation.sourceType)
     }
 
     /// The folder inside the source that this skill is compared with.
@@ -207,7 +211,14 @@ final class InventoryStore {
 
     /// Asks each source once whether its skills have changed. Does nothing while checks are off.
     func checkSources(force: Bool = false) async {
-        guard checksEnabled, !isChecking, let inventory else { return }
+        guard checksEnabled else { return }
+        if isChecking {
+            // A check that started before this was asked for may use an old reading of this
+            // Mac, such as the one before an update ran. Ask again as soon as it is done.
+            if force { checkAgain = true }
+            return
+        }
+        guard let inventory else { return }
         if !force, let lastCheck, Date().timeIntervalSince(lastCheck) < Self.checkInterval { return }
         #if DEBUG
         if usesSampleReadings, links.isEmpty,
@@ -252,24 +263,40 @@ final class InventoryStore {
         let now = Date()
         var problem: UpstreamState.Reason?
         var answered = false
-        var next: [String: UpstreamReading] = [:]
+        // Start from what is known now, not from before the network wait: a link made while
+        // the sources were being asked keeps the answer its search gave.
+        var next = readings
         for question in questions {
             guard let state = answers[question.key] else { continue }
             switch state {
+            case .cannotCheck(.cancelled):
+                // Withdrawn, not answered: leave the last reading as it is.
+                continue
             case .cannotCheck(let reason) where reason == .offline || reason == .rateLimited || reason == .failed:
                 // No answer this time. Keep the last real one, with its own date, so it reads as old.
                 problem = reason
-                next[question.key] = readings[question.key] ?? UpstreamReading(state: state, checkedAt: now)
+                if next[question.key] == nil { next[question.key] = UpstreamReading(state: state, checkedAt: now) }
             default:
                 answered = true
                 next[question.key] = UpstreamReading(state: state, checkedAt: now)
             }
         }
+        // Forget answers only for skills that this scan read and that no longer have a source.
+        // A hold is the reader's own choice and is only dropped when they release it or unlink.
+        // A folder that could not be read this time is not proof that its skills are gone.
+        let current = self.inventory ?? inventory
+        let scanWasComplete = !current.roots.contains { if case .unreadable = $0.state { true } else { false } }
+        let asked = Set(questions.map(\.key))
+        let present = Set(current.installations.compactMap { sourceKey(for: $0) })
+        next = next.filter { asked.contains($0.key) || present.contains($0.key) || !scanWasComplete }
         readings = next
-        held = held.filter { next[$0.key] != nil }
         lastProblem = problem
         if answered { lastCheck = now }
         save()
+        if checkAgain {
+            checkAgain = false
+            await checkSources(force: true)
+        }
     }
 
     // MARK: Linking a source
@@ -406,7 +433,13 @@ final class InventoryStore {
     }
 
     func rescan() async {
-        guard !isScanning else { return }
+        if isScanning {
+            // Something changed after the running read began (a folder added, an update run).
+            // Read again once it is done, and let this call return only after that.
+            scanAgain = true
+            while isScanning { try? await Task.sleep(for: .milliseconds(50)) }
+            return
+        }
         isScanning = true
         let started = Date()
         let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
@@ -414,7 +447,12 @@ final class InventoryStore {
                                      environment: environment,
                                      system: URL(fileURLWithPath: "/"))
         // Disk work stays off the main actor.
-        let result = await Task.detached(priority: .utility) { engine.scan() }.value
+        var result = await Task.detached(priority: .utility) { engine.scan() }.value
+        while scanAgain {
+            scanAgain = false
+            let again = DiscoveryEngine(home: engine.home, projects: projects, environment: environment, system: engine.system)
+            result = await Task.detached(priority: .utility) { again.scan() }.value
+        }
         inventory = result
         Task { await checkSources() }
         // A read takes about 150 ms. Hold the "reading" state a little longer so it can be seen.

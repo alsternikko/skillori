@@ -44,7 +44,9 @@ struct PanelModel {
             let data: String
             /// Set when the installer can update this skill now.
             var installation: Installation?
-            var id: String { title }
+            /// Tells apart skills with the same name, such as two copies in different folders.
+            var key: String = ""
+            var id: String { key.isEmpty ? title : key }
         }
 
         /// The source's name.
@@ -295,6 +297,9 @@ extension PanelModel {
         }
     }
 
+    /// How many sources with updates the panel lists before it points to the library.
+    static let maxGroups = 5
+
     /// The panel for what the app can truthfully say today: a local reading. Skillori does
     /// not ask sources about changes yet (backlog, etapp 2), so this never claims "in sync".
     @MainActor
@@ -370,11 +375,12 @@ extension PanelModel {
                 let items = members.map { installation -> UpdateGroup.Item in
                     switch store.status(for: installation) {
                     case .updateAvailable(let upstream):
-                        UpdateGroup.Item(title: installation.displayName, data: "→ \(upstream.prefix(7))", installation: installation)
+                        UpdateGroup.Item(title: installation.displayName, data: "→ \(upstream.prefix(7))", installation: installation,
+                                         key: installation.id)
                     case .differs(let upstream):
-                        UpdateGroup.Item(title: installation.displayName, data: "≠ \(upstream.prefix(7))")
+                        UpdateGroup.Item(title: installation.displayName, data: "≠ \(upstream.prefix(7))", key: installation.id)
                     default:
-                        UpdateGroup.Item(title: installation.displayName, data: "")
+                        UpdateGroup.Item(title: installation.displayName, data: "", key: installation.id)
                     }
                 }
                 // "Updates" when the installer can fetch them all; otherwise the word that is true of every one.
@@ -387,6 +393,16 @@ extension PanelModel {
                 a.items.count != b.items.count ? a.items.count > b.items.count
                     : a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
             }
+            // Each source takes a row and a command, so the panel lists the largest few and
+            // leaves the rest to the library, where there is room. It stays on screen that way.
+            let shown = Array(groups.prefix(Self.maxGroups))
+            let hidden = groups.dropFirst(Self.maxGroups)
+            var tail = tail
+            if !hidden.isEmpty {
+                let skills = hidden.reduce(0) { $0 + $1.items.count }
+                tail.insert(.link(text: "\(hidden.count) more source\(hidden.count == 1 ? "" : "s"), \(skills) skill\(skills == 1 ? "" : "s")",
+                                  label: "Open library", command: .library), at: 0)
+            }
             return PanelModel(
                 tone: .new, label: "Updates", stamp: store.checkStamp,
                 number: "\(updates.count)",
@@ -395,7 +411,7 @@ extension PanelModel {
                 note: "of the \(tracked) with a known source",
                 scale: ScaleReading(part: updates.count, whole: tracked,
                                     partLabel: "\(updates.count) differ\(updates.count == 1 ? "s" : "")", wholeLabel: "\(tracked) tracked"),
-                groups: groups,
+                groups: shown,
                 rows: tail,
                 // Running the update is the main action here, so no button competes with it.
                 buttons: store.updatable.isEmpty ? buttons : buttons.map { Button(title: $0.title, prominent: false, command: $0.command) },

@@ -204,7 +204,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     /// Sizes the panel to its content and hangs it under the menu bar item, kept on screen.
     /// When the panel is open and its content changes height, the change is eased.
     private func layoutPanel(animated: Bool) {
-        let size = host.fittingSize
+        var size = host.fittingSize
         guard let button = statusItem.button, let buttonWindow = button.window else {
             panel.setContentSize(size)
             return
@@ -213,6 +213,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         var x = anchor.midX - size.width / 2
         if let screen = buttonWindow.screen ?? NSScreen.main {
             x = min(max(x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - size.width - 8)
+            // Never taller than the room under the menu bar, however many lists are open.
+            size.height = min(size.height, max(anchor.minY - 6 - screen.visibleFrame.minY - 8, 200))
         }
         let frame = NSRect(x: x, y: anchor.minY - 6 - size.height, width: size.width, height: size.height)
         guard frame != panel.frame else { return }

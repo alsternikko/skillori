@@ -119,9 +119,42 @@ import Testing
     private static func response(_ url: URL, _ status: Int, _ headers: [String: String] = [:]) -> HTTPURLResponse {
         HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/2", headerFields: headers)!
     }
+
+    @Test func neverSendsALocalOrOtherHostSourceToGitHubByName() {
+        #expect(UpstreamSource(source: "my/folder", sourceURL: nil, sourceType: "local") == nil)
+        #expect(UpstreamSource(source: "x/y", sourceURL: nil, sourceType: "gitlab") == nil)
+        #expect(UpstreamSource(source: "x/y", sourceURL: nil, sourceType: "github") != nil)
+        #expect(UpstreamSource(source: "x/y", sourceURL: nil, sourceType: nil) != nil)
+    }
+
+    @Test func aRefCannotLeaveTheTreesEndpoint() {
+        #expect(GitHubTrees.request(for: UpstreamSource(owner: "o", repository: "r", ref: "../../users/x")) == nil)
+        #expect(GitHubTrees.request(for: UpstreamSource(owner: "o", repository: "r", ref: "release/1.0")) != nil)
+    }
+
+    @Test func tellsALimitFromAMissingSourceAndACancelFromNoContact() async {
+        let source = UpstreamSource(owner: "o", repository: "r")
+        let secondary = GitHubTrees { request in
+            (Data(), Self.response(request.url!, 403, ["x-ratelimit-remaining": "41", "retry-after": "60"]))
+        }
+        #expect(await secondary.tree(of: source).failureReason == .rateLimited)
+        let forbidden = GitHubTrees { request in (Data(), Self.response(request.url!, 403, ["x-ratelimit-remaining": "41"])) }
+        #expect(await forbidden.tree(of: source).failureReason == .notFound)
+        let cancelled = GitHubTrees { _ in throw URLError(.cancelled) }
+        #expect(await cancelled.tree(of: source).failureReason == .cancelled)
+        let stopped = GitHubTrees { _ in throw CancellationError() }
+        #expect(await stopped.tree(of: source).failureReason == .cancelled)
+    }
+
 }
 
 private actor Counter {
     var requests: [URLRequest] = []
     func add(_ request: URLRequest) { requests.append(request) }
+}
+
+private extension Result where Failure == UpstreamState.Reason {
+    var failureReason: UpstreamState.Reason? {
+        if case .failure(let reason) = self { reason } else { nil }
+    }
 }

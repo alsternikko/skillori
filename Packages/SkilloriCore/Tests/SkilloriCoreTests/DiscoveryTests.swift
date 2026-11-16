@@ -227,4 +227,42 @@ import Testing
         let inventory = DiscoveryEngine(home: home.root, system: disk.root).scan()
         #expect(inventory.installations.first?.provenance == .managed(by: "your organization"))
     }
+
+    @Test func aRootThatLinksToAnotherRootAddsItsAgents() throws {
+        let home = try TempTree()
+        defer { home.remove() }
+        try home.skill(".agents/skills/shared", name: "shared")
+        try home.link(".claude/skills", to: home.root.appendingPathComponent(".agents/skills").path)
+        let inventory = DiscoveryEngine(home: home.root).scan()
+        let shared = inventory.installations.filter { $0.displayName == "shared" }
+        #expect(shared.count == 1)
+        #expect(shared.first?.agents.contains(.claudeCode) == true)
+        #expect(shared.first?.bindings.contains { $0.discoveredPath.contains("/.claude/skills/") && $0.viaSymlink } == true)
+        #expect(inventory.roots.contains { $0.path.hasSuffix("/.claude/skills") && $0.state == .found })
+    }
+
+    @Test func lockFileKeysOnlyNameOneFolder() throws {
+        let home = try TempTree()
+        defer { home.remove() }
+        try home.skill(".claude/skills/victim", name: "victim")
+        try home.dir(".agents/skills")
+        try home.file(".agents/.skill-lock.json", """
+        {"version":3,"skills":{"../../.claude/skills/victim":{"source":"evil/repo","sourceType":"github","skillFolderHash":"x"}}}
+        """)
+        let inventory = DiscoveryEngine(home: home.root).scan()
+        #expect(inventory.installations.first { $0.displayName == "victim" }?.provenance == .unknown)
+        #expect(inventory.diagnostics.contains { $0.message.contains("unusable name") })
+    }
+
+    @Test func recordsTheSourceTypeFromTheLockFile() throws {
+        let home = try TempTree()
+        defer { home.remove() }
+        try home.skill(".agents/skills/local-one", name: "local-one")
+        try home.file(".agents/.skill-lock.json", """
+        {"version":3,"skills":{"local-one":{"source":"my/folder","sourceType":"local","skillFolderHash":"x"}}}
+        """)
+        let installation = DiscoveryEngine(home: home.root).scan().installations.first { $0.displayName == "local-one" }
+        #expect(installation?.sourceType == "local")
+    }
+
 }
