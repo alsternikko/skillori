@@ -30,6 +30,7 @@ struct SettingsView: View {
     /// Reports the height the content needs, so the window can fit it exactly.
     var onHeight: ((CGFloat) -> Void)?
     @State private var appearance = AppearanceSetting.current
+    @State private var notifies = Notifier.shared.isEnabled
 
     private static let width: CGFloat = 640
     private static let columnWidth = (width - 6 * 3) / 2
@@ -164,6 +165,15 @@ struct SettingsView: View {
             } trailing: {
                 SegmentedChoice([(false, "Off"), (true, "On")],
                                 selection: Binding(get: { store.checksEnabled }, set: { store.checksEnabled = $0 }))
+                    .accessibilityLabel("Ask sources if a skill has changed")
+            }
+            SettingRow {
+                Text("Notify me about new updates")
+            } trailing: {
+                SegmentedChoice([(false, "Off"), (true, "On")],
+                                selection: Binding(get: { notifies }, set: { notifies = $0; Notifier.shared.isEnabled = $0 }))
+                    .accessibilityLabel("Notify me about new updates")
+                    .disabled(!store.checksEnabled)
             }
             VStack(alignment: .leading, spacing: 10) {
                 Text("Asks github.com about each source, every 6 hours while Skillori runs. It sends the source's name and nothing about you or your files. No account. Skillori never changes a skill on its own: an update runs only when you press Run, and the installer does it.")

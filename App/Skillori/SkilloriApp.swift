@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppUpdater.shared.start()
         let windows = WindowRouter(store: store)
         self.windows = windows
+        Notifier.shared.openLibrary = { [weak windows] in windows?.showLibrary() }
+        Notifier.shared.start()
         statusPanel = StatusPanelController(store: store, windows: windows)
         let firstStart = FirstStartController(store: store, windows: windows)
         self.firstStart = firstStart

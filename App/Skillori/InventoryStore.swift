@@ -38,7 +38,10 @@ final class InventoryStore {
         didSet {
             guard checksEnabled != oldValue else { return }
             UserDefaults.standard.set(checksEnabled, forKey: Self.checksKey)
-            if checksEnabled { Task { await checkSources(force: true) } }
+            if checksEnabled {
+                Notifier.shared.requestPermission()
+                Task { await checkSources(force: true) }
+            }
         }
     }
 
@@ -243,7 +246,22 @@ final class InventoryStore {
         let names = installations.map(\.directoryName)
         guard !names.isEmpty, !updater.isRunning else { return }
         _ = await updater.run(names: names)
+        Notifier.shared.runEnded(names: names, phase: updater.phase)
         await refresh()
+    }
+
+    /// Hands the current updates to the notifier, which tells only about the new ones.
+    private func notifyUpdates() {
+        let found = updates.compactMap { installation -> Notifier.Found? in
+            guard let key = sourceKey(for: installation) else { return nil }
+            let upstream: String
+            switch status(for: installation) {
+            case .updateAvailable(let hash), .differs(let hash): upstream = hash
+            default: return nil
+            }
+            return Notifier.Found(key: key, source: upstreamSource(for: installation)?.name ?? "A source", upstream: upstream)
+        }
+        Notifier.shared.updatesFound(found)
     }
 
     /// Reads this Mac again and then asks the sources, whatever the age of the last answer.
@@ -336,6 +354,7 @@ final class InventoryStore {
         lastProblem = problem
         if answered { lastCheck = now }
         save()
+        notifyUpdates()
         if checkAgain {
             checkAgain = false
             await checkSources(force: true)
