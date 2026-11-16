@@ -402,9 +402,16 @@ public struct DiscoveryEngine: Sendable {
         let folders = [home.appendingPathComponent(".claude/plugins")] + relocated(".claude/plugins").map {
             $0.base.appendingPathComponent($0.pattern)
         }
-        let records = folders.flatMap { ClaudePlugins.records(in: $0) }
+        var records = folders.flatMap { ClaudePlugins.records(in: $0) }
+        records += AppPlugins.records(of: AppPlugins.cursor, in: home.appendingPathComponent(".cursor"))
+        let codexFolders = [home.appendingPathComponent(".codex")] + relocated(".codex").map {
+            $0.base.appendingPathComponent($0.pattern)
+        }
+        records += codexFolders.flatMap { AppPlugins.records(of: AppPlugins.codex, in: $0) }
         guard !records.isEmpty else { return }
+        // The longest path first, so a plugin inside another plugin's folder gets its own record.
         let byPath = records.map { (URL(fileURLWithPath: $0.installPath).resolvingSymlinksInPath().path + "/", $0) }
+            .sorted { $0.0.count > $1.0.count }
         for key in builder.order {
             guard var installation = builder.installations[key],
                   let match = byPath.first(where: { installation.canonicalPath.hasPrefix($0.0) }) else { continue }

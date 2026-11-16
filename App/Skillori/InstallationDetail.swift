@@ -223,8 +223,31 @@ struct InstallationDetail: View {
                     }
                 }
             case .managed(let owner):
-                PlateRow("Managed by") { value(owner) }
-                PlateRow("Updates", isLast: true) { value("handled by the app") }
+                if let plugin = installation.plugin {
+                    PlateRow("Plugin") { value(plugin.name, faint: plugin.marketplace) }
+                    PlateRow("Installed") {
+                        value(plugin.version ?? plugin.commit.map { String($0.prefix(8)) } ?? "no version recorded",
+                              muted: plugin.version == nil && plugin.commit == nil)
+                    }
+                    if let from = plugin.repository ?? plugin.marketplaceRepository {
+                        PlateRow("Source") { value(from) }
+                    }
+                    if plugin.enabled == false {
+                        PlateRow("In \(plugin.app)") { value("turned off") }
+                    }
+                    PlateRow("Source now", isLast: true) {
+                        switch store.pluginReadings[plugin.id]?.state {
+                        case .upToDate: value("same as installed")
+                        case .updateAvailable(let latest): value(String(latest.prefix(12)), faint: "update in \(plugin.app)")
+                        case .cannotCheck(.unsupported): value("updated with \(plugin.app)", muted: true)
+                        case .cannotCheck(let reason): value(reason.short, muted: true)
+                        case nil: value(store.checksEnabled ? "not asked yet" : "checks are off", muted: true)
+                        }
+                    }
+                } else {
+                    PlateRow("Managed by") { value(owner) }
+                    PlateRow("Updates", isLast: true) { value("handled by the app") }
+                }
             case .unknown:
                 if let link = store.link(for: installation) {
                     PlateRow("Source") {

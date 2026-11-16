@@ -20,6 +20,17 @@ public struct PluginRecord: Sendable, Hashable, Codable {
     public let marketplaceRepository: String?
     /// Where the marketplace says the plugin is, as of the local clone.
     public let origin: PluginOrigin?
+    /// The app that installed it and updates it: Claude Code, Cursor or Codex.
+    public var app: String = "Claude Code"
+    /// For Cursor and Codex: the plugin's own repository on GitHub, `owner/repo`, from its git
+    /// checkout or, failing that, from the `repository` its manifest names.
+    public var repository: String? = nil
+    /// For Cursor and Codex: the manifest inside the plugin folder, such as `.cursor-plugin/plugin.json`.
+    public var manifestPath: String? = nil
+    /// The plugin folder is a git checkout of `repository`, so the manifest sits at its top.
+    public var isCheckout = false
+    /// Whether the app has the plugin turned on, when the app records it.
+    public var enabled: Bool? = nil
 
     public init(id: String, name: String, marketplace: String, version: String?, commit: String?,
                 installPath: String, scope: String?, projectPath: String?,
@@ -187,6 +198,62 @@ public struct PluginChecker: Sendable {
         }
     }
 
+    /// A Cursor or Codex plugin: the version in its manifest now, at the top of its repository's
+    /// default branch, against the version installed. A newer version there is what the app
+    /// would install next; a commit without a new version is not counted as an update.
+    private func checkManifest(of record: PluginRecord,
+                               tree: (UpstreamSource) async -> Result<SourceTree, UpstreamState.Reason>) async -> UpstreamState {
+        guard let manifestPath = record.manifestPath, let repository = record.repository,
+              let source = UpstreamSource(source: repository, sourceURL: nil) else { return .cannotCheck(.unsupported) }
+        guard let installed = record.version, !installed.isEmpty else { return .cannotCheck(.noBaseline) }
+        let listing: SourceTree
+        switch await tree(source) {
+        case .failure(let reason): return .cannotCheck(reason)
+        case .success(let value): listing = value
+        }
+        guard let path = Self.manifestLocation(of: record, manifestPath: manifestPath, in: listing) else {
+            return .cannotCheck(listing.truncated ? .failed : .folderGone)
+        }
+        switch await fetchFile(source.name, path) {
+        case .failure(let reason): return .cannotCheck(reason)
+        case .success(let data):
+            guard let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let latest = manifest["version"] as? String, !latest.isEmpty else { return .cannotCheck(.failed) }
+            return Self.isNewer(latest, than: installed) ? .updateAvailable(upstreamHash: latest) : .upToDate
+        }
+    }
+
+    /// Whether version `a` comes after `b`. Dotted numbers are compared as numbers
+    /// (`0.10.0` after `0.9.1`); anything else counts as newer only when it differs.
+    static func isNewer(_ a: String, than b: String) -> Bool {
+        func parts(_ text: String) -> [Int]? {
+            let core = text.split(separator: "-", maxSplits: 1).first.map(String.init) ?? text
+            let numbers = core.trimmingCharacters(in: CharacterSet(charactersIn: "v")).split(separator: ".").map { Int($0) }
+            return numbers.contains(nil) || numbers.isEmpty ? nil : numbers.compactMap { $0 }
+        }
+        guard let x = parts(a), let y = parts(b) else { return a != b }
+        for index in 0..<max(x.count, y.count) {
+            let left = index < x.count ? x[index] : 0
+            let right = index < y.count ? y[index] : 0
+            if left != right { return left > right }
+        }
+        return false
+    }
+
+    /// Where a plugin's manifest is in its repository: at the top for a checkout of the plugin
+    /// itself, otherwise in the folder named like the plugin. Nil when that is not clear.
+    static func manifestLocation(of record: PluginRecord, manifestPath: String, in tree: SourceTree) -> String? {
+        if record.isCheckout { return tree.files[manifestPath] != nil ? manifestPath : nil }
+        let all = tree.files.keys.filter { $0 == manifestPath || $0.hasSuffix("/" + manifestPath) }
+        let named = all.filter { path in
+            let folder = String(path.dropLast(manifestPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return (folder as NSString).lastPathComponent == record.name
+        }
+        if named.count == 1 { return named[0] }
+        if named.isEmpty, all.count == 1 { return all[0] }
+        return nil
+    }
+
     /// One answer per plugin id. `baselines` holds folder hashes at installed commits that
     /// earlier checks already fetched (they never change), and gains the new ones.
     public func check(_ records: [PluginRecord], baselines: inout [String: String]) async -> [String: UpstreamState] {
@@ -204,6 +271,10 @@ public struct PluginChecker: Sendable {
         }
 
         for record in Set(records.map(\.id)).sorted().compactMap({ id in records.first { $0.id == id } }) {
+            if record.manifestPath != nil {
+                answers[record.id] = await checkManifest(of: record, tree: tree)
+                continue
+            }
             guard let repository = record.marketplaceRepository else {
                 answers[record.id] = .cannotCheck(.unsupported)
                 continue
@@ -261,7 +332,7 @@ public struct PluginChecker: Sendable {
             case .repository(_, _, _, nil), .other:
                 // Not pinned: compare versions when both sides give one, otherwise say so.
                 if let installed = record.version, let latest = ClaudePlugins.version(of: record.name, inMarketplace: manifest) {
-                    answers[record.id] = installed == latest ? .upToDate : .updateAvailable(upstreamHash: latest)
+                    answers[record.id] = Self.isNewer(latest, than: installed) ? .updateAvailable(upstreamHash: latest) : .upToDate
                 } else {
                     answers[record.id] = .cannotCheck(.unsupported)
                 }
