@@ -135,6 +135,30 @@ public enum GitTreeHash {
         return objectID(type: "tree", body: body)
     }
 
+    /// The git tree id of a tree whose entries are known by mode, name and object id, as a
+    /// listing from GitHub gives them. Nil when an id is not 40 hex digits.
+    static func treeID(of entries: [(mode: String, name: String, id: String)]) -> String? {
+        var raw: [RawEntry] = []
+        for entry in entries {
+            guard let id = Data(hex: entry.id), id.count == 20 else { return nil }
+            // Git writes a tree's mode without the leading zero GitHub shows ("040000").
+            let mode = entry.mode == "040000" ? "40000" : entry.mode
+            raw.append(RawEntry(name: entry.name, mode: mode, isTree: mode == "40000", id: id))
+        }
+        raw.sort { a, b in
+            let ka = Array(a.name.utf8) + (a.isTree ? [0x2F] : [])
+            let kb = Array(b.name.utf8) + (b.isTree ? [0x2F] : [])
+            return ka.lexicographicallyPrecedes(kb)
+        }
+        var body = Data()
+        for entry in raw {
+            body.append(contentsOf: Array("\(entry.mode) \(entry.name)".utf8))
+            body.append(0)
+            body.append(entry.id)
+        }
+        return objectID(type: "tree", body: body).hex
+    }
+
     static func objectID(type: String, body: Data) -> Data {
         var hasher = Insecure.SHA1()
         hasher.update(data: Data("\(type) \(body.count)\u{0}".utf8))
@@ -145,4 +169,17 @@ public enum GitTreeHash {
 
 extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
+
+    init?(hex: String) {
+        guard hex.count % 2 == 0 else { return nil }
+        var bytes: [UInt8] = []
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        self.init(bytes)
+    }
 }

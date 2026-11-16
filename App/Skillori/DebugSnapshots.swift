@@ -6,6 +6,33 @@ import SwiftUI
 
 /// Debug builds only: `SKILLORI_SNAPSHOT_DIR=/some/dir` renders the main views to PNG files
 /// and quits. Lets us check the UI without screen recording permission.
+/// Debug builds only: `SKILLORI_UPDATE_PLUGIN=<name@marketplace>` with `SKILLORI_UPDATE_LOG=<file>`
+/// runs the real plugin update through the app's own runner, writes how it went, and quits.
+@MainActor
+enum DebugPluginUpdate {
+    static func runIfRequested(store: InventoryStore) {
+        let env = ProcessInfo.processInfo.environment
+        guard let id = env["SKILLORI_UPDATE_PLUGIN"], let log = env["SKILLORI_UPDATE_LOG"] else { return }
+        Task { @MainActor in
+            while store.inventory == nil || store.isScanning { try? await Task.sleep(for: .milliseconds(100)) }
+            guard let plugin = store.pluginRecords.first(where: { $0.id == id }) else {
+                try? "no such plugin: \(id)\n".write(toFile: log, atomically: true, encoding: .utf8)
+                NSApp.terminate(nil)
+                return
+            }
+            let before = "before: \(plugin.version ?? "?") \(plugin.commit ?? "?") state \(String(describing: store.pluginReadings[id]?.state))\n"
+            await store.updatePlugins([plugin])
+            while store.isChecking || store.isScanning { try? await Task.sleep(for: .milliseconds(200)) }
+            let after = store.pluginRecords.first { $0.id == id }
+            let text = before + "phase: \(store.pluginUpdater.phase)\n"
+                + "after: \(after?.version ?? "?") \(after?.commit ?? "?") state \(String(describing: store.pluginReadings[id]?.state))\n"
+                + "--- output\n" + store.pluginUpdater.output
+            try? text.write(toFile: log, atomically: true, encoding: .utf8)
+            NSApp.terminate(nil)
+        }
+    }
+}
+
 @MainActor
 enum DebugSnapshots {
     static func runIfRequested(store: InventoryStore, statusPanel: StatusPanelController?) {

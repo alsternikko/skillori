@@ -316,7 +316,8 @@ public struct PluginChecker: Sendable {
                     answers[record.id] = .cannotCheck(.noBaseline)
                     continue
                 }
-                let baselineKey = "\(repository)@\(commit)#\(path)"
+                // "tree:" marks hashes of the real root tree; older keys held a commit id there.
+                let baselineKey = "tree:\(repository)@\(commit)#\(path)"
                 if baselines[baselineKey] == nil {
                     let then = UpstreamSource(owner: parts.owner, repository: parts.repository, ref: commit)
                     switch await tree(then) {

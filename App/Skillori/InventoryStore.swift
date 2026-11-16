@@ -441,7 +441,10 @@ final class InventoryStore {
         save()
         notifyUpdates()
         if checkAgain {
+            // This check started before something changed, such as an update. Ask again now;
+            // the flag is cleared first, or the second check would only queue a third.
             checkAgain = false
+            isChecking = false
             await checkSources(force: true)
         }
     }

@@ -6,6 +6,14 @@
 - "Codex plugin · 11 plugin updates"
 - rutan Updates visar 89.
 
+## Status 16 november, kväll
+
+A och B är byggda på grenen `plugin-uppdateringar`. Provat på riktigt: flora-mcp-skills uppdaterades från appens egen körning, 0.11.1 → 0.11.5. Claude Code skrev ny `gitCommitSha`, och statusen blev Up to date efter omläsningen.
+
+Under provet hittades två fel, som båda är rättade:
+1. **Kontrollen efter en uppdatering köades men kördes aldrig.** Om en kontroll redan pågick sattes `checkAgain`, men den nya kontrollen såg fortfarande `isChecking` och lade sig bara i kö igen.
+2. **GitHub svarar med commitens SHA som `sha` när man frågar efter ett träd via gren eller commit.** Rotens trädhash räknas nu ut ur posterna, som git gör. Det rättar även skills som ligger högst upp i ett repo: de visades tidigare alltid som uppdaterade.
+
 ## Tillägg samma kväll: ett konceptuellt grepp om hela vyn
 
 Produktägaren påpekade att listan har flera snarlika namn: "Claude app", "Claude app plugin" och "Claude Code plugin", och motsvarande för Cursor och Codex. Hen bad om ett konceptuellt grepp, så att vyn blir enkel och tydlig och inte visar mer än läsaren behöver.

@@ -84,7 +84,7 @@ import Testing
         #expect(answers["inrepo@market"] == .updateAvailable(upstreamHash: "f-new"))
         #expect(answers["pinned@market"] == .updateAvailable(upstreamHash: "bbb"))
         #expect(answers["versioned@market"] == .updateAvailable(upstreamHash: "1.1"))
-        #expect(baselines["acme/market@old#plugins/inrepo"] == "f-old")
+        #expect(baselines["tree:acme/market@old#plugins/inrepo"] == "f-old")
 
         // The installed commit's folder never changes, so a second check does not ask for it again.
         var again = baselines
@@ -118,8 +118,9 @@ import Testing
             return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["ETag": "\"v1\""])!)
         }
         let source = UpstreamSource(owner: "o", repository: "r")
-        #expect(try await trees.tree(of: source).get().rootHash == "root")
-        #expect(try await trees.tree(of: source).get().rootHash == "root")
+        let first = try await trees.tree(of: source).get()
+        let second = try await trees.tree(of: source).get()
+        #expect(first == second)
         #expect(await seen.paths == ["-", "\"v1\""])
     }
 

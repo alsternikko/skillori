@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil { firstStart.showIfNeeded() }
         #if DEBUG
         DebugSnapshots.runIfRequested(store: store, statusPanel: statusPanel)
+        DebugPluginUpdate.runIfRequested(store: store)
         if let statusPanel { DebugSelfTest.runIfRequested(store: store, panel: statusPanel, windows: windows) }
         #endif
     }
