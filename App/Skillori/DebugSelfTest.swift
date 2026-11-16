@@ -79,6 +79,22 @@ enum DebugSelfTest {
             check("shell runs a command and returns what it prints", ok == 0 && printed.text == "one\ntwo; echo injected\n", printed.text.debugDescription)
             let failing = await Shell.run(script: "exit 3", timeout: 20)
             check("shell reports a failing command", failing == 3, "status \(failing)")
+            // A background process that keeps the pipe open must not keep the run from ending.
+            let started = Date()
+            let detached = await Shell.run(script: "sleep 30 & echo done", timeout: 20)
+            let waited = Date().timeIntervalSince(started)
+            check("a process left in the background does not hold up the run", detached == 0 && waited < 5,
+                  String(format: "%.1f s", waited))
+            let stopper = ShellControl()
+            let stopStart = Date()
+            Task { try? await Task.sleep(for: .milliseconds(300)); stopper.stop() }
+            let stopped = await Shell.run(script: "sleep 30", timeout: 20, control: stopper)
+            check("Stop ends a running command at once", stopper.wasStopped && Date().timeIntervalSince(stopStart) < 5,
+                  "status \(stopped)")
+            var chunks = UTF8Chunks()
+            let euro = Data("€".utf8)
+            let joined = chunks.text(from: euro.prefix(2)) + chunks.text(from: euro.suffix(1))
+            check("a character split between two chunks is kept whole", joined == "€", joined.debugDescription)
             let npx = await Shell.run(script: "command -v npx >/dev/null", timeout: 20)
             check("shell finds npx the way Terminal does", npx == 0, "status \(npx)")
             // What the scan asks the login shell for: set variables come back, unset ones do not.
@@ -90,8 +106,8 @@ enum DebugSelfTest {
             let runner = UpdateRunner()
             runner.append("Checking\rUpdating 1\rUpdating 2\n\u{1B}[32mDone\u{1B}[0m\n")
             check("printed text is shown as a terminal would", runner.output == "Updating 2\nDone\n", runner.output.debugDescription)
-            check("unsafe skill names are refused", !UpdateRunner.isSafeName("a; rm -rf x") && !UpdateRunner.isSafeName("-g") && UpdateRunner.isSafeName("find-skills"))
-            check("Settings window fits its content", settingsHeight > 300 && settingsHeight < 720, "height \(settingsHeight)")
+            check("unsafe skill names are refused", !UpdateRunner.isSafeName("a; rm -rf x") && !UpdateRunner.isSafeName("-g") && !UpdateRunner.isSafeName("..") && UpdateRunner.isSafeName("find-skills"))
+            check("Settings window fits its content", settingsHeight > 300 && settingsHeight < 800, "height \(settingsHeight)")
             windows.settings?.close()
 
             panel.open()

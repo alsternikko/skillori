@@ -33,6 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    /// An update that is still running would go on without anyone to see how it ends.
+    func applicationWillTerminate(_ notification: Notification) {
+        store.updater.stop()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         SkilloriFonts.register()
         AppearanceSetting.current.apply()
