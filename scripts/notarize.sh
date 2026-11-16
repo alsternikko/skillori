@@ -32,7 +32,9 @@ xcodebuild -project Skillori.xcodeproj -scheme Skillori -configuration Release \
 
 app="build/DerivedData/Build/Products/Release/Skillori.app"
 codesign --verify --strict --deep "$app" || fail "Signature check failed."
-codesign -dv "$app" 2>&1 | grep -qF "TeamIdentifier=$TEAM_ID" || fail "Not signed by team $TEAM_ID."
+# Read whole, not piped to grep -q, which with pipefail can fail on codesign's SIGPIPE.
+signature="$(codesign -dv "$app" 2>&1)"
+[[ "$signature" == *"TeamIdentifier=$TEAM_ID"* ]] || fail "Not signed by team $TEAM_ID."
 
 zip="build/Skillori-notarize.zip"
 rm -f "$zip"
