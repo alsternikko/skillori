@@ -265,8 +265,9 @@ struct InstallationDetail: View {
     // MARK: Visible to
 
     private var visibility: some View {
-        let mine = Set(installation.agents)
-        let all = agentsOnThisMac.isEmpty ? installation.agents : agentsOnThisMac
+        let mine = Set(installation.installedAgents)
+        let all = agentsOnThisMac.isEmpty ? installation.installedAgents : agentsOnThisMac
+        let absent = installation.absentAgents
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 LabelText("Visible to")
@@ -276,7 +277,7 @@ struct InstallationDetail: View {
             .foregroundStyle(Tone.rest.secondary)
             HStack(alignment: .lastTextBaseline, spacing: 12) {
                 DotNumber(String(format: "%02d", mine.count), size: 52)
-                Text("of \(all.count) agents Skillori knows")
+                Text("of \(all.count) agents on this Mac")
                     .font(TypeRole.sans(13))
                     .foregroundStyle(Tone.rest.secondary)
             }
@@ -294,12 +295,20 @@ struct InstallationDetail: View {
             .padding(.top, 22)
             Rectangle().frame(height: 1).opacity(0.5)
 
-            Text(mine.isEmpty ? "No agent reads this folder." : installation.agents.map(\.displayName).joined(separator: " · "))
+            Text(mine.isEmpty ? "No agent on this Mac reads this folder." : installation.installedAgents.map(\.displayName).joined(separator: " · "))
                 .font(TypeRole.mono(10.5))
                 .lineSpacing(3)
                 .foregroundStyle(Tone.rest.foreground.opacity(0.8))
                 .padding(.top, 12)
                 .textSelection(.enabled)
+            if !absent.isEmpty {
+                // The folder is documented for these too; they would read it if installed.
+                Text("Also read by \(absent.map(\.displayName).joined(separator: ", ")), if installed")
+                    .font(TypeRole.sans(11))
+                    .foregroundStyle(Tone.rest.secondary)
+                    .padding(.top, 6)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 16)
             LabelText("Whether an agent loads it depends on its version and settings")
                 .foregroundStyle(Tone.rest.secondary)

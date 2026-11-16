@@ -86,7 +86,7 @@ struct SettingsView: View {
     private var folders: some View {
         let roots = store.inventory?.roots.filter { $0.state == .found } ?? []
         let shared = roots.first { $0.path.hasSuffix("/.agents/skills") }
-        let agents = Array(Set((store.inventory?.installations ?? []).flatMap(\.agents))).sorted()
+        let agents = Array(Set((store.inventory?.installations ?? []).flatMap(\.installedAgents))).sorted()
         return LabeledCard("Folders", note: "\(roots.count) read · \(store.projects.count) added by you") {
             if let shared {
                 SettingRow {

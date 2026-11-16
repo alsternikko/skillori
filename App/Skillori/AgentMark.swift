@@ -81,6 +81,14 @@ enum AgentPresence {
         return image
     }
 
+    /// The ids of the agents found on this Mac at the last reading. Empty until the first one.
+    @MainActor static var installedIDs: Set<String> = []
+
+    /// Looks again which of these agents are on this Mac. Run with every reading.
+    @MainActor static func refresh(among agents: [Agent]) {
+        installedIDs = Set(found(among: agents).map(\.id))
+    }
+
     /// Agents with an app or a settings folder on this Mac, out of the ones Skillori knows.
     static func found(among agents: [Agent]) -> [Agent] {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -90,5 +98,22 @@ enum AgentPresence {
                 FileManager.default.fileExists(atPath: home.appendingPathComponent($0).path)
             }
         }
+    }
+}
+
+extension Installation {
+    /// The agents that read this skill's folders and are on this Mac. A folder the shared root
+    /// documents for twelve agents says nothing to a reader who has two of them.
+    @MainActor var installedAgents: [Agent] {
+        let present = AgentPresence.installedIDs
+        guard !present.isEmpty else { return agents }
+        return agents.filter { present.contains($0.id) }
+    }
+
+    /// Agents documented to read this skill's folders that are not on this Mac.
+    @MainActor var absentAgents: [Agent] {
+        let present = AgentPresence.installedIDs
+        guard !present.isEmpty else { return [] }
+        return agents.filter { !present.contains($0.id) }
     }
 }

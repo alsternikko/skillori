@@ -249,6 +249,30 @@ final class InventoryStore {
         own.filter { if case .updateAvailable = status(for: $0) { true } else { false } }
     }
 
+    /// How the skills of yours that share this skill's name compare with it.
+    enum Copies: Equatable {
+        /// Several folders, the same files in each.
+        case identical(count: Int)
+        /// Several folders with this name, and the files differ between them.
+        case different(count: Int)
+    }
+
+    func copies(of installation: Installation) -> Copies? {
+        let name = installation.displayName.lowercased()
+        let same = own.filter { $0.displayName.lowercased() == name }
+        guard same.count > 1 else { return nil }
+        let hashes = Set(same.map { $0.contentHash ?? $0.id })
+        return hashes.count == 1 ? .identical(count: same.count) : .different(count: same.count)
+    }
+
+    /// Names of yours that exist as more than one version.
+    var differingCopyNames: [String] {
+        let groups = Dictionary(grouping: own) { $0.displayName.lowercased() }
+        return groups.compactMap { _, group in
+            group.count > 1 && Set(group.map { $0.contentHash ?? $0.id }).count > 1 ? group[0].displayName : nil
+        }.sorted()
+    }
+
     /// The Claude Code plugins on this Mac, one record per plugin, whatever number of skills it brings.
     var pluginRecords: [PluginRecord] {
         var seen = Set<String>()
@@ -565,6 +589,8 @@ final class InventoryStore {
             let again = DiscoveryEngine(home: engine.home, projects: projects, environment: environment, system: engine.system)
             result = await Task.detached(priority: .utility) { again.scan() }.value
         }
+        // Which agents are here decides which agent marks a skill shows.
+        AgentPresence.refresh(among: Array(Set(result.installations.flatMap(\.agents))))
         inventory = result
         watchFolders(of: result)
         Task { await checkSources() }

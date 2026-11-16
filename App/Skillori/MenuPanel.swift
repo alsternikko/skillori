@@ -361,6 +361,13 @@ extension PanelModel {
             let why = reasons.count == 1 ? reasons.first!.short.uppercased() : "SEE LIBRARY"
             tail.append(.line(text: "\(store.cantCheckCount) can't be checked", data: why, muted: true))
         }
+        let versions = store.differingCopyNames
+        if !versions.isEmpty {
+            // The same name in two folders with other files: an agent may load either one.
+            let text = versions.count == 1 ? "\(versions[0]) exists in more than one version"
+                : "\(versions.count) skills exist in different versions"
+            tail.append(.link(text: text, label: "Show", command: .library))
+        }
         if unknown > 0 {
             tail.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
                               label: "Show", command: .library))

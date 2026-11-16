@@ -220,7 +220,6 @@ struct LibraryView: View {
         let groups = groups
         let rows = groups.flatMap(\.items)
         let entries = entries(in: groups)
-        let copies = Dictionary(rows.map { ($0.displayName, 1) }, uniquingKeysWith: +)
         let firstManaged = groups.first { $0.kind == .managed }?.id
         let lastOwn = groups.last { $0.kind != .managed }?.id
         let lastManaged = groups.last { $0.kind == .managed }?.id
@@ -260,7 +259,7 @@ struct LibraryView: View {
                                     InstallationRow(installation: installation,
                                                     status: store.status(for: installation),
                                                     link: store.link(for: installation),
-                                                    copies: copies[installation.displayName] ?? 1,
+                                                    copies: store.copies(of: installation),
                                                     isSelected: installation.id == selection,
                                                     trunk: !lastInSection,
                                                     isLast: installation.id == group.items.last?.id)
@@ -543,7 +542,7 @@ struct LibraryView: View {
     }
 
     private var agentsOnThisMac: [Agent] {
-        Array(Set((store.inventory?.installations ?? []).flatMap(\.agents))).sorted()
+        Array(Set((store.inventory?.installations ?? []).flatMap(\.installedAgents))).sorted()
     }
 
     private var visible: [Installation] {
@@ -582,7 +581,7 @@ struct SkillGroup: Identifiable {
     let kind: Kind
     var items: [Installation]
 
-    var agents: Set<Agent> { Set(items.flatMap(\.agents)) }
+    @MainActor var agents: Set<Agent> { Set(items.flatMap(\.installedAgents)) }
     var changed: Int {
         items.filter { if case .skillsLock(_, _, _, _, .modified) = $0.provenance { true } else { false } }.count
     }
@@ -734,7 +733,7 @@ private struct InstallationRow: View {
     let status: SkillStatus
     /// Set when the reader, not the installer, said where this skill comes from.
     let link: SourceLink?
-    let copies: Int
+    let copies: InventoryStore.Copies?
     let isSelected: Bool
     /// The branch this skill hangs from has more branches below it.
     let trunk: Bool
@@ -753,8 +752,15 @@ private struct InstallationRow: View {
                 .frame(maxHeight: .infinity)
             HStack(spacing: 6) {
                 Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
-                if copies > 1 {
-                    Text("· \(copies) copies").foregroundStyle(quiet).lineLimit(1).layoutPriority(-1)
+                switch copies {
+                case .identical(let count):
+                    Text("· \(count) identical copies").foregroundStyle(quiet).lineLimit(1).layoutPriority(-1)
+                        .help("The same name and the same files in \(count) folders.")
+                case .different(let count):
+                    Text("· \(count) versions").foregroundStyle(Palette.ink).lineLimit(1).layoutPriority(-1)
+                        .help("\(count) folders have a skill with this name, and their files differ. An agent may load another one than you think.")
+                case nil:
+                    EmptyView()
                 }
                 if !installation.frontmatter.problems.isEmpty {
                     Image(systemName: "exclamationmark.triangle")
@@ -772,10 +778,10 @@ private struct InstallationRow: View {
             DataText(revision.text)
                 .foregroundStyle(revision.known ? quiet : faint)
                 .frame(width: Column.revision, alignment: .leading)
-            TickCount(installation.agents.count)
+            TickCount(installation.installedAgents.count)
                 .foregroundStyle(strong)
                 .frame(width: Column.agents, alignment: .leading)
-                .help(installation.agents.map(\.displayName).joined(separator: ", "))
+                .help(installation.installedAgents.map(\.displayName).joined(separator: ", "))
             StatusBadge(status: status)
                 .frame(width: Column.status, alignment: .leading)
         }

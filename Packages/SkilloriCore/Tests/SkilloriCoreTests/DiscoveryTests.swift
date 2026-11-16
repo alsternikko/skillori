@@ -266,3 +266,21 @@ import Testing
     }
 
 }
+
+@Suite struct CopyTests {
+    @Test func tellsIdenticalCopiesFromDifferentVersions() throws {
+        let home = try TempTree()
+        defer { home.remove() }
+        try home.skill(".agents/skills/same", name: "same")
+        try home.skill(".claude/skills/same", name: "same")
+        try home.skill(".agents/skills/drift", name: "drift")
+        try home.skill(".claude/skills/drift", name: "drift", extra: ["notes.md": "changed here\n"])
+        try home.skill(".claude/skills/alone", name: "alone")
+        let inventory = DiscoveryEngine(home: home.root).scan()
+        let same = inventory.installations.filter { $0.displayName == "same" }.map(\.contentHash)
+        let drift = inventory.installations.filter { $0.displayName == "drift" }.map(\.contentHash)
+        #expect(same.count == 2 && same[0] != nil && same[0] == same[1])
+        #expect(drift.count == 2 && drift[0] != nil && drift[1] != nil && drift[0] != drift[1])
+        #expect(inventory.installations.first { $0.displayName == "alone" }?.contentHash == nil)
+    }
+}
