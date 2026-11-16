@@ -24,6 +24,8 @@ public struct SkillFrontmatter: Sendable, Equatable {
 
     public static func parse(_ text: String) -> SkillFrontmatter {
         var result = SkillFrontmatter(name: nil, description: nil, fields: [:], problems: [])
+        // Editors on Windows often start a UTF-8 file with a byte order mark.
+        let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
         let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else {
             result.problems.append("Missing front matter")

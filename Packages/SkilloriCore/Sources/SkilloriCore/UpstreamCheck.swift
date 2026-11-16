@@ -15,14 +15,17 @@ public struct UpstreamSource: Hashable, Sendable {
     }
 
     /// Reads what `npx skills` records: a clone URL when there is one, otherwise `owner/repo`.
-    /// Anything that is not plainly a GitHub repository gives nil, never a guess.
-    public init?(source: String, sourceURL: String?, ref: String? = nil) {
+    /// Anything that is not plainly a GitHub repository gives nil, never a guess. A bare
+    /// `owner/repo` is only read as GitHub when the recorded source type allows it, so a local
+    /// folder or another host is never sent to GitHub by name.
+    public init?(source: String, sourceURL: String?, ref: String? = nil, sourceType: String? = nil) {
         let parts: [Substring]
         if let sourceURL, !sourceURL.isEmpty {
             guard let url = URL(string: sourceURL), url.scheme == "https",
                   url.host?.lowercased() == "github.com" else { return nil }
             parts = url.path.split(separator: "/")
         } else {
+            if let sourceType, !sourceType.isEmpty, sourceType.lowercased() != "github" { return nil }
             parts = source.split(separator: "/", omittingEmptySubsequences: false)
         }
         guard parts.count == 2 else { return nil }
@@ -95,6 +98,8 @@ public enum UpstreamState: Sendable, Equatable, Codable {
         case rateLimited
         /// No answer: offline, timed out, or the connection failed.
         case offline
+        /// The question was withdrawn before an answer came. Says nothing about the source.
+        case cancelled
         /// Not a kind of source Skillori can ask yet.
         case unsupported
         /// The installer left no baseline to compare with.
@@ -179,6 +184,9 @@ public struct GitHubTrees: Sendable {
     }
 
     public static func request(for source: UpstreamSource) -> URLRequest? {
+        // A ref goes into the path, so it may not climb out of the trees endpoint.
+        if let ref = source.ref, ref.split(separator: "/", omittingEmptySubsequences: false)
+            .contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) { return nil }
         var components = URLComponents()
         components.scheme = "https"
         components.host = "api.github.com"
@@ -192,12 +200,24 @@ public struct GitHubTrees: Sendable {
         return request
     }
 
+    /// GitHub answers both its hourly limit and its secondary limits with 403 or 429. The
+    /// secondary ones carry `retry-after` and usually still have requests left in the hour.
+    static func isRateLimit(_ response: HTTPURLResponse) -> Bool {
+        if response.statusCode == 429 { return true }
+        if response.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0" { return true }
+        return response.value(forHTTPHeaderField: "retry-after") != nil
+    }
+
     public func tree(of source: UpstreamSource) async -> Result<SourceTree, UpstreamState.Reason> {
         guard let request = Self.request(for: source) else { return .failure(.unsupported) }
         let data: Data
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport(request)
+        } catch is CancellationError {
+            return .failure(.cancelled)
+        } catch let error as URLError where error.code == .cancelled {
+            return .failure(.cancelled)
         } catch {
             return .failure(.offline)
         }
@@ -205,8 +225,7 @@ public struct GitHubTrees: Sendable {
         case 200: break
         case 404: return .failure(.notFound)
         case 403, 429:
-            let remaining = response.value(forHTTPHeaderField: "x-ratelimit-remaining")
-            return .failure(remaining == "0" || response.statusCode == 429 ? .rateLimited : .notFound)
+            return .failure(Self.isRateLimit(response) ? .rateLimited : .notFound)
         default: return .failure(.failed)
         }
         struct Listing: Decodable {

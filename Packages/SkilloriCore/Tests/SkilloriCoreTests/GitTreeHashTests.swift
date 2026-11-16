@@ -63,4 +63,11 @@ import Testing
         #expect(fm.name == nil)
         #expect(fm.problems.contains("Missing front matter"))
     }
+
+    @Test func readsFrontMatterAfterAByteOrderMark() {
+        let fm = SkillFrontmatter.parse("\u{FEFF}---\nname: bom\ndescription: Saved on Windows\n---\n")
+        #expect(fm.name == "bom")
+        #expect(fm.problems.isEmpty)
+    }
+
 }

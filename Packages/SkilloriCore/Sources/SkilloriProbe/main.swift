@@ -59,7 +59,7 @@ if checkSources {
     for inst in inventory.installations {
         guard case .skillsLock(let source, let url, let subpath, let baseline, _) = inst.provenance else { continue }
         questions.append(UpstreamQuestion(key: inst.displayName,
-                                          source: UpstreamSource(source: source, sourceURL: url, ref: inst.sourceRef),
+                                          source: UpstreamSource(source: source, sourceURL: url, ref: inst.sourceRef, sourceType: inst.sourceType),
                                           subpath: subpath, baseline: baseline))
     }
     let answers = await UpstreamChecker.check(questions)

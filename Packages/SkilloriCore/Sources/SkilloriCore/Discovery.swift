@@ -38,6 +38,8 @@ public struct Installation: Sendable, Identifiable {
     public var updatedAt: Date? = nil
     /// The branch or tag the installer recorded, if any. Nil means the source's default branch.
     public var sourceRef: String? = nil
+    /// The kind of source the installer recorded (`github`, `gitlab`, `local`, …), if any.
+    public var sourceType: String? = nil
 
     public var displayName: String { frontmatter.name ?? directoryName }
     public var agents: [Agent] { Array(Set(bindings.flatMap(\.agents))).sorted() }
@@ -122,7 +124,9 @@ public struct DiscoveryEngine: Sendable {
         var order: [String] = []
         var roots: [RootReport] = []
         var diagnostics: [Diagnostic] = []
-        /// Folders already read, by resolved path, so no folder is counted twice.
+        /// Folders already read, by the path they were reached through, so no folder is read
+        /// twice through the same place. A root that links to another root is still read:
+        /// skills are deduplicated by file identity in `register`, and the link adds bindings.
         var seen: Set<String> = []
     }
 
@@ -224,7 +228,7 @@ public struct DiscoveryEngine: Sendable {
 
     /// A folder that is itself one skill.
     private func scanSingle(_ skill: URL, rule: RootRule, projectName: String?, into builder: inout Builder) {
-        guard builder.seen.insert(skill.resolvingSymlinksInPath().path).inserted else { return }
+        guard builder.seen.insert(skill.standardizedFileURL.path).inserted else { return }
         let added = register(skill, rule: rule, projectName: projectName, into: &builder)
         builder.roots.append(RootReport(path: skill.path, rule: rule.note, projectName: projectName, state: .found, skillCount: added ? 1 : 0))
     }
@@ -250,7 +254,7 @@ public struct DiscoveryEngine: Sendable {
     private func scanRoot(_ root: URL, rule: RootRule, markerDirectory: URL?, projectName: String?,
                           into builder: inout Builder) {
         let fm = FileManager.default
-        guard builder.seen.insert(root.resolvingSymlinksInPath().path).inserted else { return }
+        guard builder.seen.insert(root.standardizedFileURL.path).inserted else { return }
         guard fm.fileExists(atPath: root.path) else {
             // Only report literal roots as missing; unmatched wildcards simply have no instances.
             if !rule.pattern.contains("*") {
@@ -272,15 +276,18 @@ public struct DiscoveryEngine: Sendable {
             return
         }
 
+        let rootIsLink = (try? root.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? false
         var count = 0
         for name in names.sorted() where !name.hasPrefix(".") {
-            if register(root.appendingPathComponent(name), rule: rule, projectName: projectName, into: &builder) { count += 1 }
+            if register(root.appendingPathComponent(name), rule: rule, projectName: projectName,
+                        throughLink: rootIsLink, into: &builder) { count += 1 }
         }
         builder.roots.append(RootReport(path: root.path, rule: rule.note, projectName: projectName, state: .found, skillCount: count))
     }
 
     /// Records the skill at `entry`, if it is one. Returns whether it was.
-    private func register(_ entry: URL, rule: RootRule, projectName: String?, into builder: inout Builder) -> Bool {
+    private func register(_ entry: URL, rule: RootRule, projectName: String?, throughLink: Bool = false,
+                          into builder: inout Builder) -> Bool {
         let fm = FileManager.default
         let isLink = (try? entry.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? false
         let resolved = entry.resolvingSymlinksInPath()
@@ -298,7 +305,7 @@ public struct DiscoveryEngine: Sendable {
         }
 
         let binding = AgentBinding(discoveredPath: entry.path, agents: rule.agents, scope: rule.scope,
-                                   projectName: projectName, viaSymlink: isLink)
+                                   projectName: projectName, viaSymlink: isLink || throughLink)
         if var existing = builder.installations[key] {
             existing.bindings.append(binding)
             if case .managed = rule.ownership, existing.provenance == .unknown {
@@ -313,7 +320,7 @@ public struct DiscoveryEngine: Sendable {
             builder.order.append(key)
         }
         return true
-}
+    }
 
     private func provenance(for ownership: Ownership) -> Provenance {
         switch ownership {
@@ -335,6 +342,11 @@ public struct DiscoveryEngine: Sendable {
         }
         let canonicalRoot = home.appendingPathComponent(".agents/skills")
         for (name, entry) in lock.skills {
+            // A key names one folder in the shared root; anything else could point at another skill.
+            guard !name.isEmpty, name != ".", name != "..", !name.contains("/") else {
+                builder.diagnostics.append(Diagnostic(path: url.path, message: "Lock file entry with an unusable name: \(name)"))
+                continue
+            }
             let dir = canonicalRoot.appendingPathComponent(name).resolvingSymlinksInPath()
             guard let key = fileIdentity(dir), var installation = builder.installations[key] else { continue }
             let local: Provenance.LocalState
@@ -350,6 +362,7 @@ public struct DiscoveryEngine: Sendable {
             installation.installedAt = entry.installedAt.flatMap(Self.parseDate)
             installation.updatedAt = entry.updatedAt.flatMap(Self.parseDate)
             installation.sourceRef = entry.ref
+            installation.sourceType = entry.sourceType
             builder.installations[key] = installation
         }
         return url
