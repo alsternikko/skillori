@@ -76,6 +76,10 @@ enum DebugSnapshots {
             for (index, (name, view)) in LibraryView.snapshots(store: store).enumerated() {
                 render(view.environment(store), size: lib, to: out.appendingPathComponent("\(name).png"))
                 if index == 0 { picture(view.environment(store), size: lib, to: out.appendingPathComponent("\(name)-light.png")) }
+                if index == 0 || name == "library-skill-twice" {
+                    render(view.environment(store).environment(\.colorScheme, .dark), size: lib,
+                           to: out.appendingPathComponent("\(name)-dark.png"))
+                }
             }
             let installs = store.inventory?.installations ?? []
             render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 680),

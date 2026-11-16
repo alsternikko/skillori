@@ -6,6 +6,24 @@
 - "Codex plugin · 11 plugin updates"
 - rutan Updates visar 89.
 
+## Status 17 november: omtag 2 valt
+
+Korten och trädet (A och B nedan) ersattes efter två omtag, som skissades i `bibliotek-enkelt-2026-11-17/` och byggdes på var sin gren. Produktägaren valde **omtag 2**, som ligger på grenen `bibliotek-omtag-2`. Omtag 1 finns kvar på `bibliotek-omtag-1`.
+
+Principen bakom omtaget, med produktägarens ord: det ska vara "enkelt och underlättande – inte komplext och överväldigande", och appen ska "hellre assistera användaren än att ge dem alla alternativ".
+
+Så här ser biblioteket ut i omtag 2:
+- **Överst ett ljusblock med det som behöver dig.** Varje sak är en mening och en knapp, till exempel "Update 3 plugins in Cursor" med knappen Open Cursor. Utan något att göra säger blocket "You’re all set".
+- **Bara det som kräver en åtgärd står på listan.** En skill utan känd källa är inte ett problem och står inte där.
+- **Under blocket två dörrar in:** Your skills (en rad per skillnamn, ett ord bara när något avviker) och From your apps (en rad per app).
+- **Sidor att klicka sig in på:**
+  - En skills sida börjar med appens råd och en knapp. Sedan kommer var den ligger, vilka agenter som läser vilken kopia, och dess källa. "All details" visar den gamla detaljvyn.
+  - En apps sida visar dess plugins, med versioner och uppdateringar.
+- **Keep newer** ersätter den äldre kopian av en skill med den nyare, efter en fråga. Den gamla kopian läggs i papperskorgen.
+
+Öppet:
+- Keep newer bryter mot den tidigare principen att Skillori aldrig ändrar en skill själv. Det beslutet ligger hos produktägaren.
+
 ## Status 16 november, kväll
 
 A och B är byggda på grenen `plugin-uppdateringar`. Provat på riktigt: flora-mcp-skills uppdaterades från appens egen körning, 0.11.1 → 0.11.5. Claude Code skrev ny `gitCommitSha`, och statusen blev Up to date efter omläsningen.

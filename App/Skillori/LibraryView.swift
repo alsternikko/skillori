@@ -75,8 +75,8 @@ struct LibraryView: View {
         return ScrollView {
             VStack(spacing: 6) {
                 if store.inventory != nil { today(todos) }
-                door(app: nil, title: "Your skills", note: mineNote, number: Assist.mine(store).count) { open(.mine) }
-                door(app: Assist.apps(store).first?.name, title: "From your apps",
+                door(apps: [nil], title: "Your skills", note: mineNote, number: Assist.mine(store).count) { open(.mine) }
+                door(apps: Assist.apps(store).prefix(3).map(\.name), title: "From your apps",
                      note: Assist.names(Assist.apps(store).map(\.name)) + " keep these current themselves.",
                      number: (store.inventory?.installations ?? []).filter(Assist.isManaged).count) { open(.apps) }
             }
@@ -122,12 +122,13 @@ struct LibraryView: View {
     }
 
     /// A way into the library: a name, one line on what is there, and how many.
-    private func door(app: String?, title: String, note: String, number: Int, action: @escaping () -> Void) -> some View {
-        Door(app: app, title: title, note: note, number: number, action: action)
+    private func door(apps: [String?], title: String, note: String, number: Int, action: @escaping () -> Void) -> some View {
+        Door(apps: apps, title: title, note: note, number: number, action: action)
     }
 
     private struct Door: View {
-        let app: String?
+        /// The marks the door carries: the apps behind it, overlapping, or the reader's own.
+        let apps: [String?]
         let title: String
         let note: String
         let number: Int
@@ -137,7 +138,14 @@ struct LibraryView: View {
         var body: some View {
             Button(action: action) {
                 HStack(spacing: 14) {
-                    AppMark(app: app)
+                    HStack(spacing: -8) {
+                        ForEach(Array(apps.enumerated()), id: \.offset) { _, app in
+                            AppMark(app: app)
+                                .padding(2)
+                                .background(Palette.card, in: RoundedRectangle(cornerRadius: 7, style: .circular))
+                        }
+                    }
+                    .frame(minWidth: 26, alignment: .leading)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title).font(TypeRole.sans(15, .medium))
                         Text(note).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).lineLimit(1)
