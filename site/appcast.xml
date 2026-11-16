@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.1.2</title>
-      <pubDate>Mon, 16 Nov 2026 13:40:42 +0000</pubDate>
-      <sparkle:version>4</sparkle:version>
-      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
+      <title>Skillori 0.2.0</title>
+      <pubDate>Mon, 16 Nov 2026 15:45:24 +0000</pubDate>
+      <sparkle:version>5</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.1.2</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skillori now finds the skills the Claude app installs through plugins, skills from more agents, and skill folders that have moved. If it told you that you had zero skills, it was wrong, and it’s sorry.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.0</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skillori now watches your skill folders, sends a notification when a source has something new, and checks Claude Code plugins too. Before you update, it shows which files will change and which of them can run, and it no longer credits you with agents you don’t have.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="beddiGL/RpVWh6yMBWajmeqbf+yX+0p+yEbmmeAM70nKRdAX6aRWNnUgnMkbJZcvPVc2gSM2m1M859iupgvUDQ==" length="4588690"/>
+                 sparkle:edSignature="h0nC0c4WiABSDb50t2xLD6tfudICza9QM+888VJtAB95ftmK9Hoj6hT4UsVeQer259sHy1/22zkn4EEI+B+uAw==" length="4803683"/>
     </item>
   </channel>
 </rss>
