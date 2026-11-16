@@ -9,6 +9,8 @@ struct FirstStartView: View {
     @Environment(InventoryStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State var step = 1
+    /// Shows the last step as it looks when nothing was found. For pictures of that state.
+    var previewsEmpty = false
     var onDone: () -> Void = {}
     var onLibrary: () -> Void = {}
 
@@ -100,22 +102,38 @@ struct FirstStartView: View {
 
     @ViewBuilder private var firstReading: some View {
         let inventory = store.inventory
-        let total = inventory?.installations.count ?? 0
-        hero(inventory == nil ? .quiet : .new, label: inventory == nil ? "Reading" : "Found") {
+        let total = previewsEmpty ? 0 : inventory?.installations.count ?? 0
+        let empty = inventory != nil && total == 0
+        hero(inventory == nil ? .quiet : .new, label: inventory == nil ? "Reading" : empty ? "Nothing yet" : "Found") {
             DotNumber(inventory == nil ? "--" : "\(total)", size: 72)
                 .opacity(inventory == nil ? 0.36 : 1)
                 .padding(.top, 22)
             Spacer(minLength: 0)
             lead(total == 1 ? "skill on this Mac" : "skills on this Mac")
-            if let inventory {
+            if let inventory, empty {
+                note("Looked in \(inventory.roots.count) places. None holds a skill.", tone: .new)
+            } else if let inventory {
                 let folders = inventory.roots.filter { $0.state == .found }.count
                 note("\(folders) folders read in \(Int(inventory.duration * 1000)) ms.", tone: .new)
             }
         }
-        PlainList {
-            count("Installed by you", store.trackedCount + store.unknownCount)
-            count("Managed by apps", store.managedCount)
-            count("With no known source", store.unknownCount, muted: true, isLast: true)
+        if empty {
+            // Zero is a reading too, so say where skills can be that Skillori does not see.
+            PlainList {
+                ListRow {
+                    Text("Skills in a project folder?")
+                } trailing: {
+                    Button("Add folder") { store.addProject() }.buttonStyle(HintButtonStyle(underlined: true))
+                }
+                hint("Only in your Claude account?", "They appear once Claude downloads them")
+                hint("Somewhere else?", "Library lists every place Skillori looked", isLast: true)
+            }
+        } else {
+            PlainList {
+                count("Installed by you", store.trackedCount + store.unknownCount)
+                count("Managed by apps", store.managedCount)
+                count("With no known source", store.unknownCount, muted: true, isLast: true)
+            }
         }
         footer {
             Button("Done", action: onDone).buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
@@ -167,6 +185,15 @@ struct FirstStartView: View {
         } trailing: {
             DataText("\(value)").foregroundStyle(Palette.ink2)
         }
+    }
+
+    private func hint(_ title: String, _ detail: String, isLast: Bool = false) -> some View {
+        ListRow(isLast: isLast) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                Text(detail).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
+            }
+        } trailing: { EmptyView() }
     }
 
     @ViewBuilder private func footer(@ViewBuilder content: () -> some View) -> some View {

@@ -43,7 +43,7 @@ struct AgentMark: View {
 enum AgentPresence {
     /// App names to look for in the Applications folders.
     private static let appNames: [String: [String]] = [
-        "claude-code": ["Claude"], "cursor": ["Cursor"], "antigravity": ["Antigravity"],
+        "claude-code": ["Claude"], "claude-desktop": ["Claude"], "cursor": ["Cursor"], "antigravity": ["Antigravity"],
         "codex": ["Codex"], "kiro": ["Kiro"], "devin": ["Windsurf", "Devin"], "goose": ["Goose"],
     ]
 

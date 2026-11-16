@@ -37,6 +37,8 @@ enum DebugSnapshots {
                 // Step 2 has app icons, which only the AppKit display draws right; the others have light.
                 if step == 2 { render(view, size: size, to: file) } else { picture(view, size: size, to: file) }
             }
+            picture(PanelBackdrop { FirstStartView(step: 3, previewsEmpty: true) }.environment(store),
+                    size: CGSize(width: 400, height: 580), to: out.appendingPathComponent("first-start-3-empty.png"))
             if ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_OPEN_PANEL"] != nil {
                 statusPanel?.open()
                 try? await Task.sleep(for: .seconds(6))

@@ -81,6 +81,12 @@ enum DebugSelfTest {
             check("shell reports a failing command", failing == 3, "status \(failing)")
             let npx = await Shell.run(script: "command -v npx >/dev/null", timeout: 20)
             check("shell finds npx the way Terminal does", npx == 0, "status \(npx)")
+            // What the scan asks the login shell for: set variables come back, unset ones do not.
+            let asked = Date()
+            let values = await InventoryStore.loginShellValues(of: ["HOME", "SKILLORI_NEVER_SET"])
+            check("login shell gives the variables it has set and leaves out the rest",
+                  values == ["HOME": NSHomeDirectory()],
+                  "\(values) in \(Int(Date().timeIntervalSince(asked) * 1000)) ms")
             let runner = UpdateRunner()
             runner.append("Checking\rUpdating 1\rUpdating 2\n\u{1B}[32mDone\u{1B}[0m\n")
             check("printed text is shown as a terminal would", runner.output == "Updating 2\nDone\n", runner.output.debugDescription)
@@ -118,8 +124,10 @@ enum DebugSelfTest {
 
             let menu = panel.makeContextMenu()
             let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+            // "Check for Updates…" is there only in a build that can update itself.
             check("right-click menu has Library, Settings, Quit",
-                  titles == ["Open Library…", "Settings…", "Quit Skillori"])
+                  titles.filter { $0 != "Check for Updates…" } == ["Open Library…", "Settings…", "Quit Skillori"],
+                  titles.joined(separator: ", "))
             if let item = menu.items.first(where: { $0.title == "Settings…" }), let action = item.action {
                 NSApp.sendAction(action, to: item.target, from: item)
                 await pause(400)
