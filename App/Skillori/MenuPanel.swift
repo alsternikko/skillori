@@ -351,7 +351,8 @@ extension PanelModel {
             let text = pluginUpdates.count == 1 ? "\(pluginUpdates[0].name) has a plugin update"
                 : "\(pluginUpdates.count) plugins have updates"
             let apps = Set(pluginUpdates.map(\.app))
-            tail.append(.line(text: text, data: apps.count == 1 ? "IN \(apps.first!.uppercased())" : "IN THEIR APPS", muted: false))
+            // The library opens on its list of what to do, which says where each update is made.
+            tail.append(.link(text: text + (apps.count == 1 ? " in \(apps.first!)" : ""), label: "Show", command: .library))
         }
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))

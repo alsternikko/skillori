@@ -188,3 +188,29 @@ private extension Result where Failure == UpstreamState.Reason {
         #expect(changes.first { $0.path == "notes.md" }?.runnable == false)
     }
 }
+
+@Suite struct RootTreeTests {
+    /// GitHub answers a trees question by branch with the commit id as `sha`. The root tree id
+    /// must come from the entries, or a skill at the top of a repository never matches.
+    @Test func rootHashIsTheTreeNotTheCommit() async throws {
+        let tree = try TempTree()
+        defer { tree.remove() }
+        try tree.file("SKILL.md", "---\nname: top\n---\n")
+        try tree.file("scripts/run.sh", "echo\n", executable: true)
+        let local = try GitTreeHash.hashDirectory(at: tree.root)
+        let ids = Dictionary(uniqueKeysWithValues: local.entries.map { ($0.path, $0.objectID) })
+        let scripts = try GitTreeHash.hashDirectory(at: tree.root.appendingPathComponent("scripts")).treeID
+        let body = """
+        {"sha":"ed201f195ccb8b26bea450ee6a9fefa7614a0318","truncated":false,"tree":[
+          {"path":"SKILL.md","mode":"100644","type":"blob","sha":"\(ids["SKILL.md"]!)"},
+          {"path":"scripts","mode":"040000","type":"tree","sha":"\(scripts)"},
+          {"path":"scripts/run.sh","mode":"100755","type":"blob","sha":"\(ids["scripts/run.sh"]!)"}]}
+        """
+        let trees = GitHubTrees { request in
+            (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
+        }
+        let listing = try await trees.tree(of: UpstreamSource(owner: "o", repository: "r")).get()
+        #expect(listing.rootHash == local.treeID)
+        #expect(UpstreamComparer.state(baseline: local.treeID, subpath: nil, in: listing) == .upToDate)
+    }
+}

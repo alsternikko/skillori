@@ -350,7 +350,12 @@ public struct GitHubTrees: Sendable {
             .sorted()
         let files = Dictionary(listing.tree.filter { $0.type == "blob" }.map { ($0.path, SourceFile(id: $0.sha, mode: $0.mode ?? "100644")) },
                                uniquingKeysWith: { first, _ in first })
-        return .success(SourceTree(rootHash: listing.sha, folders: folders, skillFolders: skillFolders,
+        // Asked by branch or commit, GitHub answers with the commit's id as `sha`, not the root
+        // tree's. The root tree's id is worked out from its own entries, as git would.
+        let top = listing.tree.filter { !$0.path.contains("/") && $0.type != "commit" }
+            .map { (mode: $0.mode ?? ($0.type == "tree" ? "040000" : "100644"), name: $0.path, id: $0.sha) }
+        let root = (listing.truncated ?? false) ? nil : GitTreeHash.treeID(of: top)
+        return .success(SourceTree(rootHash: root ?? listing.sha, folders: folders, skillFolders: skillFolders,
                                    truncated: listing.truncated ?? false, files: files))
     }
 }

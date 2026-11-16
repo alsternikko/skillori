@@ -3,80 +3,29 @@ import SkilloriCore
 import SkilloriUI
 import SwiftUI
 
-enum LibraryFilter: String, CaseIterable, Identifiable {
-    case yours
-    /// The source has changed.
-    case updates
-    case upToDate
-    /// Kept on the installed version by the reader.
-    case heldBack
-    /// Nobody can say whether these are current: no source, no answer, or not asked.
-    case unverified
-    case managed
-    /// Not a list of skills: shows which folders were read.
-    case coverage
-
-    var id: String { rawValue }
-
-    func includes(_ status: SkillStatus) -> Bool {
-        switch self {
-        case .yours: !status.isManaged
-        case .updates:
-            switch status {
-            case .updateAvailable, .differs, .ownerUpdate: true
-            default: false
-            }
-        case .upToDate: status == .upToDate
-        case .heldBack: if case .heldBack = status { true } else { false }
-        case .unverified: status.isUnverified
-        case .managed: status.isManaged
-        case .coverage: false
-        }
-    }
-}
-
+/// The library, second take: what needs you first, in one block of light, and under it two
+/// ways into the library, your skills and the apps'. With nothing to do the block says so.
 struct LibraryView: View {
     @Environment(InventoryStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var filter: LibraryFilter
-    @State private var selection: Installation.ID?
-    @State private var showsDetail: Bool
+    /// The pages the reader has clicked into, the latest last.
+    @State private var path: [LibraryPage]
     @State private var search = ""
-    /// Groups the reader has opened.
-    @State private var expanded: Set<String> = []
-    /// The group the keyboard is on, when it is not on a skill.
-    @State private var groupCursor: String?
-    /// The skill whose source the reader is pointing out, while the sheet is up.
     @State private var linking: Installation?
-    @FocusState private var searchFocused: Bool
-    @FocusState private var listFocused: Bool
 
-    init(initialFilter: LibraryFilter = .yours, initialSelection: Installation.ID? = nil, showsDetail: Bool = false,
-         initialGroup: String? = nil) {
-        _filter = State(initialValue: initialFilter)
-        _selection = State(initialValue: initialSelection)
-        _showsDetail = State(initialValue: showsDetail)
-        _groupCursor = State(initialValue: initialGroup)
+    init(path: [LibraryPage] = []) {
+        _path = State(initialValue: path)
     }
 
     var body: some View {
         VStack(spacing: 6) {
-            topBar
-            if showsDetail, let installation = selected {
-                // Count within the reader's own skills or within the apps' skills, not across both.
-                let rows = groups.filter { ($0.kind == .managed) == isManaged(installation) }.flatMap(\.items)
-                InstallationDetail(installation: installation,
-                                   number: (rows.firstIndex { $0.id == installation.id } ?? 0) + 1,
-                                   total: rows.count,
-                                   readAt: store.inventory?.scannedAt,
-                                   agentsOnThisMac: agentsOnThisMac,
-                                   onBack: { showsDetail = false },
-                                   onLink: { linking = installation },
-                                   onStep: { step in _ = move(step, in: rows) })
+            LibraryTopBar(search: $search, onFolders: { open(.folders) })
+            if !search.isEmpty {
+                ListCard { SearchResults(query: search, open: { search = ""; open($0) }) }
+            } else if let page = path.last {
+                pageView(page).transition(.opacity)
             } else {
-                if !store.checksEnabled, store.trackedCount > 0 { checksOffNotice }
-                tiles
-                listCard
+                home
             }
         }
         .padding(EdgeInsets(top: 0, leading: 6, bottom: 6, trailing: 6))
@@ -84,756 +33,164 @@ struct LibraryView: View {
         .foregroundStyle(Palette.ink)
         .font(TypeRole.sans(13))
         .ignoresSafeArea(edges: .top)
-        .onChange(of: filter) {
-            selection = nil
-            groupCursor = nil
-        }
+        .animation(reduceMotion ? nil : Motion.swap, value: path)
         .sheet(item: $linking) { installation in
             LinkSourceSheet(installation: installation).environment(store)
         }
     }
 
-    // MARK: Top bar
+    // MARK: Pages
 
-    private var topBar: some View {
-        HStack(spacing: 16) {
-            HStack(spacing: 8) {
-                SkilloriMark().fill(Palette.ink).frame(width: 18, height: 18)
-                Text("Library").font(TypeRole.sans(13, .medium))
+    private func open(_ page: LibraryPage) {
+        if page == .home { path = [] } else if path.last != page { path.append(page) }
+    }
+
+    private func back() { if !path.isEmpty { path.removeLast() } }
+
+    private var backTitle: String {
+        path.count >= 2 ? LibraryPaging.title(path[path.count - 2], store: store) : "Library"
+    }
+
+    @ViewBuilder private func pageView(_ page: LibraryPage) -> some View {
+        switch page {
+        case .mine:
+            VStack(spacing: 6) {
+                Crumb(title: backTitle, action: back)
+                ListCard { MySkillsList(open: open) }
             }
-            .frame(width: 110, alignment: .leading)
-
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(Palette.ink2)
-                TextField("Search skills, sources, paths", text: $search)
-                    .textFieldStyle(.plain)
-                    .font(TypeRole.sans(13))
-                    .focused($searchFocused)
-                    .onExitCommand {
-                        search = ""
-                        searchFocused = false
-                    }
-                LabelText("⌘F").foregroundStyle(Palette.ink2)
+        case .apps:
+            VStack(spacing: 6) {
+                Crumb(title: backTitle, action: back)
+                ListCard { AppsList(open: open) }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .frame(maxWidth: 360)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
-
-            Spacer(minLength: 8)
-
-            LabelText(stamp).foregroundStyle(Palette.ink2)
-            Button("Folders") { filter = filter == .coverage ? .yours : .coverage }
-                .buttonStyle(PillButtonStyle(prominent: filter == .coverage))
-            Button { Task { await store.refresh() } } label: {
-                SwappingText(store.isScanning ? "Reading…" : store.isChecking ? "Checking…"
-                    : store.checksEnabled ? "Check now" : "Read again")
-            }
-            .buttonStyle(PillButtonStyle())
-            .keyboardShortcut("r")
-            .disabled(store.isScanning || store.isChecking)
-        }
-        .padding(.leading, 78)
-        .padding(.trailing, 8)
-        .frame(height: 52)
-        .background {
-            Button("Search") { searchFocused = true }.keyboardShortcut("f").opacity(0).accessibilityHidden(true)
+        default:
+            LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 })
         }
     }
 
-    private var stamp: String {
-        guard let inventory = store.inventory else { return "Reading now" }
-        guard store.checksEnabled else {
-            return "Read \(inventory.scannedAt.formatted(date: .omitted, time: .shortened))"
-        }
-        return store.checkStamp
-    }
+    // MARK: Home
 
-    /// Shown until the reader has decided: the app's main job needs their yes.
-    private var checksOffNotice: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Update checks are off").font(TypeRole.sans(13, .medium))
-                Text("Skillori can ask each source whether a skill has changed. It sends the source's name and nothing about you or your files.")
-                    .font(TypeRole.sans(12))
-                    .foregroundStyle(Tone.quiet.secondary)
-            }
-            Spacer(minLength: 12)
-            Button("Turn on") { store.checksEnabled = true }
-                .buttonStyle(PillButtonStyle(prominent: true, on: .quiet))
-        }
-        .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 12))
-        .foregroundStyle(Tone.quiet.foreground)
-        .background(Tone.quiet.background, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
-    }
-
-    // MARK: Tiles
-
-    private var tiles: some View {
-        HStack(spacing: 6) {
-            tile(.yours, "Yours", "installed by you")
-            tile(.updates, "Updates", "newer at the source", tone: count(.updates) > 0 ? .new : nil)
-            tile(.upToDate, "Up to date", "match their source")
-            tile(.heldBack, "Held back", "kept by you")
-            tile(.unverified, "Not verified", "can't be checked")
-            tile(.managed, "Managed", "owned by apps")
-        }
-    }
-
-    private func tile(_ item: LibraryFilter, _ label: String, _ caption: String, tone: Tone? = nil) -> some View {
-        StatTile(label: label, number: store.inventory == nil ? "--" : "\(count(item))", caption: caption,
-                 tone: tone, isSelected: filter == item) { filter = item }
-    }
-
-    private func count(_ item: LibraryFilter) -> Int {
-        store.inventory?.installations.filter { item.includes(store.status(for: $0)) }.count ?? 0
-    }
-
-    // MARK: List
-
-    private var listCard: some View {
-        VStack(spacing: 6) {
-            Group {
-                if filter == .coverage {
-                    CoverageView()
-                } else {
-                    table
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
-
-            // The selected skill's actions are a fixed row under the list, never over it.
-            if filter != .coverage, let installation = selected {
-                actionBar(installation).transition(.opacity)
-            } else if filter != .coverage, let (group, updatable) = cursorGroupWithUpdates {
-                // A source under the cursor offers its updates in one go.
-                groupBar(group, updatable: updatable).transition(.opacity)
+    private var home: some View {
+        let todos = Assist.todos(store)
+        return ScrollView {
+            VStack(spacing: 6) {
+                if store.inventory != nil { today(todos) }
+                door(apps: [nil], title: "Your skills", note: mineNote, number: Assist.mine(store).count) { open(.mine) }
+                door(apps: Assist.apps(store).prefix(3).map(\.name), title: "From your apps",
+                     note: Assist.names(Assist.apps(store).map(\.name)) + " keep these current themselves.",
+                     number: (store.inventory?.installations ?? []).filter(Assist.isManaged).count) { open(.apps) }
             }
         }
-        .animation(reduceMotion ? nil : Motion.swap, value: selected?.id)
-        .animation(reduceMotion ? nil : Motion.swap, value: groupCursor)
+        .scrollIndicators(.never)
     }
 
-    private var table: some View {
-        let groups = groups
-        let rows = groups.flatMap(\.items)
-        let entries = entries(in: groups)
-        let firstManaged = groups.first { $0.kind == .managed }?.id
-        let lastOwn = groups.last { $0.kind != .managed }?.id
-        let lastManaged = groups.last { $0.kind == .managed }?.id
-        return VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Color.clear.frame(width: Column.number, height: 1)
-                LabelText("Name").frame(maxWidth: .infinity, alignment: .leading)
-                LabelText("Source").frame(width: Column.source, alignment: .leading)
-                LabelText("Revision").frame(width: Column.revision, alignment: .leading)
-                LabelText("Agents").frame(width: Column.agents, alignment: .leading)
-                LabelText("Status").frame(width: Column.status, alignment: .leading)
-            }
-            .foregroundStyle(Palette.ink2)
-            .frame(height: 36)
-            .overlay(alignment: .bottom) { Palette.line.frame(height: 1) }
-            .padding(.horizontal, 16)
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(groups) { group in
-                            let open = isExpanded(group, among: groups)
-                            let lastInSection = group.id == lastOwn || group.id == lastManaged
-                            if group.id == groups.first?.id, group.kind != .managed, firstManaged != nil {
-                                sectionHeader("Installed by you · \(count(.yours))", note: nil)
-                            }
-                            if group.id == firstManaged, filter != .managed {
-                                sectionHeader("Managed by apps · \(count(.managed))",
-                                              note: "Read-only here. Each app updates its own.")
-                            }
-                            GroupRow(group: group, statuses: group.items.map(store.status(for:)),
-                                     isOpen: open, isLast: lastInSection, hasCursor: groupCursor == group.id)
-                                .id(group.id)
-                                .onTapGesture { toggle(group, among: groups) }
-                            if open {
-                                ForEach(group.items) { installation in
-                                    InstallationRow(installation: installation,
-                                                    status: store.status(for: installation),
-                                                    link: store.link(for: installation),
-                                                    copies: store.copies(of: installation),
-                                                    isSelected: installation.id == selection,
-                                                    trunk: !lastInSection,
-                                                    isLast: installation.id == group.items.last?.id)
-                                        .id(installation.id)
-                                        // A single click selects at once; it does not wait to see
-                                        // whether a second click follows.
-                                        .onTapGesture {
-                                            groupCursor = nil
-                                            selection = installation.id == selection ? nil : installation.id
-                                            listFocused = true
-                                        }
-                                        .simultaneousGesture(TapGesture(count: 2).onEnded {
-                                            selection = installation.id
-                                            showsDetail = true
-                                        })
-                                        .accessibilityAddTraits(.isButton)
-                                        .accessibilityHint("Opens the skill's details")
-                                        .accessibilityAction {
-                                            selection = installation.id
-                                            showsDetail = true
-                                        }
-                                }
-                            }
-                        }
-                        if rows.isEmpty, store.inventory != nil { emptyState }
-                        Color.clear.frame(height: selected == nil ? 8 : 64)
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.top, 6)
-                }
-                .onChange(of: selection) { _, new in
-                    if let new { proxy.scrollTo(new) }
-                }
-                .onChange(of: groupCursor) { _, new in
-                    if let new { proxy.scrollTo(new) }
-                }
-            }
-        }
-        .focusable()
-        .focusEffectDisabled()
-        .focused($listFocused)
-        .onKeyPress(.downArrow) { move(1, in: entries) }
-        .onKeyPress(.upArrow) { move(-1, in: entries) }
-        .onKeyPress(.rightArrow) { setCursorGroup(open: true, among: groups) }
-        .onKeyPress(.leftArrow) { setCursorGroup(open: false, among: groups) }
-        .onKeyPress(.return) {
-            if let id = groupCursor, let group = groups.first(where: { $0.id == id }) {
-                toggle(group, among: groups)
-                return .handled
-            }
-            guard selected != nil else { return .ignored }
-            showsDetail.toggle()
-            return .handled
-        }
-        .onKeyPress(.escape) {
-            guard selection != nil || groupCursor != nil else { return .ignored }
-            if showsDetail { showsDetail = false } else { selection = nil; groupCursor = nil }
-            return .handled
-        }
+    private var mineNote: String {
+        let mine = Assist.mine(store)
+        let off = mine.filter { Assist.note(for: $0, store: store).map { $0.kind != .outline } ?? false }.count
+        return off == 0 ? "Installed by you. Skillori checks them against their source."
+            : "Installed by you. \(off == 1 ? "One needs" : "\(off) need") a look."
     }
 
-    // MARK: Groups
-
-    /// The skills that match the filter and the search, gathered by where they come from:
-    /// one group per source, one for skills with no known source, one per owning app.
-    private var groups: [SkillGroup] {
-        var order: [String] = []
-        var byID: [String: SkillGroup] = [:]
-        for installation in visible {
-            let (id, title, kind): (String, String, SkillGroup.Kind) = switch installation.provenance {
-            case .skillsLock(let source, _, _, _, _): ("source:" + source, source, .source)
-            case .unknown:
-                // A skill the reader linked sits with its source, like the ones the installer recorded.
-                if let link = store.link(for: installation) {
-                    ("source:" + link.source.name, link.source.name, .source)
-                } else {
-                    ("unknown", "No known source", .unknown)
-                }
-            case .managed(let owner): ("managed:" + owner, owner, .managed)
-            }
-            if byID[id] == nil {
-                byID[id] = SkillGroup(id: id, title: title, kind: kind, items: [])
-                order.append(id)
-            }
-            byID[id]?.items.append(installation)
-        }
-        return order.compactMap { byID[$0] }.sorted { a, b in
-            if a.kind != b.kind { return a.kind.rawValue < b.kind.rawValue }
-            if a.items.count != b.items.count { return a.items.count > b.items.count }
-            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-        }
-    }
-
-    /// A group is open when the reader opened it, when it is the only one, while searching,
-    /// or when it holds the selected skill.
-    private func isExpanded(_ group: SkillGroup, among groups: [SkillGroup]) -> Bool {
-        expanded.contains(group.id) || groups.count == 1 || !search.isEmpty
-            || group.items.contains { $0.id == selection }
-    }
-
-    private func toggle(_ group: SkillGroup, among groups: [SkillGroup]) {
-        let open = isExpanded(group, among: groups)
-        withAnimation(reduceMotion ? nil : Motion.swap) {
-            if open {
-                expanded.remove(group.id)
-                if group.items.contains(where: { $0.id == selection }) { selection = nil }
+    /// One block for what needs the reader: a sentence and a button per thing. With nothing to
+    /// do it says so, in the resting light.
+    private func today(_ todos: [Todo]) -> some View {
+        let updates = todos.contains { $0.id.hasPrefix("skills:") || $0.id.hasPrefix("plugins:") }
+        let tone: Tone = todos.isEmpty ? .rest : updates ? .new : .attention
+        return VStack(alignment: .leading, spacing: 0) {
+            LabelText(store.checksEnabled ? store.checkStamp : "Today").foregroundStyle(tone.blockSecondary)
+            Text(todos.isEmpty ? "You’re all set" : todos.count == 1 ? "One thing for you" : "\(Assist.spelled(todos.count)) things for you")
+                .font(TypeRole.sans(24, .medium)).tracking(-0.4)
+                .padding(.top, 8)
+            if todos.isEmpty {
+                Text("\(Assist.mine(store).count) skills of yours and \((store.inventory?.installations ?? []).filter(Assist.isManaged).count) from your apps. Nothing needs you.")
+                    .font(TypeRole.sans(13)).foregroundStyle(tone.blockSecondary)
+                    .padding(.top, 4).padding(.bottom, 6)
             } else {
-                expanded.insert(group.id)
-            }
-        }
-        groupCursor = group.id
-        selection = open ? selection : nil
-        listFocused = true
-    }
-
-    private func setCursorGroup(open: Bool, among groups: [SkillGroup]) -> KeyPress.Result {
-        guard let id = groupCursor, let group = groups.first(where: { $0.id == id }),
-              isExpanded(group, among: groups) != open else { return .ignored }
-        toggle(group, among: groups)
-        return .handled
-    }
-
-    /// What the arrow keys step through: every group, and the skills of the open ones.
-    private func entries(in groups: [SkillGroup]) -> [Entry] {
-        groups.flatMap { group in
-            [Entry.group(group.id)] + (isExpanded(group, among: groups) ? group.items.map { .skill($0.id) } : [])
-        }
-    }
-
-    private func move(_ step: Int, in entries: [Entry]) -> KeyPress.Result {
-        guard !entries.isEmpty else { return .ignored }
-        let here: Entry? = selection.map { .skill($0) } ?? groupCursor.map { .group($0) }
-        let current = here.flatMap { entries.firstIndex(of: $0) }
-        let next = current.map { min(max($0 + step, 0), entries.count - 1) } ?? (step > 0 ? 0 : entries.count - 1)
-        // Keyboard moves are immediate: no animation on something pressed many times.
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            switch entries[next] {
-            case .group(let id): selection = nil; groupCursor = id
-            case .skill(let id): groupCursor = nil; selection = id
-            }
-        }
-        return .handled
-    }
-
-    /// Steps between skills in the detail view.
-    private func move(_ step: Int, in rows: [Installation]) -> KeyPress.Result {
-        guard !rows.isEmpty else { return .ignored }
-        let current = rows.firstIndex { $0.id == selection }
-        let next = current.map { min(max($0 + step, 0), rows.count - 1) } ?? (step > 0 ? 0 : rows.count - 1)
-        selection = rows[next].id
-        return .handled
-    }
-
-    @ViewBuilder private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            let nothingAtAll = search.isEmpty && (store.inventory?.installations.isEmpty ?? false)
-            Text(nothingAtAll ? "No skills on this Mac yet"
-                 : search.isEmpty ? "Nothing here" : "No skill matches “\(search)”")
-                .font(TypeRole.sans(15, .medium))
-            Text(nothingAtAll ? "Skillori only reads the folders it knows about. Skills in a project folder?"
-                 : search.isEmpty ? "No skill on this Mac fits this group."
-                 : "Searched names, descriptions, sources and paths in \(count(filter)) skills.")
-                .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
-            if nothingAtAll {
-                Button("Add folder") { store.addProject() }
-                    .buttonStyle(PillButtonStyle(prominent: true))
-                    .padding(.top, 10)
-            } else if !search.isEmpty {
-                Button("Clear search") { search = "" }
-                    .buttonStyle(PillButtonStyle(prominent: true))
-                    .padding(.top, 10)
+                VStack(spacing: 0) {
+                    ForEach(todos) { todo in
+                        tone.blockForeground.opacity(0.2).frame(height: 1)
+                        TodoLine(todo: todo, tone: tone, open: open)
+                    }
+                }
+                .padding(.top, 12)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 28)
+        .padding(EdgeInsets(top: 18, leading: 22, bottom: todos.isEmpty ? 18 : 6, trailing: 22))
+        .foregroundStyle(tone.blockForeground)
+        .background { tone.blockBackground(phase: 3) }
     }
 
-    /// The root of a tree: the reader's own skills, or the ones apps own.
-    private func sectionHeader(_ title: String, note: String?) -> some View {
-        HStack {
-            LabelText(title).foregroundStyle(Palette.ink)
-            Spacer()
-            if let note { LabelText(note).foregroundStyle(Palette.ink2) }
-        }
-        .frame(height: 32)
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
+    /// A way into the library: a name, one line on what is there, and how many.
+    private func door(apps: [String?], title: String, note: String, number: Int, action: @escaping () -> Void) -> some View {
+        Door(apps: apps, title: title, note: note, number: number, action: action)
     }
 
-    // MARK: Selection
+    private struct Door: View {
+        /// The marks the door carries: the apps behind it, overlapping, or the reader's own.
+        let apps: [String?]
+        let title: String
+        let note: String
+        let number: Int
+        var action: () -> Void
+        @State private var hovering = false
 
-    /// The source under the cursor and those of its skills the installer can update now.
-    private var cursorGroupWithUpdates: (SkillGroup, [Installation])? {
-        guard let groupCursor, let group = groups.first(where: { $0.id == groupCursor }), group.kind == .source else { return nil }
-        let updatable = group.items.filter { isUpdate(store.status(for: $0)) }
-        return updatable.isEmpty ? nil : (group, updatable)
-    }
-
-    /// One press runs the installer's update for every skill of a source that has one.
-    /// Skills the reader holds back are not among them.
-    private func groupBar(_ group: SkillGroup, updatable: [Installation]) -> some View {
-        let runner = store.updater
-        let names = updatable.map(\.directoryName)
-        let mine = runner.names == names
-        let count = updatable.count
-        var text = count == group.items.count
-            ? "\(count) skill\(count == 1 ? " has" : "s have") an update at the source"
-            : "\(count) of \(group.items.count) skills \(count == 1 ? "has" : "have") an update at the source"
-        if mine, runner.isRunning { text = "Running the installer's update…" }
-        if mine, case .failed(let why) = runner.phase { text = "The update did not finish. \(why)" }
-        return StatusLine {
-            Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1)
-            Text(text)
-                .font(TypeRole.sans(12))
-                .foregroundStyle(Tone.rest.secondary)
-                .lineLimit(1)
-                .padding(.leading, 6)
-            Spacer(minLength: 10)
-            Button(mine && runner.isRunning ? "Updating…" : "▶ Update \(count)") { Task { await store.update(updatable) } }
-                .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
-                .disabled(runner.isRunning)
-                .help(UpdateRunner.commandText(for: names))
-        }
-    }
-
-    private func actionBar(_ installation: Installation) -> some View {
-        let status = store.status(for: installation)
-        return StatusLine {
-            Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
-            let runner = store.updater
-            let mine = runner.names == [installation.directoryName]
-            Text(barText(status, running: mine && runner.isRunning, failed: mine && isFailed(runner.phase)))
-                .font(TypeRole.sans(12))
-                .foregroundStyle(Tone.rest.secondary)
-                .lineLimit(1)
-                .padding(.leading, 6)
-            Spacer(minLength: 10)
-            if case .updateAvailable = status {
-                // One press runs the installer's update for this skill.
-                Button(mine && runner.isRunning ? "Updating…" : "▶ Update") { Task { await store.update([installation]) } }
-                    .buttonStyle(PillButtonStyle(prominent: true, on: .rest))
-                    .disabled(runner.isRunning)
-                    .help(UpdateCommand.text(for: installation))
-            }
-            Button(showsDetail ? "Hide details" : "Details") { showsDetail.toggle() }
-                .buttonStyle(PillButtonStyle(prominent: !isUpdate(status), on: .rest))
-            switch status {
-            case .updateAvailable:
-                Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: .rest))
-            case .heldBack:
-                Button("Release") { store.release(installation) }.buttonStyle(PillButtonStyle(on: .rest))
-            case .differs:
-                if let link = store.upstreamSource(for: installation)?.webURL(subpath: store.sourceSubpath(for: installation)) {
-                    Button("Open source") { NSWorkspace.shared.open(link) }.buttonStyle(PillButtonStyle(on: .rest))
-                }
-                Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: .rest))
-            case .noSource:
-                Button("Link source…") { linking = installation }.buttonStyle(PillButtonStyle(on: .rest))
-            default:
-                if let link = store.upstreamSource(for: installation)?.webURL() {
-                    Button("Open source") { NSWorkspace.shared.open(link) }
-                        .buttonStyle(PillButtonStyle(on: .rest))
-                } else {
-                    Button("Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: installation.canonicalPath)])
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 14) {
+                    HStack(spacing: -8) {
+                        ForEach(Array(apps.enumerated()), id: \.offset) { _, app in
+                            AppMark(app: app)
+                                .padding(2)
+                                .background(Palette.card, in: RoundedRectangle(cornerRadius: 7, style: .circular))
+                        }
                     }
-                    .buttonStyle(PillButtonStyle(on: .rest))
+                    .frame(minWidth: 26, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(TypeRole.sans(15, .medium))
+                        Text(note).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).lineLimit(1)
+                    }
+                    Spacer(minLength: 12)
+                    DotNumber("\(number)", size: 22)
+                    DataText("›").foregroundStyle(Palette.ink3)
                 }
+                .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
+                .background(hovering ? Palette.card.opacity(0.7) : Palette.card,
+                            in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+                .contentShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
             }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
         }
     }
+}
 
-    private func isUpdate(_ status: SkillStatus) -> Bool {
-        if case .updateAvailable = status { true } else { false }
-    }
-
-    private func isFailed(_ phase: UpdateRunner.Phase) -> Bool {
-        if case .failed = phase { true } else { false }
-    }
-
-    private func barText(_ status: SkillStatus, running: Bool, failed: Bool) -> String {
-        if running { return "Running the installer's update…" }
-        if failed { return "The update did not finish. Open Details to see what it printed." }
-        return status.sentence
-    }
-
-    private var agentsOnThisMac: [Agent] {
-        Array(Set((store.inventory?.installations ?? []).flatMap(\.installedAgents))).sorted()
-    }
-
-    private var visible: [Installation] {
+extension LibraryView {
+    /// The library's states and pages, for the snapshot run (SKILLORI_SNAPSHOT_DIR).
+    static func snapshots(store: InventoryStore) -> [(String, LibraryView)] {
         let all = store.inventory?.installations ?? []
-        let filtered = all.filter { filter.includes(store.status(for: $0)) || (filter == .yours && isManaged($0)) }
-            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
-        guard !search.isEmpty else { return filtered }
-        return filtered.filter { installation in
-            if installation.displayName.localizedCaseInsensitiveContains(search) { return true }
-            if (installation.frontmatter.description ?? "").localizedCaseInsensitiveContains(search) { return true }
-            if installation.canonicalPath.localizedCaseInsensitiveContains(search) { return true }
-            switch installation.provenance {
-            case .skillsLock(let source, _, _, _, _): return source.localizedCaseInsensitiveContains(search)
-            case .managed(let owner): return owner.localizedCaseInsensitiveContains(search)
-            case .unknown: return store.link(for: installation)?.source.name.localizedCaseInsensitiveContains(search) ?? false
-            }
+        let mine = all.filter { !Assist.isManaged($0) }
+        let tracked = mine.first { if case .skillsLock = $0.provenance { true } else { false } }
+        let unknown = mine.first { store.status(for: $0) == .noSource }
+        let twice = store.differingCopyNames.first.flatMap { name in
+            Assist.mine(store).first { $0.name.lowercased() == name.lowercased() }?.primary
         }
-    }
-
-    private func isManaged(_ installation: Installation) -> Bool {
-        if case .managed = installation.provenance { return true }
-        return false
-    }
-
-    private var selected: Installation? {
-        guard let selection else { return nil }
-        return store.inventory?.installations.first { $0.id == selection }
-    }
-}
-
-/// Skills that share an origin.
-struct SkillGroup: Identifiable {
-    enum Kind: Int { case source, unknown, managed }
-    let id: String
-    let title: String
-    let kind: Kind
-    var items: [Installation]
-
-    @MainActor var agents: Set<Agent> { Set(items.flatMap(\.installedAgents)) }
-    var changed: Int {
-        items.filter { if case .skillsLock(_, _, _, _, .modified) = $0.provenance { true } else { false } }.count
-    }
-}
-
-private enum Entry: Equatable {
-    case group(String)
-    case skill(Installation.ID)
-}
-
-/// One line per level of the tree, drawn as real lines so they join from row to row.
-private struct TreeGuide: Shape {
-    enum Branch { case none, pipe, tee, corner }
-    var branches: [Branch]
-    static let first: CGFloat = 7
-    static let step: CGFloat = 22
-    static let stub: CGFloat = 12
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        for (level, branch) in branches.enumerated() {
-            let x = rect.minX + Self.first + CGFloat(level) * Self.step + 0.5
-            let mid = rect.midY.rounded() + 0.5
-            switch branch {
-            case .none: continue
-            case .pipe:
-                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
-            case .tee:
-                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: rect.maxY))
-                path.move(to: CGPoint(x: x, y: mid)); path.addLine(to: CGPoint(x: x + Self.stub, y: mid))
-            case .corner:
-                path.move(to: CGPoint(x: x, y: rect.minY)); path.addLine(to: CGPoint(x: x, y: mid))
-                path.addLine(to: CGPoint(x: x + Self.stub, y: mid))
-            }
+        let plugin = all.first { if case .ownerUpdate = store.status(for: $0) { true } else { false } }
+        var list: [(String, LibraryView)] = [
+            ("library", LibraryView()),
+            ("library-mine", LibraryView(path: [.mine])),
+            ("library-apps", LibraryView(path: [.apps])),
+            ("library-app-cursor", LibraryView(path: [.apps, .app("Cursor")])),
+            ("library-app-claude-code", LibraryView(path: [.apps, .app("Claude Code")])),
+            ("library-folders", LibraryView(path: [.folders])),
+        ]
+        if let tracked {
+            list.append(("library-skill", LibraryView(path: [.mine, .skill(tracked.id)])))
+            list.append(("library-details", LibraryView(path: [.mine, .skill(tracked.id), .details(tracked.id)])))
         }
-        return path
+        if let unknown { list.append(("library-skill-unknown", LibraryView(path: [.mine, .skill(unknown.id)]))) }
+        if let twice { list.append(("library-skill-twice", LibraryView(path: [.skill(twice.id)]))) }
+        if let plugin { list.append(("library-skill-plugin", LibraryView(path: [.apps, .app(Assist.app(of: plugin)), .skill(plugin.id)]))) }
+        return list
     }
-}
-
-/// A branch of the tree: where a set of skills comes from, how many there are, and a
-/// plus or minus that opens it one level further.
-private struct GroupRow: View {
-    let group: SkillGroup
-    /// The status of each skill in the group.
-    let statuses: [SkillStatus]
-    let isOpen: Bool
-    let isLast: Bool
-    let hasCursor: Bool
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ZStack(alignment: .leading) {
-                // An open branch sends a line down from its sign to its skills.
-                TreeGuide(branches: [isLast ? .corner : .tee]).stroke(Palette.ink2, lineWidth: 1)
-                if isOpen {
-                    TreeGuide(branches: [.none, .pipe]).stroke(Palette.ink2, lineWidth: 1)
-                        .mask(alignment: .bottom) { Rectangle().frame(height: 12) }
-                }
-                DataText(isOpen ? "−" : "+")
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 14)
-                    .offset(x: TreeGuide.first + TreeGuide.step - 7)
-            }
-            .frame(width: Column.number)
-            .frame(maxHeight: .infinity)
-            Text(group.title).font(TypeRole.sans(13, .medium)).lineLimit(1).truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            DataText("\(group.items.count) skill\(group.items.count == 1 ? "" : "s")")
-                .foregroundStyle(Palette.ink2)
-                .frame(width: Column.source, alignment: .leading)
-            DataText(note)
-                .foregroundStyle(Palette.ink3)
-                .frame(width: Column.revision, alignment: .leading)
-            TickCount(group.agents.count, unit: group.agents.count == 1 ? "agent" : "agents")
-                .frame(width: Column.agents, alignment: .leading)
-                .help(group.agents.sorted().map(\.displayName).joined(separator: ", "))
-            chip.frame(width: Column.status, alignment: .leading)
-        }
-        .frame(height: 40)
-        .padding(.horizontal, 10)
-        .background(Palette.ink.opacity(hovering || hasCursor ? 0.04 : 0),
-                    in: RoundedRectangle(cornerRadius: Radius.row, style: .circular))
-        .overlay {
-            if hasCursor {
-                RoundedRectangle(cornerRadius: Radius.row, style: .circular).strokeBorder(Palette.ink.opacity(0.28), lineWidth: 1)
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityValue(isOpen ? "Open" : "Closed")
-    }
-
-    private var note: String {
-        switch group.kind {
-        case .source: ""
-        case .unknown: "not linked"
-        case .managed: "set by the app"
-        }
-    }
-
-    /// What the branch says about its skills: the state that most needs a look comes first.
-    @ViewBuilder private var chip: some View {
-        let updates = statuses.filter { if case .updateAvailable = $0 { true } else { false } }.count
-        let differing = statuses.filter { if case .differs = $0 { true } else { false } }.count
-        let held = statuses.filter { if case .heldBack = $0 { true } else { false } }.count
-        let cant = statuses.filter { if case .cantCheck = $0 { true } else { false } }.count
-        switch group.kind {
-        case .unknown: StatusBadge(status: .noSource)
-        case .managed:
-            let plugin = statuses.filter { if case .ownerUpdate = $0 { true } else { false } }.count
-            if plugin > 0 {
-                StatusChip("\(plugin) plugin update\(plugin == 1 ? "" : "s")", kind: .new, mark: "▲")
-            } else {
-                StatusBadge(status: .managed)
-            }
-        case .source:
-            if updates > 0 {
-                StatusChip("\(updates) update\(updates == 1 ? "" : "s")", kind: .new, mark: "▲")
-            } else if differing > 0 {
-                StatusChip("\(differing) differ\(differing == 1 ? "s" : "")", kind: .new, mark: "≠")
-            } else if group.changed > 0 {
-                StatusChip("\(group.changed) changed here", kind: .attention, mark: "◐")
-            } else if cant > 0 {
-                StatusChip("Can't check", kind: .outline, mark: "✕")
-            } else if held > 0 {
-                StatusChip("\(held) held back", mark: "◆")
-            } else if statuses.contains(.notChecked) {
-                StatusBadge(status: .notChecked)
-            } else {
-                StatusBadge(status: .upToDate)
-            }
-        }
-    }
-}
-
-private enum Column {
-    static let number: CGFloat = 44
-    static let source: CGFloat = 190
-    static let revision: CGFloat = 160
-    static let agents: CGFloat = 96
-    static let status: CGFloat = 158
-}
-
-private struct InstallationRow: View {
-    let installation: Installation
-    let status: SkillStatus
-    /// Set when the reader, not the installer, said where this skill comes from.
-    let link: SourceLink?
-    let copies: InventoryStore.Copies?
-    let isSelected: Bool
-    /// The branch this skill hangs from has more branches below it.
-    let trunk: Bool
-    /// The last skill of its branch.
-    let isLast: Bool
-    @State private var hovering = false
-
-    var body: some View {
-        let strong = isSelected ? Tone.rest.foreground : Palette.ink
-        let quiet = isSelected ? Tone.rest.foreground.opacity(0.72) : Palette.ink2
-        let faint = isSelected ? Tone.rest.secondary : Palette.ink3
-        HStack(spacing: 0) {
-            TreeGuide(branches: [trunk ? .pipe : .none, isLast ? .corner : .tee])
-                .stroke(isSelected ? quiet : Palette.ink2, lineWidth: 1)
-                .frame(width: Column.number + 6)
-                .frame(maxHeight: .infinity)
-            HStack(spacing: 6) {
-                Text(installation.displayName).font(TypeRole.sans(13, .medium)).lineLimit(1)
-                switch copies {
-                case .identical(let count):
-                    Text("· \(count) identical copies").foregroundStyle(quiet).lineLimit(1).layoutPriority(-1)
-                        .help("The same name and the same files in \(count) folders.")
-                case .different(let count):
-                    Text("· \(count) versions").foregroundStyle(Palette.ink).lineLimit(1).layoutPriority(-1)
-                        .help("\(count) folders have a skill with this name, and their files differ. An agent may load another one than you think.")
-                case nil:
-                    EmptyView()
-                }
-                if !installation.frontmatter.problems.isEmpty {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 10))
-                        .foregroundStyle(quiet)
-                        .help(installation.frontmatter.problems.joined(separator: "\n"))
-                        .accessibilityLabel("Has validation problems")
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            DataText(source.text).truncationMode(.middle)
-                .foregroundStyle(source.known ? quiet : faint)
-                .frame(width: Column.source - 12, alignment: .leading)
-                .padding(.trailing, 12)
-            DataText(revision.text)
-                .foregroundStyle(revision.known ? quiet : faint)
-                .frame(width: Column.revision, alignment: .leading)
-            TickCount(installation.installedAgents.count, unit: installation.installedAgents.count == 1 ? "agent" : "agents")
-                .foregroundStyle(strong)
-                .frame(width: Column.agents, alignment: .leading)
-                .help(installation.installedAgents.map(\.displayName).joined(separator: ", "))
-            StatusBadge(status: status)
-                .frame(width: Column.status, alignment: .leading)
-        }
-        .foregroundStyle(strong)
-        .frame(height: 34)
-        .padding(.horizontal, 10)
-        .background(isSelected ? Tone.rest.background : Palette.ink.opacity(hovering ? 0.04 : 0),
-                    in: RoundedRectangle(cornerRadius: Radius.row, style: .circular))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private var source: (text: String, known: Bool) {
-        switch installation.provenance {
-        // The branch already names the source; the skill shows where in it the skill lives.
-        case .skillsLock(let source, _, let subpath, _, _): (subpath ?? source, true)
-        case .managed(let owner): (owner, true)
-        case .unknown:
-            if let link { (link.subpath.isEmpty ? "top level" : link.subpath, true) } else { ("not linked", false) }
-        }
-    }
-
-    private var revision: (text: String, known: Bool) {
-        if case .updateAvailable(let upstream) = status,
-           case .skillsLock(_, _, _, let baseline?, _) = installation.provenance {
-            return ("\(baseline.prefix(7)) → \(upstream.prefix(7))", true)
-        }
-        if let local = link?.localHash {
-            if case .differs(let upstream) = status { return ("\(local.prefix(7)) ≠ \(upstream.prefix(7))", true) }
-            return (String(local.prefix(7)), true)
-        }
-        return switch installation.provenance {
-        case .skillsLock(_, _, _, let baseline?, .modified(let local)):
-            ("\(baseline.prefix(7)) → \(local.prefix(7))", true)
-        case .skillsLock(_, _, _, let baseline?, _): (String(baseline.prefix(7)), true)
-        case .skillsLock: ("no baseline", false)
-        case .managed: ("set by the app", false)
-        case .unknown: ("no baseline", false)
-        }
-    }
-}
-
-private extension String {
-    var abbreviatingHome: String { (self as NSString).abbreviatingWithTildeInPath }
 }

@@ -88,13 +88,13 @@ struct UTF8Chunks {
 enum Shell {
     /// `script` is fixed text from this app. `arguments` become `$1…` in it.
     static func run(script: String, arguments: [String] = [], interactive: Bool = false, timeout: TimeInterval = 180,
-                    control: ShellControl = ShellControl(),
+                    directory: URL? = nil, control: ShellControl = ShellControl(),
                     onOutput: @escaping @Sendable (String) -> Void = { _ in }) async -> Int32 {
         await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = [interactive ? "-lic" : "-lc", script, "skillori"] + arguments
-            process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+            process.currentDirectoryURL = directory ?? FileManager.default.homeDirectoryForCurrentUser
             // Nothing can wait for typing: there is no keyboard behind this.
             process.standardInput = FileHandle.nullDevice
             var environment = ProcessInfo.processInfo.environment
