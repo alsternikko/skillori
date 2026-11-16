@@ -65,15 +65,55 @@ final class InventoryStore {
         Task {
             await rescan()
             await followLoginShell()
-            // While the app runs, ask again when the last answer has grown old.
+            // While the app runs, read again now and then, in case a change was not reported,
+            // and ask the sources again when the last answer has grown old.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(30 * 60))
+                await rescan()
                 await checkSources()
             }
         }
+        // After sleep the last answer may be hours old and the folders may have changed.
+        NotificationCenter.default.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
+                                               queue: .main, using: { [weak self] _ in
+            Task { @MainActor in
+                // The network is often not back the moment the Mac wakes.
+                try? await Task.sleep(for: .seconds(20))
+                await self?.rescan()
+                await self?.checkSources()
+            }
+        })
+    }
+
+    // MARK: Watching
+
+    @ObservationIgnored private lazy var watcher = FolderWatcher { [weak self] in
+        Task { @MainActor in await self?.rescan() }
+    }
+
+    /// The folders whose changes make the app read again: every folder that holds skills,
+    /// and the folder of the installer's lock file. Folders inside another watched one are
+    /// left out, since FSEvents reports changes in subfolders too.
+    private func watchFolders(of inventory: Inventory) {
+        guard ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_DIR"] == nil else { return }
+        var paths = inventory.roots.filter { $0.state == .found }
+            .map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path }
+        if let lock = inventory.lockFile {
+            paths.append(URL(fileURLWithPath: lock).deletingLastPathComponent().resolvingSymlinksInPath().path)
+        }
+        let sorted = Array(Set(paths)).sorted()
+        var kept: [String] = []
+        for path in sorted where !kept.contains(where: { path.hasPrefix($0 + "/") }) {
+            kept.append(path)
+        }
+        watcher.watch(kept)
     }
 
     var needsAttention: Bool { localChangeCount > 0 }
+
+    /// The latest attempt to ask the sources got no answer, so the statuses shown are older
+    /// than they look. Only meaningful while checks are on and something has a source.
+    var isStale: Bool { checksEnabled && trackedCount > 0 && lastProblem != nil && !isChecking }
 
     // MARK: Sources
 
@@ -134,9 +174,12 @@ final class InventoryStore {
             case .cannotCheck(let reason): return .cantCheck(reason)
             case nil: return .notChecked
             }
-        case .skillsLock(_, _, _, _, let local):
+        case .skillsLock(_, _, _, let baseline, let local):
             if case .hashFailed = local { return .checkFailed }
-            let state = reading(for: installation)?.state
+            var state = reading(for: installation)?.state
+            // Updated since the source was asked, for instance in Terminal: the installed
+            // baseline is now what the source had, so there is nothing new to fetch.
+            if case .updateAvailable(let upstream) = state, upstream == baseline { state = .upToDate }
             if isHeld(installation) {
                 if case .updateAvailable = state { return .heldBack(sourceMoved: true) }
                 return .heldBack(sourceMoved: false)
@@ -454,6 +497,7 @@ final class InventoryStore {
             result = await Task.detached(priority: .utility) { again.scan() }.value
         }
         inventory = result
+        watchFolders(of: result)
         Task { await checkSources() }
         // A read takes about 150 ms. Hold the "reading" state a little longer so it can be seen.
         let shown = Date().timeIntervalSince(started)

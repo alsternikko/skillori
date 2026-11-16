@@ -418,6 +418,24 @@ extension PanelModel {
                 hint: hint, hintEnabled: !busy)
         }
 
+        // The sources did not answer, so whatever the statuses say is from the last time they did.
+        if store.isStale, let reason = store.lastProblem {
+            var rows: [Row] = [.line(text: "Last attempt", data: reason.short.uppercased(), muted: true)]
+            if let last = store.lastCheck {
+                rows.append(.line(text: "Statuses shown are from", data: InventoryStore.stamp(last).uppercased(), muted: true))
+            }
+            rows += tail
+            return PanelModel(
+                tone: .attention, label: reason == .rateLimited ? "Asked to wait" : "No contact",
+                stamp: store.checkStamp, number: "\(tracked)", dimmed: true,
+                lead: tracked == 1 ? "source could not be asked" : "sources could not be asked",
+                note: store.lastCheck == nil ? "No status yet." : "The statuses are older than they look.",
+                rows: rows,
+                buttons: [Button(title: "Try again", prominent: true, command: .rescan),
+                          Button(title: "Library", prominent: false, command: .library)],
+                hint: hint, hintEnabled: !busy)
+        }
+
         var rows: [Row] = []
         if changed > 0 {
             rows.append(.line(text: "\(changed) changed on this Mac", data: "SINCE INSTALL", muted: false))
