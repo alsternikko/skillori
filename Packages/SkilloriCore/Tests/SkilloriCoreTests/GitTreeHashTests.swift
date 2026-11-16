@@ -71,3 +71,18 @@ import Testing
     }
 
 }
+
+@Suite struct ReadingCostTests {
+    @Test func readsFrontMatterWithoutTheWholeBody() throws {
+        let tree = try TempTree()
+        defer { tree.remove() }
+        let body = String(repeating: "Lots of body text.\n", count: 40_000) // ~760 kB, over the limit
+        let url = try tree.file("SKILL.md", "---\nname: big\ndescription: A long one\n---\n" + body)
+        let fm = SkillFrontmatter.parse(fileAt: url)
+        #expect(fm.name == "big")
+        #expect(fm.problems.isEmpty)
+        #expect(SkillFrontmatter.hasClosingLine(Data("---\nname: x\n---\n".utf8), from: 0))
+        #expect(!SkillFrontmatter.hasClosingLine(Data("---\nname: x\n----".utf8), from: 0))
+        #expect(!SkillFrontmatter.hasClosingLine(Data("---\n".utf8), from: 0))
+    }
+}

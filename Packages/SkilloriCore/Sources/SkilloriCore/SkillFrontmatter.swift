@@ -18,8 +18,39 @@ public struct SkillFrontmatter: Sendable, Equatable {
             return SkillFrontmatter(name: nil, description: nil, fields: [:], problems: ["Can't read SKILL.md"])
         }
         defer { try? handle.close() }
-        let data = (try? handle.read(upToCount: maxBytes)) ?? Data()
+        // Front matter sits at the top and is usually a few hundred bytes. Read in small pieces
+        // and stop once the closing line has arrived, instead of reading the whole body.
+        var data = Data()
+        while data.count < maxBytes {
+            guard let piece = try? handle.read(upToCount: min(chunk, maxBytes - data.count)), !piece.isEmpty else { break }
+            let searchFrom = max(data.count - 5, 0)
+            data.append(piece)
+            if hasClosingLine(data, from: searchFrom) { break }
+        }
         return parse(String(decoding: data, as: UTF8.self))
+    }
+
+    private static let chunk = 4096
+
+    /// Whether `data`, which starts with the opening `---`, has its closing `---` line yet.
+    /// Searches only from `start`, so each piece is looked at once.
+    static func hasClosingLine(_ data: Data, from start: Int) -> Bool {
+        let bytes = [UInt8]("\n---".utf8)
+        guard data.count >= 4 else { return false }
+        // The opening line itself must not count as the closing one.
+        let first = data.firstIndex(of: UInt8(ascii: "\n")).map { data.distance(from: data.startIndex, to: $0) } ?? data.count
+        var index = max(start, first)
+        while index + bytes.count <= data.count {
+            let at = data.index(data.startIndex, offsetBy: index)
+            if data[at..<data.index(at, offsetBy: bytes.count)].elementsEqual(bytes) {
+                // `---` and then the end of the line. At the end of what has been read, the next
+                // piece decides, so a longer line of dashes is not taken for the closing one.
+                let after = data.index(at, offsetBy: bytes.count)
+                if after != data.endIndex, data[after] == UInt8(ascii: "\n") || data[after] == UInt8(ascii: "\r") { return true }
+            }
+            index += 1
+        }
+        return false
     }
 
     public static func parse(_ text: String) -> SkillFrontmatter {

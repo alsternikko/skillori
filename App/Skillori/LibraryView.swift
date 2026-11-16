@@ -264,14 +264,22 @@ struct LibraryView: View {
                                                     trunk: !lastInSection,
                                                     isLast: installation.id == group.items.last?.id)
                                         .id(installation.id)
-                                        .onTapGesture(count: 2) {
-                                            selection = installation.id
-                                            showsDetail = true
-                                        }
+                                        // A single click selects at once; it does not wait to see
+                                        // whether a second click follows.
                                         .onTapGesture {
                                             groupCursor = nil
                                             selection = installation.id == selection ? nil : installation.id
                                             listFocused = true
+                                        }
+                                        .simultaneousGesture(TapGesture(count: 2).onEnded {
+                                            selection = installation.id
+                                            showsDetail = true
+                                        })
+                                        .accessibilityAddTraits(.isButton)
+                                        .accessibilityHint("Opens the skill's details")
+                                        .accessibilityAction {
+                                            selection = installation.id
+                                            showsDetail = true
                                         }
                                 }
                             }
@@ -656,7 +664,7 @@ private struct GroupRow: View {
             DataText(note)
                 .foregroundStyle(Palette.ink3)
                 .frame(width: Column.revision, alignment: .leading)
-            TickCount(group.agents.count)
+            TickCount(group.agents.count, unit: group.agents.count == 1 ? "agent" : "agents")
                 .frame(width: Column.agents, alignment: .leading)
                 .help(group.agents.sorted().map(\.displayName).joined(separator: ", "))
             chip.frame(width: Column.status, alignment: .leading)
@@ -778,7 +786,7 @@ private struct InstallationRow: View {
             DataText(revision.text)
                 .foregroundStyle(revision.known ? quiet : faint)
                 .frame(width: Column.revision, alignment: .leading)
-            TickCount(installation.installedAgents.count)
+            TickCount(installation.installedAgents.count, unit: installation.installedAgents.count == 1 ? "agent" : "agents")
                 .foregroundStyle(strong)
                 .frame(width: Column.agents, alignment: .leading)
                 .help(installation.installedAgents.map(\.displayName).joined(separator: ", "))

@@ -146,7 +146,8 @@ struct SettingsView: View {
             SettingRow {
                 Text("Appearance")
             } trailing: {
-                SegmentedChoice([(.system, "System"), (.light, "Light"), (.dark, "Dark")], selection: $appearance)
+                SegmentedChoice([(.system, "System"), (.light, "Light"), (.dark, "Dark")], selection: $appearance,
+                                label: "Appearance")
             }
             SettingRow(isLast: true) {
                 Text("First start")
@@ -164,15 +165,15 @@ struct SettingsView: View {
                 Text("Ask sources if a skill has changed")
             } trailing: {
                 SegmentedChoice([(false, "Off"), (true, "On")],
-                                selection: Binding(get: { store.checksEnabled }, set: { store.checksEnabled = $0 }))
-                    .accessibilityLabel("Ask sources if a skill has changed")
+                                selection: Binding(get: { store.checksEnabled }, set: { store.checksEnabled = $0 }),
+                                label: "Ask sources if a skill has changed")
             }
             SettingRow {
                 Text("Notify me about new updates")
             } trailing: {
                 SegmentedChoice([(false, "Off"), (true, "On")],
-                                selection: Binding(get: { notifies }, set: { notifies = $0; Notifier.shared.isEnabled = $0 }))
-                    .accessibilityLabel("Notify me about new updates")
+                                selection: Binding(get: { notifies }, set: { notifies = $0; Notifier.shared.isEnabled = $0 }),
+                                label: "Notify me about new updates")
                     .disabled(!store.checksEnabled)
             }
             VStack(alignment: .leading, spacing: 10) {
@@ -243,7 +244,8 @@ struct AppUpdatesCard: View {
                 } trailing: {
                     SegmentedChoice([(false, "Off"), (true, "On")],
                                     selection: Binding(get: { updates.checksAutomatically },
-                                                       set: { updates.checksAutomatically = $0 }))
+                                                       set: { updates.checksAutomatically = $0 }),
+                                    label: "Check for a new Skillori once a day")
                 }
             }
             status

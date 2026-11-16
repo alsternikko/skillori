@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -74,6 +75,9 @@ public struct LightField: View {
     @Environment(\.displayScale) private var displayScale
     /// The clock starts when the block appears. A long-lived clock would lose precision.
     @State private var start = Date()
+    /// Whether any part of the block's window can be seen. A closed panel or a library behind
+    /// other windows keeps its views, and without this the light would go on drawing there.
+    @State private var onScreen = true
 
     public init(_ ramp: LightRamp, radius: CGFloat = Radius.block, corners: RoundedCornerStyle = .circular,
                 phase: Double = 0, still: Bool = false, easedThroughout: Bool = false) {
@@ -87,7 +91,7 @@ public struct LightField: View {
 
     public var body: some View {
         let holds = reduceMotion || still
-        return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: holds)) { timeline in
+        return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: holds || !onScreen)) { timeline in
             GeometryReader { proxy in
                 let elapsed = holds ? 0 : timeline.date.timeIntervalSince(start)
                 Rectangle()
@@ -95,6 +99,7 @@ public struct LightField: View {
                     .clipShape(RoundedRectangle(cornerRadius: radius, style: corners))
             }
         }
+        .background(WindowVisibility(isVisible: $onScreen))
         .accessibilityHidden(true)
     }
 
@@ -146,6 +151,50 @@ public extension Tone {
             LightField(ramp, radius: radius, phase: phase)
         } else {
             RoundedRectangle(cornerRadius: radius, style: .circular).fill(background)
+        }
+    }
+}
+
+/// Reports whether the window a view sits in can be seen: on screen, ordered in, and not
+/// fully covered. Follows the window's occlusion state, which macOS updates as windows move.
+struct WindowVisibility: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeNSView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.onChange = { visible in
+            // Reported from AppKit; the binding is changed after the current update.
+            DispatchQueue.main.async { if isVisible != visible { isVisible = visible } }
+        }
+        return probe
+    }
+
+    func updateNSView(_ nsView: Probe, context: Context) {}
+
+    final class Probe: NSView {
+        var onChange: (Bool) -> Void = { _ in }
+        private weak var watched: NSWindow?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let center = NotificationCenter.default
+            if let watched {
+                center.removeObserver(self, name: NSWindow.didChangeOcclusionStateNotification, object: watched)
+                center.removeObserver(self, name: NSWindow.willCloseNotification, object: watched)
+            }
+            watched = window
+            guard let window else { onChange(false); return }
+            center.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: window)
+            center.addObserver(self, selector: #selector(windowWillClose), name: NSWindow.willCloseNotification, object: window)
+            onChange(window.occlusionState.contains(.visible))
+        }
+
+        @objc private func occlusionChanged() {
+            onChange(window?.occlusionState.contains(.visible) ?? false)
+        }
+
+        @objc private func windowWillClose() {
+            onChange(false)
         }
     }
 }
