@@ -162,3 +162,29 @@ private extension Result where Failure == UpstreamState.Reason {
         if case .failure(let reason) = self { reason } else { nil }
     }
 }
+
+@Suite struct FileChangeTests {
+    @Test func listsWhatAnUpdateWouldChangeWithRunnableFilesFirst() throws {
+        let tree = try TempTree()
+        defer { tree.remove() }
+        try tree.file("SKILL.md", "---\nname: x\n---\n")
+        try tree.file("notes.md", "old\n")
+        try tree.file("gone.txt", "bye\n")
+        try tree.file("run.sh", "echo\n")
+        let local = try GitTreeHash.hashDirectory(at: tree.root).entries
+        let ids = Dictionary(uniqueKeysWithValues: local.map { ($0.path, $0.objectID) })
+        let upstream = SourceTree(rootHash: "r", folders: [:], files: [
+            "skills/x/SKILL.md": SourceFile(id: ids["SKILL.md"]!, mode: "100644"),
+            "skills/x/notes.md": SourceFile(id: "different", mode: "100644"),
+            "skills/x/run.sh": SourceFile(id: ids["run.sh"]!, mode: "100755"),
+            "skills/x/scripts/new.py": SourceFile(id: "n", mode: "100644"),
+            "skills/other/SKILL.md": SourceFile(id: "o", mode: "100644"),
+        ])
+        let changes = FileChanges.compare(local: local, upstream: upstream, subpath: "skills/x")
+        #expect(changes.map(\.path) == ["run.sh", "scripts/new.py", "gone.txt", "notes.md"])
+        #expect(changes.first { $0.path == "run.sh" }?.modeOnly == true)
+        #expect(changes.first { $0.path == "scripts/new.py" }?.kind == .added)
+        #expect(changes.first { $0.path == "gone.txt" }?.kind == .removed)
+        #expect(changes.first { $0.path == "notes.md" }?.runnable == false)
+    }
+}

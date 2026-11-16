@@ -134,18 +134,90 @@ public struct SourceTree: Sendable, Equatable {
     public let skillFolders: [String]
     /// The source cut the listing short, so a missing folder proves nothing.
     public let truncated: Bool
+    /// Every file in the source, by path: its blob id and git mode (`100644`, `100755`, `120000`).
+    public let files: [String: SourceFile]
 
-    public init(rootHash: String, folders: [String: String], skillFolders: [String] = [], truncated: Bool = false) {
+    public init(rootHash: String, folders: [String: String], skillFolders: [String] = [], truncated: Bool = false,
+                files: [String: SourceFile] = [:]) {
         self.rootHash = rootHash
         self.folders = folders
         self.skillFolders = skillFolders
         self.truncated = truncated
+        self.files = files
     }
 
     /// The tree id of a folder; the empty string or nil is the top of the source.
     public func hash(of subpath: String?) -> String? {
         let path = (subpath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         return path.isEmpty ? rootHash : folders[path]
+    }
+}
+
+/// One file in a source: its git blob id and mode.
+public struct SourceFile: Sendable, Equatable {
+    public let id: String
+    public let mode: String
+
+    public init(id: String, mode: String) {
+        self.id = id
+        self.mode = mode
+    }
+}
+
+/// One file that an update would add, change or remove, told from file ids alone: nothing is
+/// downloaded or opened to say it.
+public struct FileChange: Sendable, Equatable, Identifiable {
+    public enum Kind: String, Sendable { case added, changed, removed }
+    public let path: String
+    public let kind: Kind
+    /// The file can be run: marked executable, or a script by its name.
+    public let runnable: Bool
+    /// Only the executable bit changed.
+    public let modeOnly: Bool
+    public var id: String { path }
+
+    /// File names that are programs, whatever their mode.
+    static let scriptExtensions: Set<String> = ["sh", "bash", "zsh", "fish", "py", "rb", "pl", "js", "mjs", "cjs",
+                                                "ts", "php", "ps1", "bat", "cmd", "applescript", "scpt", "swift", "go", "lua"]
+
+    static func isRunnable(path: String, executable: Bool) -> Bool {
+        executable || scriptExtensions.contains((path as NSString).pathExtension.lowercased())
+    }
+}
+
+public enum FileChanges {
+    /// What would change if the folder on this Mac were replaced by the folder in the source.
+    /// Runnable files come first, then by path.
+    public static func compare(local: [GitTreeHash.Entry], upstream tree: SourceTree, subpath: String?) -> [FileChange] {
+        let prefix = (subpath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        var remote: [String: SourceFile] = [:]
+        for (path, file) in tree.files {
+            if prefix.isEmpty { remote[path] = file }
+            else if path.hasPrefix(prefix + "/") { remote[String(path.dropFirst(prefix.count + 1))] = file }
+        }
+        var here: [String: GitTreeHash.Entry] = [:]
+        for entry in local where entry.kind != .directory { here[entry.path] = entry }
+
+        var changes: [FileChange] = []
+        for (path, file) in remote {
+            let executable = file.mode == "100755"
+            guard let mine = here[path] else {
+                changes.append(FileChange(path: path, kind: .added, runnable: FileChange.isRunnable(path: path, executable: executable), modeOnly: false))
+                continue
+            }
+            let sameContent = mine.objectID == file.id
+            let sameMode = (mine.kind == .executable) == executable && (mine.kind == .symlink) == (file.mode == "120000")
+            if !sameContent || !sameMode {
+                changes.append(FileChange(path: path, kind: .changed,
+                                          runnable: FileChange.isRunnable(path: path, executable: executable || mine.kind == .executable),
+                                          modeOnly: sameContent))
+            }
+        }
+        for (path, mine) in here where remote[path] == nil {
+            changes.append(FileChange(path: path, kind: .removed,
+                                      runnable: FileChange.isRunnable(path: path, executable: mine.kind == .executable), modeOnly: false))
+        }
+        return changes.sorted { a, b in a.runnable != b.runnable ? a.runnable : a.path < b.path }
     }
 }
 
@@ -264,7 +336,7 @@ public struct GitHubTrees: Sendable {
         default: return .failure(.failed)
         }
         struct Listing: Decodable {
-            struct Item: Decodable { let path: String; let type: String; let sha: String }
+            struct Item: Decodable { let path: String; let type: String; let sha: String; let mode: String? }
             let sha: String
             let tree: [Item]
             let truncated: Bool?
@@ -276,8 +348,10 @@ public struct GitHubTrees: Sendable {
             .filter { $0.type == "blob" && ($0.path == "SKILL.md" || $0.path.hasSuffix("/SKILL.md")) }
             .map { ($0.path as NSString).deletingLastPathComponent }
             .sorted()
+        let files = Dictionary(listing.tree.filter { $0.type == "blob" }.map { ($0.path, SourceFile(id: $0.sha, mode: $0.mode ?? "100644")) },
+                               uniquingKeysWith: { first, _ in first })
         return .success(SourceTree(rootHash: listing.sha, folders: folders, skillFolders: skillFolders,
-                                   truncated: listing.truncated ?? false))
+                                   truncated: listing.truncated ?? false, files: files))
     }
 }
 

@@ -17,6 +17,8 @@ struct InstallationDetail: View {
     var onLink: () -> Void = {}
     var onStep: (Int) -> Void = { _ in }
     @FocusState private var focused: Bool
+    /// The files the update would touch, once the source has been asked.
+    @State private var changes: Result<[FileChange], UpstreamState.Reason>?
 
     var body: some View {
         ScrollView {
@@ -41,6 +43,11 @@ struct InstallationDetail: View {
         .focusEffectDisabled()
         .focused($focused)
         .onAppear { focused = true }
+        .task(id: "\(installation.id)·\(status.word)") {
+            changes = nil
+            guard showsChanges else { return }
+            changes = await store.fileChanges(for: installation)
+        }
         .onKeyPress(.escape) { onBack(); return .handled }
         .onKeyPress(.leftArrow) { onStep(-1); return .handled }
         .onKeyPress(.rightArrow) { onStep(1); return .handled }
@@ -93,6 +100,9 @@ struct InstallationDetail: View {
                 // The update is a command; it is shown as one, with a button that runs it.
                 if case .updateAvailable = status {
                     CommandFrame(installations: [installation]).padding(.top, 12)
+                }
+                if showsChanges {
+                    ChangedFiles(changes: changes, tone: tone).padding(.top, 10)
                 }
                 // The actions sit in the block they act on, under a hairline.
                 tone.foreground.opacity(0.18).frame(height: 1).padding(.top, 14)
@@ -157,6 +167,14 @@ struct InstallationDetail: View {
     }
 
     private var status: SkillStatus { store.status(for: installation) }
+
+    /// The source has other files than this Mac: say which, before anything is run.
+    private var showsChanges: Bool {
+        switch status {
+        case .updateAvailable, .differs, .heldBack(sourceMoved: true): true
+        default: false
+        }
+    }
 
     private var tone: Tone { status.tone }
 
@@ -548,4 +566,66 @@ struct PathText: View {
 
 private extension String {
     var abbreviatedHome: String { (self as NSString).abbreviatingWithTildeInPath }
+}
+
+/// The files an update would add, change or remove, runnable ones first. Told from file ids,
+/// so nothing from the source is downloaded or opened to show it.
+private struct ChangedFiles: View {
+    let changes: Result<[FileChange], UpstreamState.Reason>?
+    let tone: Tone
+    private static let shown = 10
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            switch changes {
+            case nil:
+                LabelText("Asking the source which files differ…").foregroundStyle(tone.secondary)
+            case .failure(let reason)?:
+                LabelText("Files: \(reason.short)").foregroundStyle(tone.secondary)
+            case .success(let list)?:
+                let runnable = list.filter(\.runnable).count
+                HStack(spacing: 8) {
+                    LabelText(list.count == 1 ? "1 file differs" : "\(list.count) files differ")
+                    if runnable > 0 {
+                        LabelText("· \(runnable) can run").foregroundStyle(tone.foreground)
+                    }
+                }
+                .foregroundStyle(tone.secondary)
+                if runnable > 0 {
+                    Text("Read the files that can run before you update. An agent may run them with your rights.")
+                        .font(TypeRole.sans(12))
+                        .padding(.top, 4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(list.prefix(Self.shown)) { change in
+                        HStack(spacing: 8) {
+                            Text(mark(change.kind)).frame(width: 10)
+                            Text(change.path).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 8)
+                            if change.modeOnly { Text("MODE").foregroundStyle(tone.secondary) }
+                            if change.runnable { Text("RUNS") }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(change.kind.rawValue): \(change.path)\(change.runnable ? ", can run" : "")")
+                    }
+                    if list.count > Self.shown {
+                        Text("and \(list.count - Self.shown) more").foregroundStyle(tone.secondary)
+                    }
+                }
+                .font(TypeRole.mono(11))
+                .padding(.top, 8)
+                .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: 560, alignment: .leading)
+    }
+
+    private func mark(_ kind: FileChange.Kind) -> String {
+        switch kind {
+        case .added: "+"
+        case .changed: "~"
+        case .removed: "−"
+        }
+    }
 }

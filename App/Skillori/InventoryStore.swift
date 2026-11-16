@@ -430,6 +430,27 @@ final class InventoryStore {
         }
     }
 
+    // MARK: What an update changes
+
+    /// The files an update would add, change or remove, told by comparing file ids in the
+    /// source with the files on this Mac. Asks the source again, which GitHub answers from
+    /// its "unchanged" reply when nothing moved since the last check.
+    func fileChanges(for installation: Installation) async -> Result<[FileChange], UpstreamState.Reason> {
+        guard let source = upstreamSource(for: installation) else { return .failure(.unsupported) }
+        let subpath = sourceSubpath(for: installation)
+        let path = installation.canonicalPath
+        async let local = Task.detached(priority: .utility) {
+            try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).entries
+        }.value
+        switch await GitHubTrees(budget: .shared).tree(of: source) {
+        case .failure(let reason): return .failure(reason)
+        case .success(let tree):
+            guard let entries = await local else { return .failure(.failed) }
+            if tree.truncated, tree.hash(of: subpath) == nil { return .failure(.failed) }
+            return .success(FileChanges.compare(local: entries, upstream: tree, subpath: subpath))
+        }
+    }
+
     // MARK: Linking a source
 
     /// What a look at a source found for one skill.
