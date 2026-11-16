@@ -166,10 +166,10 @@ final class InventoryStore {
 
     func status(for installation: Installation) -> SkillStatus {
         switch installation.provenance {
-        case .managed(let owner):
+        case .managed:
             if checksEnabled, let plugin = installation.plugin,
                case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state {
-                return .ownerUpdate(owner: owner, upstream: upstream)
+                return .ownerUpdate(owner: plugin.app, upstream: upstream)
             }
             return .managed
         case .unknown:
@@ -309,7 +309,7 @@ final class InventoryStore {
             return Notifier.Found(key: key, source: upstreamSource(for: installation)?.name ?? "A source", upstream: upstream)
         } + pluginUpdates.compactMap { plugin -> Notifier.Found? in
             guard case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state else { return nil }
-            return Notifier.Found(key: "plugin:" + plugin.id, source: "Claude Code plugin \(plugin.name)", upstream: upstream)
+            return Notifier.Found(key: "plugin:" + plugin.id, source: "\(plugin.app) plugin \(plugin.name)", upstream: upstream)
         }
         Notifier.shared.updatesFound(found)
     }

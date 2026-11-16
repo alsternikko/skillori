@@ -100,7 +100,7 @@ enum SkillStatus: Equatable {
         case .checkFailed: "The files on this Mac could not be read for comparison."
         case .noSource: "Nothing on this Mac says where this came from."
         case .managed: "The app that owns it keeps it up to date."
-        case .ownerUpdate(let owner, _): "\(owner) has a newer version of this plugin. Update it in \(owner)."
+        case .ownerUpdate(let owner, _): "The plugin's source has a newer version. Update it in \(owner)."
         }
     }
 

@@ -81,7 +81,7 @@ if checkSources {
     let plugins = inventory.installations.compactMap(\.plugin).filter { seen.insert($0.id).inserted }
     var baselines: [String: String] = [:]
     let answers = await PluginChecker().check(plugins, baselines: &baselines)
-    print("\nClaude Code plugins asked: \(plugins.count)")
+    print("\nPlugins asked: \(plugins.count)")
     for plugin in plugins {
         let text: String
         switch answers[plugin.id] {
@@ -90,7 +90,10 @@ if checkSources {
         case .cannotCheck(let reason): text = "CAN'T CHECK · \(reason.rawValue)"
         case nil: text = "no answer"
         }
-        print("  \(plugin.id) [\(plugin.marketplaceRepository ?? "?") · installed \(plugin.commit?.prefix(7) ?? "?")] — \(text)")
+        let from = plugin.repository ?? plugin.marketplaceRepository ?? "no source"
+        let installed = plugin.version ?? plugin.commit.map { String($0.prefix(7)) } ?? "?"
+        let off = plugin.enabled == false ? " · turned off" : ""
+        print("  \(plugin.id) [\(from) · installed \(installed)\(off)] — \(text)")
     }
 }
 

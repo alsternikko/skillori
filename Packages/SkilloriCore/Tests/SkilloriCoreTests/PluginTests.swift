@@ -167,3 +167,108 @@ private actor Gauge {
     func enter() { now += 1; peak = max(peak, now) }
     func leave() { now -= 1 }
 }
+
+@Suite struct AppPluginTests {
+    private func makeHome() throws -> TempTree {
+        let home = try TempTree()
+        // Cursor: one plugin as a git checkout, one plain folder with a manifest.
+        let checkout = ".cursor/plugins/cache/cursor-public/vercel/3b472643cbb1a42479d99b0c9a1d27b8bc84aaa7"
+        try home.file("\(checkout)/.cursor-plugin/plugin.json", #"{"name":"vercel","version":"0.53.0","repository":"https://github.com/someone/else"}"#)
+        try home.file("\(checkout)/.git/config", "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = https://github.com/vercel/vercel-plugin.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n")
+        try home.file("\(checkout)/.git/HEAD", "3b472643cbb1a42479d99b0c9a1d27b8bc84aaa7\n")
+        try home.skill("\(checkout)/skills/deploy", name: "deploy")
+        try home.file(".cursor/plugins/cache/cursor-public/gmail/0dda7b576f7bc64af8285d29e6367c33b88c887b/.cursor-plugin/plugin.json",
+                      #"{"name":"gmail","version":"1.0.0","repository":"https://github.com/cursor/plugins"}"#)
+        // Codex: one from a remote marketplace, one from a local one, and the config.
+        try home.file(".codex/plugins/cache/openai-curated/slack/11c74d6b/.codex-plugin/plugin.json",
+                      #"{"name":"slack","version":"0.1.2","repository":"https://github.com/openai/plugins"}"#)
+        try home.file(".codex/plugins/cache/claude-cowork/finance/1.1.0/.codex-plugin/plugin.json",
+                      #"{"name":"finance","version":"1.1.0","repository":"https://github.com/anthropics/x"}"#)
+        try home.file(".codex/config.toml", """
+        model = "secret-is-not-read"
+        [marketplaces.claude-cowork]
+        source_type = "local"
+        [plugins."slack@openai-curated"]
+        enabled = false
+        [plugins."finance@claude-cowork"]
+        enabled = true
+        """)
+        return home
+    }
+
+    @Test func readsCursorCheckoutsAndManifests() throws {
+        let home = try makeHome()
+        defer { home.remove() }
+        let records = AppPlugins.records(of: AppPlugins.cursor, in: home.root.appendingPathComponent(".cursor"))
+        let vercel = records.first { $0.name == "vercel" }
+        // The checkout's remote wins over what the manifest claims.
+        #expect(vercel?.repository == "vercel/vercel-plugin")
+        #expect(vercel?.isCheckout == true)
+        #expect(vercel?.commit == "3b472643cbb1a42479d99b0c9a1d27b8bc84aaa7")
+        #expect(vercel?.version == "0.53.0")
+        #expect(vercel?.app == "Cursor")
+        let gmail = records.first { $0.name == "gmail" }
+        #expect(gmail?.repository == "cursor/plugins")
+        #expect(gmail?.isCheckout == false)
+    }
+
+    @Test func readsWhichCodexPluginsAreOnAndWhichMarketplacesAreLocal() throws {
+        let home = try makeHome()
+        defer { home.remove() }
+        let records = AppPlugins.records(of: AppPlugins.codex, in: home.root.appendingPathComponent(".codex"))
+        let slack = records.first { $0.name == "slack" }
+        #expect(slack?.enabled == false)
+        #expect(slack?.repository == "openai/plugins")
+        let finance = records.first { $0.name == "finance" }
+        #expect(finance?.enabled == true)
+        // A local marketplace ships with Codex: nothing to ask, whatever the manifest says.
+        #expect(finance?.repository == nil)
+    }
+
+    @Test func skillsInsideAPluginGetItsRecord() throws {
+        let home = try makeHome()
+        defer { home.remove() }
+        let skill = DiscoveryEngine(home: home.root).scan().installations.first { $0.displayName == "deploy" }
+        #expect(skill?.plugin?.id == "cursor:vercel@cursor-public")
+    }
+
+    @Test func comparesVersionsAsNumbers() {
+        #expect(PluginChecker.isNewer("0.10.0", than: "0.9.1"))
+        #expect(!PluginChecker.isNewer("0.1.15", than: "0.1.23"))
+        #expect(!PluginChecker.isNewer("1.0", than: "1.0.0"))
+        #expect(PluginChecker.isNewer("v2.0.0", than: "1.9.9"))
+        #expect(PluginChecker.isNewer("nightly", than: "beta"))
+    }
+
+    @Test func findsTheManifestInTheRepositoryAndComparesItsVersion() async throws {
+        let home = try makeHome()
+        defer { home.remove() }
+        let records = AppPlugins.records(of: AppPlugins.cursor, in: home.root.appendingPathComponent(".cursor"))
+            + AppPlugins.records(of: AppPlugins.codex, in: home.root.appendingPathComponent(".codex"))
+        let trees = GitHubTrees { request in
+            let url = request.url!
+            let files: [String] = url.path.contains("/vercel/vercel-plugin/")
+                ? [".cursor-plugin/plugin.json"]
+                : url.path.contains("/cursor/plugins/") ? ["plugins/gmail/.cursor-plugin/plugin.json", "plugins/drive/.cursor-plugin/plugin.json"]
+                : ["plugins/slack/.codex-plugin/plugin.json", "plugins/notion/.codex-plugin/plugin.json"]
+            let items = files.map { #"{"path":"\#($0)","type":"blob","sha":"x","mode":"100644"}"# }.joined(separator: ",")
+            let body = #"{"sha":"root","truncated":false,"tree":[\#(items)]}"#
+            return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:])!)
+        }
+        let fetched = Asked()
+        let checker = PluginChecker(trees: trees) { repository, path in
+            await fetched.add("\(repository)/\(path)")
+            let version = repository == "vercel/vercel-plugin" ? "0.55.1" : repository == "cursor/plugins" ? "1.0.0" : "0.1.7"
+            return .success(Data(#"{"version":"\#(version)"}"#.utf8))
+        }
+        var baselines: [String: String] = [:]
+        let answers = await checker.check(records, baselines: &baselines)
+        #expect(answers["cursor:vercel@cursor-public"] == .updateAvailable(upstreamHash: "0.55.1"))
+        #expect(answers["cursor:gmail@cursor-public"] == .upToDate)
+        #expect(answers["codex:slack@openai-curated"] == .updateAvailable(upstreamHash: "0.1.7"))
+        #expect(answers["codex:finance@claude-cowork"] == .cannotCheck(.unsupported))
+        let paths = await fetched.paths
+        #expect(paths.contains("cursor/plugins/plugins/gmail/.cursor-plugin/plugin.json"))
+        #expect(paths.contains("vercel/vercel-plugin/.cursor-plugin/plugin.json"))
+    }
+}
