@@ -33,6 +33,8 @@ struct Todo: Identifiable {
         case open(LibraryPage)
         case refresh
         case turnOnChecks
+        /// Puts text, such as commands to run in Terminal, on the clipboard.
+        case copy(String)
     }
 
     let id: String
@@ -50,6 +52,19 @@ struct Todo: Identifiable {
 
 @MainActor
 enum Assist {
+    /// The button on a Claude Code plugin line: Update, or what fits after a run that didn't.
+    static func pluginButton(_ runner: PluginUpdateRunner, _ plugins: [PluginRecord]) -> (String, Todo.Act) {
+        if runner.isRunning { return ("Updating…", .updatePlugins(plugins)) }
+        if Set(runner.ids) == Set(plugins.map(\.id)) {
+            switch runner.phase {
+            case .needsReview(let commands): return ("Copy commands", .copy(commands))
+            case .failed: return ("▶ Try again", .updatePlugins(plugins))
+            default: break
+            }
+        }
+        return ("▶ Update", .updatePlugins(plugins))
+    }
+
     /// What needs the reader now, most pressing first. Things that are merely unknown, such as
     /// a skill with no source, are not on it: they are fine as they are.
     static func todos(_ store: InventoryStore) -> [Todo] {
@@ -80,9 +95,10 @@ enum Assist {
             let list_ = names(plugins.map(\.title))
             if app == "Claude Code" {
                 let runner = store.pluginUpdater
+                let (button, act) = pluginButton(runner, plugins)
                 list.append(Todo(id: "plugins:" + app, app: app, title: "Update \(count) in Claude Code",
-                                 detail: list_ + ". Start a new Claude Code session afterwards to load them.",
-                                 button: runner.isRunning ? "Updating…" : "▶ Update", act: .updatePlugins(plugins),
+                                 detail: list_ + ". " + (runner.note(for: plugins) ?? "Start a new Claude Code session afterwards to load them."),
+                                 button: button, act: act,
                                  page: .app(app), busy: runner.isRunning, prominent: true))
             } else {
                 let has = appURL(app) != nil
@@ -443,6 +459,9 @@ struct TodoButton: View {
         case .open(let page): open(page)
         case .refresh: Task { await store.refresh() }
         case .turnOnChecks: store.checksEnabled = true
+        case .copy(let text):
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         }
     }
 

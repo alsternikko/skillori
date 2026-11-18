@@ -27,6 +27,9 @@ final class PluginUpdateRunner {
     /// The plugin ids of the current or latest run.
     private(set) var ids: [String] = []
     private(set) var output = ""
+    /// False from the start of a run until Skillori has read this Mac and asked again after it,
+    /// so a line still listed afterwards can say how the run went.
+    private(set) var settled = true
     private var control: ShellControl?
 
     var isRunning: Bool { phase == .running }
@@ -54,11 +57,28 @@ final class PluginUpdateRunner {
 
     func stop() { control?.stop() }
 
+    /// Called once Skillori has checked again after a run.
+    func markSettled() { settled = true }
+
+    /// How the latest run for exactly these plugins went, said for a line that is still
+    /// listed after it. Nil when there is nothing to say: no such run, or it is still going.
+    func note(for plugins: [PluginRecord]) -> String? {
+        guard !isRunning, Set(ids) == Set(plugins.map(\.id)) else { return nil }
+        switch phase {
+        case .idle, .running: return nil
+        case .succeeded:
+            return settled ? "Claude Code found nothing newer to install, so nothing changed." : "Updated. Checking again…"
+        case .needsReview: return "Claude Code wants your approval first. Run the commands in Terminal."
+        case .failed(let why): return "The update didn’t finish. " + why
+        }
+    }
+
     /// Updates these Claude Code plugins. True when every command went well.
     func run(_ plugins: [PluginRecord]) async -> Bool {
         guard !isRunning, !plugins.isEmpty else { return false }
         ids = plugins.map(\.id)
         output = ""
+        settled = false
         guard plugins.allSatisfy({ $0.app == "Claude Code" && Self.isSafeID($0.id) && Self.isSafeName($0.marketplace)
                                    && Self.scopes.contains($0.scope ?? "user") }) else {
             phase = .failed("This plugin's name or scope cannot be passed to a command.")

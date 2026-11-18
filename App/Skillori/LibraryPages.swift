@@ -163,11 +163,12 @@ struct SkillPage: View {
         case .ownerUpdate(let owner, _):
             guard let plugin = installation.plugin else { return nil }
             if owner == "Claude Code" {
-                let running = store.pluginUpdater.isRunning
+                let runner = store.pluginUpdater
+                let (button, act) = Assist.pluginButton(runner, [plugin])
                 return Advice(tone: .new, title: "\(plugin.title) has a newer version",
-                              text: "Skillori can run Claude Code’s update. Start a new Claude Code session afterwards.",
-                              todo: Todo(id: "plugin", app: nil, title: "", detail: "", button: running ? "Updating…" : "▶ Update",
-                                         act: .updatePlugins([plugin]), busy: running, prominent: true))
+                              text: runner.note(for: [plugin]) ?? "Skillori can run Claude Code’s update. Start a new Claude Code session afterwards.",
+                              todo: Todo(id: "plugin", app: nil, title: "", detail: "", button: button,
+                                         act: act, busy: runner.isRunning, prominent: true))
             }
             let has = Assist.appURL(owner) != nil
             return Advice(tone: .new, title: "\(plugin.title) has a newer version",
