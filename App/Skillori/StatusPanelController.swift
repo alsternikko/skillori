@@ -63,7 +63,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private func observeStore() {
         withObservationTracking {
             // A plate in the flat accent for what needs the reader or for something new at a source, plain otherwise.
-            let updates = store.checksEnabled ? store.updateCount + store.pluginUpdates.count : 0
+            let updates = store.checksEnabled ? store.updateCount + store.pluginUpdates.count + store.codexMoved.count : 0
             let state: SkilloriMark.MenuBarState = store.needsAttention ? .attention : updates > 0 ? .new
                 : store.isStale ? .stale : .rest
             statusItem.button?.image = SkilloriMark.menuBarImage(state)

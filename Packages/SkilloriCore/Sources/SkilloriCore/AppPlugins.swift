@@ -19,6 +19,10 @@ public enum AppPlugins {
     public static let cursor = App(name: "Cursor", idPrefix: "cursor:", folder: ".cursor", manifestPath: ".cursor-plugin/plugin.json")
     public static let codex = App(name: "Codex", idPrefix: "codex:", folder: ".codex", manifestPath: ".codex-plugin/plugin.json")
 
+    /// The file Codex leaves in the folder of a plugin it installed from its remote catalog,
+    /// next to the version folders.
+    static let remoteInstallMarker = ".codex-remote-plugin-install.json"
+
     /// The plugins of one app, found under `appFolder` (`~/.cursor`, or where `CODEX_HOME` points).
     public static func records(of app: App, in appFolder: URL) -> [PluginRecord] {
         let cache = appFolder.appendingPathComponent("plugins/cache")
@@ -46,9 +50,12 @@ public enum AppPlugins {
                     record.app = app.name
                     record.displayName = shown
                     // A marketplace kept as a local folder ships with the app and is updated with
-                    // it; there is no source to ask, whatever its manifests claim.
+                    // it; there is no source to ask, whatever its manifests claim. Nor is there for
+                    // a plugin Codex installed from its own remote catalog: Codex serves those, and
+                    // the repository a manifest names is not where Codex gets them.
                     let local = config.localMarketplaces.contains(marketplace.lastPathComponent)
-                    record.repository = local ? nil : checkout?.repository ?? claimed
+                    let remote = FileManager.default.fileExists(atPath: plugin.appendingPathComponent(Self.remoteInstallMarker).path)
+                    record.repository = local || remote ? nil : checkout?.repository ?? claimed
                     record.manifestPath = app.manifestPath
                     record.isCheckout = checkout != nil
                     record.enabled = config.enabled[key]

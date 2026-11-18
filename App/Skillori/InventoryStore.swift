@@ -26,6 +26,9 @@ final class InventoryStore {
     private(set) var pluginReadings: [String: UpstreamReading] = [:]
     /// Folder hashes at installed plugin commits. They never change, so each is asked for once.
     private var pluginBaselines: [String: String] = [:]
+    /// What Codex last said about which of its plugins it reads.
+    private(set) var codexPlugins: CodexPluginList?
+    private(set) var isAskingCodex = false
     private(set) var isChecking = false
     /// Set when a forced check was asked for while another was running.
     private var checkAgain = false
@@ -169,9 +172,14 @@ final class InventoryStore {
     func status(for installation: Installation) -> SkillStatus {
         switch installation.provenance {
         case .managed:
-            if checksEnabled, let plugin = installation.plugin,
-               case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state {
-                return .ownerUpdate(owner: plugin.app, upstream: upstream)
+            guard checksEnabled, let plugin = installation.plugin else { return .managed }
+            if plugin.app == "Codex", let codex = codexPlugins, codex.isLeftBehind(Self.codexKey(plugin)) {
+                return .leftBehind(owner: plugin.app, replacement: codex.replacement(for: Self.codexKey(plugin)))
+            }
+            if case .updateAvailable(let upstream) = pluginReadings[plugin.id]?.state, Self.isAhead(upstream, of: plugin) {
+                // Only Claude Code's update is one Skillori can run. Cursor and Codex bring theirs.
+                return plugin.app == "Claude Code" ? .ownerUpdate(owner: plugin.app, upstream: upstream)
+                    : .sourceAhead(owner: plugin.app, upstream: upstream)
             }
             return .managed
         case .unknown:
@@ -281,12 +289,67 @@ final class InventoryStore {
         return (inventory?.installations ?? []).compactMap(\.plugin).filter { seen.insert($0.id).inserted }
     }
 
-    /// Plugins whose marketplace has a newer version than the one installed.
+    /// Claude Code plugins whose marketplace has a newer version: the plugin updates Skillori can
+    /// run. Cursor and Codex bring new versions themselves, so theirs are not on this list.
     var pluginUpdates: [PluginRecord] {
         guard checksEnabled else { return [] }
         return pluginRecords.filter {
-            if case .updateAvailable = pluginReadings[$0.id]?.state { true } else { false }
+            guard $0.app == "Claude Code" else { return false }
+            if case .updateAvailable(let upstream) = pluginReadings[$0.id]?.state { return Self.isAhead(upstream, of: $0) }
+            return false
         }
+    }
+
+    /// Whether a newer version a source named is still ahead of the plugin on this Mac. An answer
+    /// saved before the app updated the plugin can name the very version now installed.
+    static func isAhead(_ upstream: String, of plugin: PluginRecord) -> Bool {
+        guard let installed = plugin.version, !installed.isEmpty, Assist.isVersion(upstream) else { return true }
+        return PluginChecker.isNewer(upstream, than: installed)
+    }
+
+    /// `name@marketplace`, the way Codex names a plugin.
+    nonisolated static func codexKey(_ plugin: PluginRecord) -> String {
+        plugin.id.hasPrefix("codex:") ? String(plugin.id.dropFirst("codex:".count)) : plugin.id
+    }
+
+    /// Codex plugins that Codex no longer reads and that its catalog offers anew, with the id to
+    /// add. Codex moved its curated plugins to a new catalog and left the old folders behind.
+    var codexMoved: [(plugin: PluginRecord, replacement: String)] {
+        guard checksEnabled, let codex = codexPlugins else { return [] }
+        return pluginRecords.filter { $0.app == "Codex" }.compactMap { plugin in
+            let key = Self.codexKey(plugin)
+            guard codex.isLeftBehind(key), let replacement = codex.replacement(for: key) else { return nil }
+            return (plugin, replacement)
+        }
+        .sorted { $0.plugin.title.localizedCaseInsensitiveCompare($1.plugin.title) == .orderedAscending }
+    }
+
+    /// Asks Codex which of its plugins it reads. Only while checks are on, since Codex may ask its
+    /// own catalog online to answer; and only when the Codex plugins on this Mac are not the ones
+    /// it was last asked about, that answer has grown old, or the reader asked for a check.
+    func askCodex(force: Bool = false) async {
+        guard checksEnabled, !usesSampleReadings, !isAskingCodex else { return }
+        let keys = Set(pluginRecords.filter { $0.app == "Codex" }.map(Self.codexKey))
+        guard !keys.isEmpty else { return }
+        if !force, let known = codexPlugins, known.asked == keys,
+           Date().timeIntervalSince(known.askedAt) < Self.checkInterval { return }
+        isAskingCodex = true
+        defer { isAskingCodex = false }
+        let home = environment["CODEX_HOME"]
+        guard let listed = await CodexApp.pluginList(names: [], available: false, codexHome: home) else { return }
+        var installed = listed.installed
+        var offered: [String: [String]] = [:]
+        let behind = keys.subtracting(installed)
+        if !behind.isEmpty {
+            // Only then is the catalog read: to find where Codex offers those plugins now.
+            let names = Set(behind.compactMap { $0.split(separator: "@").first.map(String.init) })
+            if let full = await CodexApp.pluginList(names: names, available: true, codexHome: home) {
+                installed = full.installed
+                offered = full.offered
+            }
+        }
+        codexPlugins = CodexPluginList(installed: installed, offered: offered, asked: keys, askedAt: Date())
+        save()
     }
 
     /// Runs the installer's update for these skills, then reads this Mac and asks the sources
@@ -440,6 +503,7 @@ final class InventoryStore {
         lastProblem = problem
         if answered { lastCheck = now }
         save()
+        await askCodex(force: force)
         notifyUpdates()
         if checkAgain {
             // This check started before something changed, such as an update. Ask again now;
@@ -545,6 +609,7 @@ final class InventoryStore {
         var links: [String: SourceLink]?
         var pluginReadings: [String: UpstreamReading]?
         var pluginBaselines: [String: String]?
+        var codexPlugins: CodexPluginList?
     }
 
     private static var savedURL: URL? {
@@ -561,13 +626,14 @@ final class InventoryStore {
         links = saved.links ?? [:]
         pluginReadings = saved.pluginReadings ?? [:]
         pluginBaselines = saved.pluginBaselines ?? [:]
+        codexPlugins = saved.codexPlugins
     }
 
     private func save() {
         guard !usesSampleReadings, let url = Self.savedURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
-                          pluginReadings: pluginReadings, pluginBaselines: pluginBaselines)
+                          pluginReadings: pluginReadings, pluginBaselines: pluginBaselines, codexPlugins: codexPlugins)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 
@@ -634,7 +700,11 @@ final class InventoryStore {
         AgentPresence.refresh(among: Array(Set(result.installations.flatMap(\.agents))))
         inventory = result
         watchFolders(of: result)
-        Task { await checkSources() }
+        Task {
+            await checkSources()
+            // A plugin added or removed in Codex since it was last asked: ask again.
+            await askCodex()
+        }
         // A read takes about 150 ms. Hold the "reading" state a little longer so it can be seen.
         let shown = Date().timeIntervalSince(started)
         if shown < Self.minimumScanDisplay {

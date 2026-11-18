@@ -28,7 +28,8 @@ struct Todo: Identifiable {
     enum Act {
         case updateSkills([Installation])
         case updatePlugins([PluginRecord])
-        case openApp(String)
+        /// Opens a link another app handles, such as Codex's page for one plugin.
+        case openURL(URL)
         case keepNewer([String])
         case open(LibraryPage)
         case refresh
@@ -87,26 +88,33 @@ enum Assist {
                              button: running ? "Updating…" : "▶ Update", act: .updateSkills(skills),
                              page: skills.count == 1 ? .skill(skills[0].id) : nil, busy: store.updater.isRunning, prominent: true))
         }
-        // Plugins, one line per app, each saying where the update is made.
-        let byApp = Dictionary(grouping: store.pluginUpdates, by: \.app)
-        for app in byApp.keys.sorted() {
-            let plugins = byApp[app]!.sorted { $0.title < $1.title }
-            let count = plugins.count == 1 ? "1 plugin" : "\(plugins.count) plugins"
-            let list_ = names(plugins.map(\.title))
-            if app == "Claude Code" {
-                let runner = store.pluginUpdater
-                let (button, act) = pluginButton(runner, plugins)
-                list.append(Todo(id: "plugins:" + app, app: app, title: "Update \(count) in Claude Code",
-                                 detail: list_ + ". " + (runner.note(for: plugins) ?? "Start a new Claude Code session afterwards to load them."),
-                                 button: button, act: act,
-                                 page: .app(app), busy: runner.isRunning, prominent: true))
-            } else {
-                let has = appURL(app) != nil
-                list.append(Todo(id: "plugins:" + app, app: app, title: "Update \(count) in \(app)",
-                                 detail: list_ + ". \(app) installs its own" + (has ? ": open it and choose Update." : "."),
-                                 button: has ? "Open \(app)" : "Show", act: has ? .openApp(app) : .open(.app(app)),
-                                 page: .app(app)))
-            }
+        // Claude Code plugins, which Skillori can update by running Claude Code's own update.
+        // Cursor and Codex bring new versions of their plugins themselves, so a newer version at
+        // a source is not something for the reader to do; it waits on the app's page.
+        let plugins = store.pluginUpdates.sorted { $0.title < $1.title }
+        if !plugins.isEmpty {
+            let runner = store.pluginUpdater
+            let (button, act) = pluginButton(runner, plugins)
+            list.append(Todo(id: "plugins:Claude Code", app: "Claude Code",
+                             title: "Update \(plugins.count == 1 ? "1 plugin" : "\(plugins.count) plugins") in Claude Code",
+                             detail: names(plugins.map(\.title)) + ". " + (runner.note(for: plugins) ?? "Start a new Claude Code session afterwards to load them."),
+                             button: button, act: act,
+                             page: .app("Claude Code"), busy: runner.isRunning, prominent: true))
+        }
+        // Codex plugins Codex stopped reading when it moved them to a new catalog. Adding one
+        // again happens in Codex, which may ask to sign in to the service, so the button opens
+        // the plugin's page there. Several open from the Codex page, one button per plugin.
+        let moved = store.codexMoved
+        if !moved.isEmpty {
+            let titles = moved.map(\.plugin.title)
+            let link = moved.count == 1 ? CodexApp.pluginLink(moved[0].replacement) : nil
+            list.append(Todo(id: "plugins:Codex", app: "Codex",
+                             title: moved.count == 1 ? "Codex no longer reads \(titles[0])" : "Codex no longer reads \(moved.count) plugins",
+                             detail: (moved.count == 1 ? "Codex moved it to its new catalog. Add it again there."
+                                      : names(titles) + ". Codex moved them to its new catalog. Add them again there."),
+                             button: link != nil ? "Open in Codex" : "Show",
+                             act: link.map { .openURL($0) } ?? .open(.app("Codex")),
+                             page: .app("Codex"), prominent: true))
         }
         // Changes made on this Mac, which an update would replace.
         let changed = (store.inventory?.installations ?? []).filter { store.status(for: $0) == .changedHere }
@@ -181,7 +189,8 @@ enum Assist {
 
     static func apps(_ store: InventoryStore) -> [AppSummary] {
         let managed = (store.inventory?.installations ?? []).filter(isManaged)
-        let updating = Set(store.pluginUpdates.map(\.id))
+        // The plugins that ask something of the reader.
+        let updating = Set(store.pluginUpdates.map(\.id) + store.codexMoved.map(\.plugin.id))
         return Dictionary(grouping: managed) { app(of: $0) }.map { name, items in
             var seen = Set<String>()
             let plugins = items.compactMap(\.plugin).filter { seen.insert($0.id).inserted }
@@ -229,25 +238,15 @@ enum Assist {
         }
     }
 
-    /// Where an app that updates its own plugins is installed.
-    static func appURL(_ app: String) -> URL? {
-        switch app {
-        case "Cursor": AgentPresence.appURL(for: .cursor)
-        case "Codex": AgentPresence.appURL(for: .codex)
-        default: nil
-        }
-    }
-
-    static func openApp(_ app: String) {
-        guard let url = appURL(app) else { return }
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-    }
-
-    /// "0.53.0 → 0.55.1", or "→ newer" when the source gives a tree id rather than a version.
-    static func versionStep(_ plugin: PluginRecord, latest state: UpstreamState?) -> String {
+    /// "0.53.0 → 0.55.1" for an update Skillori can run, or "→ newer" when the source gives a
+    /// tree id rather than a version. "4.0.1 · 5.1.0 at source" when the app brings it itself.
+    static func versionStep(_ plugin: PluginRecord, status: SkillStatus?) -> String {
         let installed = plugin.version ?? plugin.commit.map { String($0.prefix(7)) } ?? "?"
-        guard case .updateAvailable(let latest) = state else { return installed }
-        return installed + " → " + (isVersion(latest) ? latest : "newer")
+        switch status {
+        case .ownerUpdate(_, let latest)?: return installed + " → " + (isVersion(latest) ? latest : "newer")
+        case .sourceAhead(_, let latest)?: return installed + " · " + (isVersion(latest) ? latest + " at source" : "newer at source")
+        default: return installed
+        }
     }
 
     static func isVersion(_ text: String) -> Bool {
@@ -454,7 +453,7 @@ struct TodoButton: View {
         switch todo.act {
         case .updateSkills(let skills): Task { await store.update(skills) }
         case .updatePlugins(let plugins): Task { await store.updatePlugins(plugins) }
-        case .openApp(let app): Assist.openApp(app)
+        case .openURL(let url): NSWorkspace.shared.open(url)
         case .keepNewer: confirming = true
         case .open(let page): open(page)
         case .refresh: Task { await store.refresh() }
@@ -478,6 +477,9 @@ struct TodoLine: View {
     let todo: Todo
     /// The block it sits on; nil for a plain card.
     var tone: Tone?
+    /// The page the line is shown on. A button or click that would only lead here is left out:
+    /// the page itself has what the line points to.
+    var here: LibraryPage?
     var open: (LibraryPage) -> Void
     @State private var hovering = false
 
@@ -489,17 +491,23 @@ struct TodoLine: View {
                 Text(todo.detail).font(TypeRole.sans(12)).foregroundStyle(secondary).lineLimit(2)
             }
             Spacer(minLength: 12)
-            TodoButton(todo: todo, style: style, open: open)
+            if !leadsHere { TodoButton(todo: todo, style: style, open: open) }
         }
         .padding(.vertical, 12)
         .padding(.horizontal, tone == nil ? 12 : 0)
-        .background((tone == nil ? Palette.ink : (tone?.blockForeground ?? Palette.ink)).opacity(hovering && todo.page != nil ? 0.05 : 0),
+        .background((tone == nil ? Palette.ink : (tone?.blockForeground ?? Palette.ink)).opacity(hovering && page != nil ? 0.05 : 0),
                     in: RoundedRectangle(cornerRadius: Radius.row, style: .circular))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .onTapGesture { if let page = todo.page { open(page) } }
+        .onTapGesture { if let page { open(page) } }
         .accessibilityElement(children: .combine)
     }
+
+    private var leadsHere: Bool {
+        if case .open(let page) = todo.act, page == here { true } else { false }
+    }
+
+    private var page: LibraryPage? { todo.page == here ? nil : todo.page }
 
     private var secondary: Color { tone?.blockSecondary ?? Palette.ink2 }
 

@@ -160,20 +160,29 @@ struct SkillPage: View {
             extra.append(("Keep this version", false, { store.hold(installation) }))
             return Advice(tone: .new, title: "The source has other files than this copy",
                           text: "Open the source to see what changed, or keep this version as it is.", extra: extra)
-        case .ownerUpdate(let owner, _):
+        case .ownerUpdate:
             guard let plugin = installation.plugin else { return nil }
-            if owner == "Claude Code" {
-                let runner = store.pluginUpdater
-                let (button, act) = Assist.pluginButton(runner, [plugin])
-                return Advice(tone: .new, title: "\(plugin.title) has a newer version",
-                              text: runner.note(for: [plugin]) ?? "Skillori can run Claude Code’s update. Start a new Claude Code session afterwards.",
-                              todo: Todo(id: "plugin", app: nil, title: "", detail: "", button: button,
-                                         act: act, busy: runner.isRunning, prominent: true))
-            }
-            let has = Assist.appURL(owner) != nil
+            let runner = store.pluginUpdater
+            let (button, act) = Assist.pluginButton(runner, [plugin])
             return Advice(tone: .new, title: "\(plugin.title) has a newer version",
-                          text: "\(owner) installs its own plugins" + (has ? ": open it and choose Update." : "."),
-                          todo: has ? Todo(id: "open", app: nil, title: "", detail: "", button: "Open \(owner)", act: .openApp(owner), prominent: true) : nil)
+                          text: runner.note(for: [plugin]) ?? "Skillori can run Claude Code’s update. Start a new Claude Code session afterwards.",
+                          todo: Todo(id: "plugin", app: nil, title: "", detail: "", button: button,
+                                     act: act, busy: runner.isRunning, prominent: true))
+        case .sourceAhead(let owner, let upstream):
+            guard let plugin = installation.plugin else { return nil }
+            let version = Assist.isVersion(upstream) ? "Version \(upstream) is" : "A newer version is"
+            return Advice(tone: .rest, title: "\(version) at \(plugin.title)’s source",
+                          text: "\(owner) brings new versions of its plugins itself, once its own catalog has them. There is nothing to do here.")
+        case .leftBehind(let owner, let replacement):
+            guard let plugin = installation.plugin else { return nil }
+            if let replacement, let link = CodexApp.pluginLink(replacement) {
+                return Advice(tone: .attention, title: "\(owner) no longer reads \(plugin.title)",
+                              text: "\(owner) moved it to its new catalog and left this copy behind. Add it again there; \(owner) may ask you to sign in.",
+                              todo: Todo(id: "open", app: nil, title: "", detail: "", button: "Open in \(owner)",
+                                         act: .openURL(link), prominent: true))
+            }
+            return Advice(tone: .rest, title: "\(owner) no longer reads this copy",
+                          text: "It is from a catalog \(owner) no longer uses, so its skills are not loaded. \(owner) reads its plugins from where it installs them now.")
         case .changedHere:
             let url = URL(fileURLWithPath: installation.canonicalPath)
             return Advice(tone: .attention, title: "You changed this skill on this Mac",
@@ -229,7 +238,9 @@ struct SkillPage: View {
     }
 
     private var readByCard: some View {
-        let readers = Array(Set(copies.flatMap(\.installedAgents))).sorted()
+        var readers = Array(Set(copies.flatMap(\.installedAgents))).sorted()
+        // The app that left this plugin behind does not read it, whatever its folder suggests.
+        if case .leftBehind(let owner, _) = status, let agent = Assist.agent(forApp: owner) { readers.removeAll { $0 == agent } }
         let new = newest
         return PageCard(label: "Read by") {
             ForEach(readers.prefix(6), id: \.self) { agent in
@@ -257,10 +268,13 @@ struct SkillPage: View {
     @ViewBuilder private var sourceCard: some View {
         PageCard(label: "Source") {
             if let plugin = installation.plugin {
-                FactRow { Text("Kept current by \(app)") } value: { EmptyView() }
+                if case .leftBehind = status {
+                    FactRow { Text("Left behind by \(app)") } value: { EmptyView() }
+                } else {
+                    FactRow { Text("Kept current by \(app)") } value: { EmptyView() }
+                }
                 FactRow { Text(plugin.title) } value: {
-                    Text(Assist.versionStep(plugin, latest: store.checksEnabled ? store.pluginReadings[plugin.id]?.state : nil))
-                        .font(TypeRole.mono(11.5))
+                    Text(Assist.versionStep(plugin, status: status)).font(TypeRole.mono(11.5))
                 }
                 if let repo = plugin.repository ?? plugin.marketplaceRepository,
                    let url = URL(string: "https://github.com/\(repo)") {
@@ -346,14 +360,14 @@ struct AppPage: View {
                 VStack(spacing: 6) {
                     header(summary)
                     if let todo = Assist.todos(store).first(where: { $0.id == "plugins:" + app }) {
-                        TodoLine(todo: todo, tone: .new, open: open)
+                        TodoLine(todo: todo, tone: .new, here: .app(app), open: open)
                             .padding(.horizontal, 20).padding(.vertical, 6)
                             .foregroundStyle(Tone.new.blockForeground)
                             .background { Tone.new.blockBackground(phase: 3) }
                     }
                     VStack(spacing: 0) {
                         ForEach(branches(summary)) { branch in
-                            branchRow(branch)
+                            branchRow(branch, status: branch.items.first.map { store.status(for: $0) })
                             if expanded.contains(branch.id) {
                                 ForEach(branch.items) { installation in
                                     SkillLine(name: installation.displayName, description: installation.frontmatter.description, note: nil) {
@@ -388,10 +402,21 @@ struct AppPage: View {
     }
 
     private func sentence(_ summary: Assist.AppSummary) -> String {
-        let n = summary.installations.count
+        let statuses = Dictionary(summary.installations.map { ($0.plugin?.id ?? "", store.status(for: $0)) }) { a, _ in a }
+        func status(_ plugin: PluginRecord) -> SkillStatus? { statuses[plugin.id] }
+        let behind = summary.plugins.filter { if case .leftBehind = status($0) { true } else { false } }
+        let ahead = summary.plugins.filter { if case .sourceAhead = status($0) { true } else { false } }
+        let behindIDs = Set(behind.map(\.id))
+        // Skills of plugins the app no longer reads are not ones it keeps current.
+        let n = summary.installations.filter { !behindIDs.contains($0.plugin?.id ?? "") }.count
+        let plugins = summary.plugins.filter { !behindIDs.contains($0.id) }
         var text = "\(app) keeps \(n == 1 ? "this skill" : "these \(n) skills") current."
-        if summary.plugins.count == 1 { text += " They come with \(summary.plugins[0].title)." }
-        if summary.plugins.count > 1 { text += " They come in \(summary.plugins.count) plugins." }
+        if plugins.count == 1 { text += " They come with \(plugins[0].title)." }
+        if plugins.count > 1 { text += " They come in \(plugins.count) plugins." }
+        if ahead.count == 1 { text += " One has a newer version at its source; \(app) brings it once its catalog has it." }
+        if ahead.count > 1 { text += " \(ahead.count) have newer versions at their source; \(app) brings them once its catalog has them." }
+        if behind.count == 1 { text += " It no longer reads \(behind[0].title)." }
+        if behind.count > 1 { text += " It no longer reads \(behind.count) other plugins." }
         return text
     }
 
@@ -407,23 +432,30 @@ struct AppPage: View {
         plugin.manifestPath == nil ? plugin.marketplaceRepository != nil : plugin.repository != nil
     }
 
-    /// Plugins with an update first, then the others, then those nobody can ask about folded
-    /// into one line, then what the app ships itself.
+    /// Plugins that ask something of the reader first, then the others, then those nobody can
+    /// ask about folded into one line, then what the app ships itself.
     private func branches(_ summary: Assist.AppSummary?) -> [Branch] {
         guard let summary else { return [] }
         let updating = Set(summary.updates.map(\.id))
         let byPlugin = Dictionary(grouping: summary.installations) { $0.plugin?.id ?? "" }
+        // A plugin the app no longer reads comes before the others even when there is nothing
+        // to add: it is not one the app keeps current.
+        func isBehind(_ branch: Branch) -> Bool {
+            guard let item = branch.items.first, case .leftBehind = store.status(for: item) else { return false }
+            return true
+        }
         var plugins = summary.plugins.map { plugin in
             Branch(id: plugin.id, title: plugin.title, items: byPlugin[plugin.id] ?? [], plugin: plugin)
         }
         .sorted { a, b in
-            let x = updating.contains(a.id), y = updating.contains(b.id)
+            let x = updating.contains(a.id) || isBehind(a), y = updating.contains(b.id) || isBehind(b)
             if x != y { return x }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
-        let quiet = plugins.filter { !Self.isCheckable($0.plugin!) }
+        let quiet = plugins.filter { !Self.isCheckable($0.plugin!) && !isBehind($0) }
         if quiet.count > 1 {
-            plugins.removeAll { !Self.isCheckable($0.plugin!) }
+            let ids = Set(quiet.map(\.id))
+            plugins.removeAll { ids.contains($0.id) }
             plugins.append(Branch(id: "quiet", title: "\(quiet.count) plugins \(app) keeps current", items: quiet.flatMap(\.items)))
         }
         if let own = byPlugin[""], !own.isEmpty {
@@ -432,31 +464,45 @@ struct AppPage: View {
         return plugins
     }
 
-    private func branchRow(_ branch: Branch) -> some View {
-        let state = branch.plugin.flatMap { store.checksEnabled ? store.pluginReadings[$0.id]?.state : nil }
-        let update: Bool = { if case .updateAvailable = state { true } else { false } }()
-        return Button {
-            withAnimation(Motion.swap) {
-                if expanded.contains(branch.id) { expanded.remove(branch.id) } else { expanded.insert(branch.id) }
-            }
-        } label: {
-            HStack(spacing: 12) {
-                DataText(expanded.contains(branch.id) ? "−" : "+").foregroundStyle(Palette.ink2).frame(width: 14)
-                Text(branch.title).font(TypeRole.sans(13, .medium)).lineLimit(1)
-                Spacer(minLength: 12)
-                DataText(branch.items.count == 1 ? "1 skill" : "\(branch.items.count) skills").foregroundStyle(Palette.ink2)
-                    .frame(width: 90, alignment: .leading)
-                DataText(branch.plugin.map { Assist.versionStep($0, latest: state) } ?? "").foregroundStyle(Palette.ink2)
-                    .frame(width: 170, alignment: .leading)
-                Group {
-                    if update { StatusChip("Update", kind: .new) } else { Color.clear }
+    /// One plugin: its skills fold out on a click. What it asks of the reader sits at the end,
+    /// apart from the click that folds it out.
+    private func branchRow(_ branch: Branch, status: SkillStatus?) -> some View {
+        let status = branch.plugin == nil ? nil : status
+        return HStack(spacing: 12) {
+            Button {
+                withAnimation(Motion.swap) {
+                    if expanded.contains(branch.id) { expanded.remove(branch.id) } else { expanded.insert(branch.id) }
                 }
-                .frame(width: 70, alignment: .trailing)
+            } label: {
+                HStack(spacing: 12) {
+                    DataText(expanded.contains(branch.id) ? "−" : "+").foregroundStyle(Palette.ink2).frame(width: 14)
+                    Text(branch.title).font(TypeRole.sans(13, .medium)).lineLimit(1)
+                    Spacer(minLength: 12)
+                    DataText(branch.items.count == 1 ? "1 skill" : "\(branch.items.count) skills").foregroundStyle(Palette.ink2)
+                        .frame(width: 90, alignment: .leading)
+                    DataText(branch.plugin.map { Assist.versionStep($0, status: status) } ?? "").foregroundStyle(Palette.ink2)
+                        .lineLimit(1)
+                        .frame(width: 200, alignment: .leading)
+                }
+                .frame(height: 40)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 10)
-            .frame(height: 40)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            Group {
+                switch status {
+                case .ownerUpdate?: StatusChip("Update", kind: .new)
+                case .leftBehind(let owner, let replacement?)?:
+                    if let link = CodexApp.pluginLink(replacement) {
+                        Button("Open in \(owner)") { NSWorkspace.shared.open(link) }
+                            .buttonStyle(LitButtonStyle(prominent: true))
+                    }
+                case .leftBehind?: StatusChip("Not read", kind: .attention)
+                default: Color.clear.frame(height: 1)
+                }
+            }
+            // The same width on every row, so the columns line up whatever the row asks.
+            .frame(width: 124, alignment: .trailing)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
     }
 }

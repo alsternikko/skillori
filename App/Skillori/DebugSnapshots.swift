@@ -41,7 +41,7 @@ enum DebugSnapshots {
             while store.inventory == nil || store.isScanning { try? await Task.sleep(for: .milliseconds(100)) }
             // Give the source answers (sample ones in pictures) a moment to land.
             try? await Task.sleep(for: .milliseconds(400))
-            while store.isChecking { try? await Task.sleep(for: .milliseconds(100)) }
+            while store.isChecking || store.isAskingCodex { try? await Task.sleep(for: .milliseconds(100)) }
             let out = URL(fileURLWithPath: dir)
             let states: [(String, PanelModel?, ColorScheme)] = [
                 ("panel-live", nil, .light), ("panel-live-dark", nil, .dark),
