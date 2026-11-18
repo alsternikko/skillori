@@ -163,8 +163,10 @@ public enum ClaudePlugins {
 
 /// Asks whether an installed Claude Code plugin has a newer version than the one installed.
 ///
-/// - A plugin in its marketplace's own repository is compared folder by folder: the folder at
-///   the installed commit against the same folder now. Equal tree ids mean identical content.
+/// - A plugin in its marketplace's own repository that gives a version is compared by version,
+///   as Claude Code does: new files under the same version are not something it will install.
+/// - One without a version is compared folder by folder: the folder at the installed commit
+///   against the same folder now. Equal tree ids mean identical content.
 /// - A plugin the marketplace pins to a commit of another repository is compared by that pin,
 ///   read from the marketplace's current `marketplace.json`.
 /// - Anything else is "can't check": a newer commit somewhere is not proof of a newer plugin.
@@ -312,6 +314,12 @@ public struct PluginChecker: Sendable {
                 }
                 answers[record.id] = commit == pinned ? .upToDate : .updateAvailable(upstreamHash: pinned)
             case .inMarketplace(let path):
+                // Claude Code installs by version when the plugin has one: changed files under the
+                // same version are "already at the latest version" to it, so they are not an update.
+                if let latest = await versionNow(of: record, at: path, in: repository, manifest: manifest) {
+                    answers[record.id] = Self.isNewer(latest, than: record.version ?? "") ? .updateAvailable(upstreamHash: latest) : .upToDate
+                    continue
+                }
                 guard let commit = record.commit, let parts = UpstreamSource(source: repository, sourceURL: nil) else {
                     answers[record.id] = .cannotCheck(.noBaseline)
                     continue
@@ -344,5 +352,30 @@ public struct PluginChecker: Sendable {
             }
         }
         return answers
+    }
+
+    /// The version Claude Code would install now for a plugin in its marketplace's repository,
+    /// when the installed one has a version of its own. Nil when Claude Code goes by commit
+    /// instead (no version anywhere, so it records the commit) or the version can't be read.
+    /// The plugin's own `plugin.json` wins over the marketplace entry, as it does for Claude Code.
+    private func versionNow(of record: PluginRecord, at path: String, in repository: String,
+                            manifest: [String: Any]) async -> String? {
+        guard let installed = record.version, !installed.isEmpty,
+              !Self.isCommit(installed, of: record.commit) else { return nil }
+        let file = (path.isEmpty ? "" : path + "/") + ".claude-plugin/plugin.json"
+        if case .success(let data) = await fetchFile(repository, file),
+           let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let version = object["version"] as? String, !version.isEmpty {
+            return version
+        }
+        return ClaudePlugins.version(of: record.name, inMarketplace: manifest).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Whether a recorded version is really the commit it was installed from, which is what
+    /// Claude Code writes when a plugin gives no version.
+    static func isCommit(_ version: String, of commit: String?) -> Bool {
+        let lower = version.lowercased()
+        if let commit, lower.count >= 7, commit.lowercased().hasPrefix(lower) { return true }
+        return lower.count >= 7 && lower.allSatisfy(\.isHexDigit) && lower.contains(where: \.isLetter)
     }
 }

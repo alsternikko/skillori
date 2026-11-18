@@ -92,6 +92,44 @@ import Testing
         #expect(await asked.paths.filter { $0.hasSuffix("/trees/old") }.count == 1)
     }
 
+    /// A plugin at the top of its marketplace's repository with a version, like FLORA's: new
+    /// commits under the same version are "already at the latest version" to Claude Code.
+    @Test func aVersionedPluginInItsMarketplaceGoesByVersion() async throws {
+        let home = try TempTree()
+        defer { home.remove() }
+        try home.file(".claude/plugins/installed_plugins.json", """
+        {"version":2,"plugins":{
+          "kit@kit":[{"scope":"user","installPath":"\(home.root.path)/.claude/plugins/cache/kit/kit/0.11.5","version":"0.11.5","gitCommitSha":"ed201f195ccb8b26bea450ee6a9fefa7614a0318"}],
+          "bare@kit":[{"scope":"user","installPath":"\(home.root.path)/.claude/plugins/cache/kit/bare/ed201f195ccb","version":"ed201f195ccb","gitCommitSha":"ed201f195ccb8b26bea450ee6a9fefa7614a0318"}]
+        }}
+        """)
+        try home.file(".claude/plugins/known_marketplaces.json", """
+        {"kit":{"source":{"source":"github","repo":"acme/kit"},"installLocation":"\(home.root.path)/.claude/plugins/marketplaces/kit"}}
+        """)
+        let manifest = #"{"name":"kit","plugins":[{"name":"kit","source":"./","version":"0.11.5"},{"name":"bare","source":"./bare"}]}"#
+        try home.file(".claude/plugins/marketplaces/kit/.claude-plugin/marketplace.json", manifest)
+        let records = ClaudePlugins.records(in: home.root.appendingPathComponent(".claude/plugins"))
+        let trees = GitHubTrees { request in
+            let url = request.url!
+            let old = url.path.hasSuffix("/trees/ed201f195ccb8b26bea450ee6a9fefa7614a0318")
+            let body = #"{"sha":"\#(old ? "r-old" : "r-new")","truncated":false,"tree":[{"path":"bare","type":"tree","sha":"\#(old ? "b-old" : "b-new")"}]}"#
+            return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: [:])!)
+        }
+        func check(pluginJSON: String) async -> [String: UpstreamState] {
+            let checker = PluginChecker(trees: trees) { _, path in
+                path == ".claude-plugin/plugin.json" ? .success(Data(pluginJSON.utf8)) : .success(Data(manifest.utf8))
+            }
+            var baselines: [String: String] = [:]
+            return await checker.check(records, baselines: &baselines)
+        }
+        let same = await check(pluginJSON: #"{"name":"kit","version":"0.11.5"}"#)
+        #expect(same["kit@kit"] == .upToDate)
+        // Without a version Claude Code records the commit, so the files decide.
+        #expect(same["bare@kit"] == .updateAvailable(upstreamHash: "b-new"))
+        let newer = await check(pluginJSON: #"{"name":"kit","version":"0.11.6"}"#)
+        #expect(newer["kit@kit"] == .updateAvailable(upstreamHash: "0.11.6"))
+    }
+
     @Test func aPluginTheMarketplaceDroppedIsNotCalledCurrent() async throws {
         let home = try makePlugins()
         defer { home.remove() }

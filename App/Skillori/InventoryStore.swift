@@ -311,6 +311,7 @@ final class InventoryStore {
         default: break
         }
         await refresh()
+        pluginUpdater.markSettled()
     }
 
     /// Hands the current updates to the notifier, which tells only about the new ones.
