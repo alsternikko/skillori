@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.4</title>
-      <pubDate>Wed, 18 Nov 2026 21:40:35 +0000</pubDate>
-      <sparkle:version>9</sparkle:version>
-      <sparkle:shortVersionString>0.2.4</sparkle:shortVersionString>
+      <title>Skillori 0.2.5</title>
+      <pubDate>Wed, 18 Nov 2026 23:33:36 +0000</pubDate>
+      <sparkle:version>10</sparkle:version>
+      <sparkle:shortVersionString>0.2.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.4</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Update no longer promises what it can’t deliver. Skillori now reads a Claude Code plugin’s version the way Claude Code does, so new files under the same version aren’t called an update. And when an update ends without changing anything, the line tells you why instead of quietly saying Update again.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.5</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Things for you now only lists what Skillori can actually do. Newer Cursor plugin versions are shown on Cursor's page as information, and Codex plugins that Codex stopped reading after moving them to a new catalog can be added again with one click.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="V6LIgwZiuu2TmCgCc51fteVrAh4JD8a3hUKFKkwLybreLbKKxSHmG0EKO8SCO5j5QSwF/0J222poOcTWFJQACg==" length="4949986"/>
+                 sparkle:edSignature="EU5kXIUnNGtx3iVaC0xUwZnx4UrbDAP8NTbn4XCCMEpMg2OUSD26xRJjweDgRs/ryNGVyfBL4N7B3IacpLkaCA==" length="5030477"/>
     </item>
   </channel>
 </rss>
