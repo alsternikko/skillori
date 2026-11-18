@@ -176,14 +176,19 @@ extension LibraryView {
             Assist.mine(store).first { $0.name.lowercased() == name.lowercased() }?.primary
         }
         let plugin = all.first { if case .ownerUpdate = store.status(for: $0) { true } else { false } }
+        let ahead = all.first { if case .sourceAhead = store.status(for: $0) { true } else { false } }
+        let behind = all.first { if case .leftBehind = store.status(for: $0) { true } else { false } }
         var list: [(String, LibraryView)] = [
             ("library", LibraryView()),
             ("library-mine", LibraryView(path: [.mine])),
             ("library-apps", LibraryView(path: [.apps])),
             ("library-app-cursor", LibraryView(path: [.apps, .app("Cursor")])),
+            ("library-app-codex", LibraryView(path: [.apps, .app("Codex")])),
             ("library-app-claude-code", LibraryView(path: [.apps, .app("Claude Code")])),
             ("library-folders", LibraryView(path: [.folders])),
         ]
+        if let ahead { list.append(("library-skill-source-ahead", LibraryView(path: [.apps, .app(Assist.app(of: ahead)), .skill(ahead.id)]))) }
+        if let behind { list.append(("library-skill-left-behind", LibraryView(path: [.apps, .app(Assist.app(of: behind)), .skill(behind.id)]))) }
         if let tracked {
             list.append(("library-skill", LibraryView(path: [.mine, .skill(tracked.id)])))
             list.append(("library-details", LibraryView(path: [.mine, .skill(tracked.id), .details(tracked.id)])))

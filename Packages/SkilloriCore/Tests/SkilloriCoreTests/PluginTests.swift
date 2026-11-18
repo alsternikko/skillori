@@ -223,6 +223,11 @@ private actor Gauge {
                       #"{"name":"slack","version":"0.1.2","repository":"https://github.com/openai/plugins"}"#)
         try home.file(".codex/plugins/cache/claude-cowork/finance/1.1.0/.codex-plugin/plugin.json",
                       #"{"name":"finance","version":"1.1.0","repository":"https://github.com/anthropics/x"}"#)
+        // Installed from Codex's remote catalog: Codex serves it, whatever the manifest names.
+        try home.file(".codex/plugins/cache/openai-curated-remote/gmail/0.1.10/.codex-plugin/plugin.json",
+                      #"{"name":"gmail","version":"0.1.10","repository":"https://github.com/openai/plugins"}"#)
+        try home.file(".codex/plugins/cache/openai-curated-remote/gmail/.codex-remote-plugin-install.json",
+                      #"{"schema_version":1,"remote_plugin_id":"plugin_connector_x"}"#)
         try home.file(".codex/config.toml", """
         model = "secret-is-not-read"
         [marketplaces.claude-cowork]
@@ -262,6 +267,53 @@ private actor Gauge {
         #expect(finance?.enabled == true)
         // A local marketplace ships with Codex: nothing to ask, whatever the manifest says.
         #expect(finance?.repository == nil)
+        // Nor is there for one from Codex's remote catalog.
+        let gmail = records.first { $0.name == "gmail" }
+        #expect(gmail?.repository == nil)
+        #expect(gmail?.version == "0.1.10")
+        // Every plugin folder counts, also one that brings no skill files, such as a remote plugin.
+        try home.file(".codex/plugins/cache/openai-curated-remote/calendar/1.2.7/.app.json", "{}")
+        #expect(AppPlugins.cacheFolders(in: home.root.appendingPathComponent(".codex"))
+                == ["slack@openai-curated", "finance@claude-cowork", "gmail@openai-curated-remote", "calendar@openai-curated-remote"])
+    }
+
+    @Test func readsWhichPluginsCodexCountsAsInstalled() throws {
+        // What `codex plugin list --json --available` prints, in miniature, after a line a login shell printed.
+        let output = """
+        Last login: today
+        {"installed":[
+          {"pluginId":"gmail@openai-curated-remote","name":"gmail","marketplaceName":"openai-curated-remote","version":"0.1.10","installed":true},
+          {"pluginId":"finance@claude-cowork","name":"finance","marketplaceName":"claude-cowork","version":"1.1.0","installed":true}
+        ],"available":[
+          {"pluginId":"slack@openai-curated-remote","name":"slack","version":"0.1.8","installed":false},
+          {"pluginId":"slack-lists@openai-curated-remote","name":"slack-lists","version":"1.0.0","installed":false},
+          {"pluginId":"calendar@one","name":"calendar","installed":false},
+          {"pluginId":"calendar@two","name":"calendar","installed":false}
+        ]}
+        """
+        let parsed = try #require(CodexPluginList.parse(output, names: ["slack", "gmail", "calendar"]))
+        #expect(parsed.installed == ["gmail@openai-curated-remote", "finance@claude-cowork"])
+        #expect(parsed.offered["slack"] == ["slack@openai-curated-remote"])
+        #expect(parsed.offered["slack-lists"] == nil)
+        #expect(CodexPluginList.parse("command not found: codex", names: []) == nil)
+
+        let list = CodexPluginList(installed: parsed.installed, offered: parsed.offered,
+                                   asked: ["slack@openai-curated", "gmail@openai-curated-remote", "gmail@openai-curated",
+                                           "calendar@old"],
+                                   askedAt: Date())
+        // The folder from the old catalog is left behind, and the new catalog has the plugin.
+        #expect(list.isLeftBehind("slack@openai-curated"))
+        #expect(list.replacement(for: "slack@openai-curated") == "slack@openai-curated-remote")
+        // Codex already has the new one installed: the old folder is left behind, with nothing to add.
+        #expect(list.isLeftBehind("gmail@openai-curated"))
+        #expect(list.replacement(for: "gmail@openai-curated") == nil)
+        #expect(list.installedReplacement(for: "gmail@openai-curated") == "gmail@openai-curated-remote")
+        #expect(list.installedReplacement(for: "slack@openai-curated") == nil)
+        #expect(!list.isLeftBehind("gmail@openai-curated-remote"))
+        // Two other catalogs offer the name and neither is plainly its new home: no guess.
+        #expect(list.replacement(for: "calendar@old") == nil)
+        // A plugin that arrived after Codex was asked is not judged.
+        #expect(!list.isLeftBehind("notion@openai-curated-remote"))
     }
 
     @Test func skillsInsideAPluginGetItsRecord() throws {

@@ -231,7 +231,7 @@ public struct PluginChecker: Sendable {
 
     /// Whether version `a` comes after `b`. Dotted numbers are compared as numbers
     /// (`0.10.0` after `0.9.1`); anything else counts as newer only when it differs.
-    static func isNewer(_ a: String, than b: String) -> Bool {
+    public static func isNewer(_ a: String, than b: String) -> Bool {
         func parts(_ text: String) -> [Int]? {
             let core = text.split(separator: "-", maxSplits: 1).first.map(String.init) ?? text
             let numbers = core.trimmingCharacters(in: CharacterSet(charactersIn: "v")).split(separator: ".").map { Int($0) }

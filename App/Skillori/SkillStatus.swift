@@ -24,13 +24,19 @@ enum SkillStatus: Equatable {
     case checkFailed
     case noSource
     case managed
-    /// Owned by an app (a Claude Code plugin) whose source has a newer version. Updated there, not here.
+    /// A Claude Code plugin whose marketplace has a newer version. Skillori can run Claude Code's update.
     case ownerUpdate(owner: String, upstream: String)
+    /// A Cursor or Codex plugin whose source has a newer version than the one installed. The app
+    /// brings new versions itself, once its own catalog has them, so there is nothing to do.
+    case sourceAhead(owner: String, upstream: String)
+    /// A plugin folder the app no longer reads: Codex does not count it as installed. `replacement`
+    /// is the plugin id Codex offers it under now, when Codex has not added that one yet.
+    case leftBehind(owner: String, replacement: String?)
 
     /// Owned by an app, whatever its source says.
     var isManaged: Bool {
         switch self {
-        case .managed, .ownerUpdate: true
+        case .managed, .ownerUpdate, .sourceAhead, .leftBehind: true
         default: false
         }
     }
@@ -48,6 +54,8 @@ enum SkillStatus: Equatable {
         case .noSource: "No source"
         case .managed: "Managed"
         case .ownerUpdate: "Plugin update"
+        case .sourceAhead: "Newer at source"
+        case .leftBehind: "Not read"
         }
     }
 
@@ -62,17 +70,18 @@ enum SkillStatus: Equatable {
         case .cantCheck, .checkFailed: "✕"
         case .notChecked: "○"
         case .noSource: "◌"
-        case .managed: "■"
+        case .managed, .sourceAhead: "■"
         case .ownerUpdate: "▲"
+        case .leftBehind: "◌"
         }
     }
 
     var chipKind: StatusChip.Kind {
         switch self {
         case .updateAvailable, .differs, .ownerUpdate: .new
-        case .changedHere, .checkFailed: .attention
+        case .changedHere, .checkFailed, .leftBehind: .attention
         case .cantCheck, .notChecked, .noSource: .outline
-        case .heldBack, .upToDate, .managed: .neutral
+        case .heldBack, .upToDate, .managed, .sourceAhead: .neutral
         }
     }
 
@@ -80,9 +89,9 @@ enum SkillStatus: Equatable {
     var tone: Tone {
         switch self {
         case .updateAvailable, .differs, .ownerUpdate: .new
-        case .changedHere, .checkFailed: .attention
+        case .changedHere, .checkFailed, .leftBehind: .attention
         case .upToDate, .heldBack: .rest
-        case .cantCheck, .notChecked, .noSource, .managed: .quiet
+        case .cantCheck, .notChecked, .noSource, .managed, .sourceAhead: .quiet
         }
     }
 
@@ -100,7 +109,9 @@ enum SkillStatus: Equatable {
         case .checkFailed: "The files on this Mac could not be read for comparison."
         case .noSource: "Nothing on this Mac says where this came from."
         case .managed: "The app that owns it keeps it up to date."
-        case .ownerUpdate(let owner, _): "The plugin's source has a newer version. Update it in \(owner)."
+        case .ownerUpdate(let owner, _): "The plugin's marketplace has a newer version. Skillori can run \(owner)’s update."
+        case .sourceAhead(let owner, _): "The plugin's source has a newer version. \(owner) brings it once its catalog has it."
+        case .leftBehind(let owner, _): "\(owner) no longer reads this plugin, so its skills are not loaded."
         }
     }
 

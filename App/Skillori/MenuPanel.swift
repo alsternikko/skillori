@@ -347,12 +347,16 @@ extension PanelModel {
         var tail: [Row] = []
         let pluginUpdates = store.pluginUpdates
         if !pluginUpdates.isEmpty {
-            // Each app updates its own plugins; Skillori only says that it can.
-            let text = pluginUpdates.count == 1 ? "\(pluginUpdates[0].name) has a plugin update"
+            // Claude Code plugins, which the library can update.
+            let text = pluginUpdates.count == 1 ? "\(pluginUpdates[0].title) has a plugin update"
                 : "\(pluginUpdates.count) plugins have updates"
-            let apps = Set(pluginUpdates.map(\.app))
-            // The library opens on its list of what to do, which says where each update is made.
-            tail.append(.link(text: text + (apps.count == 1 ? " in \(apps.first!)" : ""), label: "Show", command: .library))
+            tail.append(.link(text: text + " in Claude Code", label: "Show", command: .library))
+        }
+        let moved = store.codexMoved
+        if !moved.isEmpty {
+            // Codex plugins Codex no longer reads; the library opens each one's page in Codex.
+            let text = moved.count == 1 ? "Codex no longer reads \(moved[0].plugin.title)" : "Codex no longer reads \(moved.count) plugins"
+            tail.append(.link(text: text, label: "Show", command: .library))
         }
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
