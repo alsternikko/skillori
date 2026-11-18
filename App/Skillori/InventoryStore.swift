@@ -42,6 +42,8 @@ final class InventoryStore {
     let updater = UpdateRunner()
     /// Runs Claude Code's update for its plugins when the reader asks for it.
     let pluginUpdater = PluginUpdateRunner()
+    /// Adds Codex plugins again from Codex's current catalog when the reader asks for it.
+    let codexRunner = CodexPluginRunner()
     /// Asking sources is the reader's choice and is off until they turn it on.
     var checksEnabled: Bool {
         didSet {
@@ -307,6 +309,14 @@ final class InventoryStore {
         return PluginChecker.isNewer(upstream, than: installed)
     }
 
+    /// For a Codex plugin Codex left behind: the id it has the plugin installed under now, when
+    /// it has added it again from its new catalog. The old folder is then only left over.
+    func codexReplacement(of plugin: PluginRecord) -> String? {
+        guard plugin.app == "Codex", let codex = codexPlugins else { return nil }
+        let key = Self.codexKey(plugin)
+        return codex.isLeftBehind(key) ? codex.installedReplacement(for: key) : nil
+    }
+
     /// `name@marketplace`, the way Codex names a plugin.
     nonisolated static func codexKey(_ plugin: PluginRecord) -> String {
         plugin.id.hasPrefix("codex:") ? String(plugin.id.dropFirst("codex:".count)) : plugin.id
@@ -324,6 +334,15 @@ final class InventoryStore {
         .sorted { $0.plugin.title.localizedCaseInsensitiveCompare($1.plugin.title) == .orderedAscending }
     }
 
+    /// Adds these plugins again from Codex's current catalog, then reads this Mac and asks Codex
+    /// again, so the lines show what is true afterwards.
+    func addCodexPlugins(_ ids: [String]) async {
+        guard !ids.isEmpty, !codexRunner.isRunning else { return }
+        _ = await codexRunner.run(ids, codexHome: environment["CODEX_HOME"])
+        await rescan()
+        await askCodex(force: true)
+    }
+
     /// Asks Codex which of its plugins it reads. Only while checks are on, since Codex may ask its
     /// own catalog online to answer; and only when the Codex plugins on this Mac are not the ones
     /// it was last asked about, that answer has grown old, or the reader asked for a check.
@@ -331,7 +350,10 @@ final class InventoryStore {
         guard checksEnabled, !usesSampleReadings, !isAskingCodex else { return }
         let keys = Set(pluginRecords.filter { $0.app == "Codex" }.map(Self.codexKey))
         guard !keys.isEmpty else { return }
-        if !force, let known = codexPlugins, known.asked == keys,
+        let codexFolder = environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+        let folders = await Task.detached(priority: .utility) { AppPlugins.cacheFolders(in: codexFolder) }.value
+        if !force, let known = codexPlugins, known.asked == keys, known.folders == folders,
            Date().timeIntervalSince(known.askedAt) < Self.checkInterval { return }
         isAskingCodex = true
         defer { isAskingCodex = false }
@@ -348,7 +370,7 @@ final class InventoryStore {
                 offered = full.offered
             }
         }
-        codexPlugins = CodexPluginList(installed: installed, offered: offered, asked: keys, askedAt: Date())
+        codexPlugins = CodexPluginList(installed: installed, offered: offered, asked: keys, askedAt: Date(), folders: folders)
         save()
     }
 

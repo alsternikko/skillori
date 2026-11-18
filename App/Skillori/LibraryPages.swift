@@ -175,11 +175,13 @@ struct SkillPage: View {
                           text: "\(owner) brings new versions of its plugins itself, once its own catalog has them. There is nothing to do here.")
         case .leftBehind(let owner, let replacement):
             guard let plugin = installation.plugin else { return nil }
-            if let replacement, let link = CodexApp.pluginLink(replacement) {
-                return Advice(tone: .attention, title: "\(owner) no longer reads \(plugin.title)",
-                              text: "\(owner) moved it to its new catalog and left this copy behind. Add it again there; \(owner) may ask you to sign in.",
-                              todo: Todo(id: "open", app: nil, title: "", detail: "", button: "Open in \(owner)",
-                                         act: .openURL(link), prominent: true))
+            if let replacement {
+                let todo = Assist.codexTodo(store, [(plugin, replacement)])
+                return Advice(tone: .attention, title: todo.title, text: todo.detail, todo: todo)
+            }
+            if store.codexReplacement(of: plugin) != nil {
+                return Advice(tone: .rest, title: "\(owner) has \(plugin.title) from its new catalog",
+                              text: "This copy is left over from the old catalog, and \(owner) does not load it. Nothing needs doing.")
             }
             return Advice(tone: .rest, title: "\(owner) no longer reads this copy",
                           text: "It is from a catalog \(owner) no longer uses, so its skills are not loaded. \(owner) reads its plugins from where it installs them now.")
@@ -491,12 +493,13 @@ struct AppPage: View {
             Group {
                 switch status {
                 case .ownerUpdate?: StatusChip("Update", kind: .new)
-                case .leftBehind(let owner, let replacement?)?:
-                    if let link = CodexApp.pluginLink(replacement) {
-                        Button("Open in \(owner)") { NSWorkspace.shared.open(link) }
-                            .buttonStyle(LitButtonStyle(prominent: true))
+                // The line above the list adds them again; each row says what is wrong.
+                case .leftBehind?:
+                    if let plugin = branch.plugin, store.codexReplacement(of: plugin) != nil {
+                        StatusChip("Left over", kind: .neutral)
+                    } else {
+                        StatusChip("Not read", kind: .attention)
                     }
-                case .leftBehind?: StatusChip("Not read", kind: .attention)
                 default: Color.clear.frame(height: 1)
                 }
             }

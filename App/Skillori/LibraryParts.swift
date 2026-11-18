@@ -28,8 +28,8 @@ struct Todo: Identifiable {
     enum Act {
         case updateSkills([Installation])
         case updatePlugins([PluginRecord])
-        /// Opens a link another app handles, such as Codex's page for one plugin.
-        case openURL(URL)
+        /// Adds Codex plugins again from Codex's current catalog, by their ids there.
+        case addCodexPlugins([String])
         case keepNewer([String])
         case open(LibraryPage)
         case refresh
@@ -101,20 +101,11 @@ enum Assist {
                              button: button, act: act,
                              page: .app("Claude Code"), busy: runner.isRunning, prominent: true))
         }
-        // Codex plugins Codex stopped reading when it moved them to a new catalog. Adding one
-        // again happens in Codex, which may ask to sign in to the service, so the button opens
-        // the plugin's page there. Several open from the Codex page, one button per plugin.
+        // Codex plugins Codex stopped reading when it moved them to a new catalog. Skillori can
+        // add them again from there by running Codex's own `codex plugin add`.
         let moved = store.codexMoved
         if !moved.isEmpty {
-            let titles = moved.map(\.plugin.title)
-            let link = moved.count == 1 ? CodexApp.pluginLink(moved[0].replacement) : nil
-            list.append(Todo(id: "plugins:Codex", app: "Codex",
-                             title: moved.count == 1 ? "Codex no longer reads \(titles[0])" : "Codex no longer reads \(moved.count) plugins",
-                             detail: (moved.count == 1 ? "Codex moved it to its new catalog. Add it again there."
-                                      : names(titles) + ". Codex moved them to its new catalog. Add them again there."),
-                             button: link != nil ? "Open in Codex" : "Show",
-                             act: link.map { .openURL($0) } ?? .open(.app("Codex")),
-                             page: .app("Codex"), prominent: true))
+            list.append(codexTodo(store, moved))
         }
         // Changes made on this Mac, which an update would replace.
         let changed = (store.inventory?.installations ?? []).filter { store.status(for: $0) == .changedHere }
@@ -140,6 +131,23 @@ enum Assist {
                              button: "Try again", act: .refresh))
         }
         return list
+    }
+
+    /// The line for Codex plugins Codex no longer reads: what happened, and the button that adds
+    /// them again. Also used on the Codex page and, for one plugin, on its skills' pages.
+    static func codexTodo(_ store: InventoryStore, _ moved: [(plugin: PluginRecord, replacement: String)]) -> Todo {
+        let runner = store.codexRunner
+        let ids = moved.map(\.replacement)
+        let titles = moved.map(\.plugin.title)
+        let failed: Bool = { if case .failed = runner.phase, Set(runner.ids) == Set(ids) { true } else { false } }()
+        let running = runner.isRunning && Set(runner.ids) == Set(ids)
+        let why = moved.count == 1 ? "Codex moved it to a new catalog and no longer reads this copy. "
+            : names(titles) + ". Codex moved them to a new catalog and no longer reads these copies. "
+        return Todo(id: "plugins:Codex", app: "Codex",
+                    title: moved.count == 1 ? "Codex no longer reads \(titles[0])" : "Codex no longer reads \(moved.count) plugins",
+                    detail: runner.note(for: ids) ?? why + "Codex may ask you to sign in to the service the first time you use \(moved.count == 1 ? "it" : "them").",
+                    button: running ? "Adding…" : failed ? "▶ Try again" : "▶ Add again",
+                    act: .addCodexPlugins(ids), page: .app("Codex"), busy: runner.isRunning, prominent: true)
     }
 
     // MARK: The reader's own skills
@@ -453,7 +461,7 @@ struct TodoButton: View {
         switch todo.act {
         case .updateSkills(let skills): Task { await store.update(skills) }
         case .updatePlugins(let plugins): Task { await store.updatePlugins(plugins) }
-        case .openURL(let url): NSWorkspace.shared.open(url)
+        case .addCodexPlugins(let ids): Task { await store.addCodexPlugins(ids) }
         case .keepNewer: confirming = true
         case .open(let page): open(page)
         case .refresh: Task { await store.refresh() }

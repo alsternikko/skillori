@@ -66,6 +66,14 @@ public enum AppPlugins {
         return records
     }
 
+    /// `plugin@marketplace` for every plugin folder in an app's cache, with or without skills.
+    public static func cacheFolders(in appFolder: URL) -> Set<String> {
+        let cache = appFolder.appendingPathComponent("plugins/cache")
+        return Set(folders(in: cache).flatMap { marketplace in
+            folders(in: marketplace).map { "\($0.lastPathComponent)@\(marketplace.lastPathComponent)" }
+        })
+    }
+
     /// `owner/repo` from a GitHub address, with or without `.git`. Nil for anything else.
     static func repositoryName(_ text: String) -> String? {
         UpstreamSource(source: "", sourceURL: text).map(\.name)

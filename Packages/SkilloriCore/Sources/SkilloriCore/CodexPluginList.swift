@@ -15,12 +15,23 @@ public struct CodexPluginList: Sendable, Codable, Equatable {
     /// arrived after that is not judged by this answer.
     public var asked: Set<String>
     public var askedAt: Date
+    /// Every plugin folder in Codex's cache when Codex was asked, skills or not. A plugin from
+    /// the remote catalog may bring no skill files, so only this shows that one was added.
+    public var folders: Set<String>?
 
-    public init(installed: Set<String>, offered: [String: [String]], asked: Set<String>, askedAt: Date) {
+    public init(installed: Set<String>, offered: [String: [String]], asked: Set<String>, askedAt: Date,
+                folders: Set<String>? = nil) {
         self.installed = installed
         self.offered = offered
         self.asked = asked
         self.askedAt = askedAt
+        self.folders = folders
+    }
+
+    /// The id Codex has this left-behind plugin installed under now, if it has added it again.
+    public func installedReplacement(for key: String) -> String? {
+        guard let name = key.split(separator: "@", maxSplits: 1).first.map(String.init) else { return nil }
+        return (offered[name] ?? []).first { $0 != key && installed.contains($0) }
     }
 
     /// Codex was asked about this plugin and does not count it as installed.

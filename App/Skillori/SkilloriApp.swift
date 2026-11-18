@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         store.updater.stop()
         store.pluginUpdater.stop()
+        store.codexRunner.stop()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
