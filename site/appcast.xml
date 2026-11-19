@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.6</title>
-      <pubDate>Thu, 19 Nov 2026 07:12:48 +0000</pubDate>
-      <sparkle:version>11</sparkle:version>
-      <sparkle:shortVersionString>0.2.6</sparkle:shortVersionString>
+      <title>Skillori 0.2.7</title>
+      <pubDate>Thu, 19 Nov 2026 09:52:23 +0000</pubDate>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>0.2.7</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.6</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skillori can now open when you log in. Turn on Open at login under General in Settings; macOS keeps the choice, so it also shows under Login Items in System Settings.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.7</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>A skill that its author shares as an install script on their own site can now be linked as its source. Paste the script's address, or the whole curl command, under Link…; Skillori reads which files the script would write, without running it, and tells you when they change.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="ZSVmot5Bp0sxsEj9ItX8+YSeEscpdcXM2Iz6WUXBxsGm2VNxBYiz1Z3ZLyBm8sZhRP4EvXbt8ty4hdm+bYb2Cg==" length="5044710"/>
+                 sparkle:edSignature="8J+KpN3Xs9tcF9Cjm+zGrTFNLuwyzXTOMD47/tgiq0aoTYR3asEyVEkBvh7vVpR4A0BMbHZ2iRfFOlwygVv9Ag==" length="5091298"/>
     </item>
   </channel>
 </rss>
