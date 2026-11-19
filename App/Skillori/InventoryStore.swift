@@ -634,6 +634,77 @@ final class InventoryStore {
         save()
     }
 
+    // MARK: Finding sources
+
+    /// Skills of yours with no installer record and no link, as one group per name and content:
+    /// identical copies in several folders are found and linked together.
+    struct UnlinkedGroup: Identifiable {
+        let name: String
+        let installations: [Installation]
+        let local: LocalSkill?
+        var id: String { name + "#" + (local?.treeID ?? installations.map(\.canonicalPath).joined()) }
+    }
+
+    func unlinkedGroups() async -> [UnlinkedGroup] {
+        let unlinked = own.filter { $0.provenance == .unknown && link(for: $0) == nil }
+        let read = await Task.detached(priority: .utility) {
+            unlinked.map { installation in
+                (installation, try? LocalSkill(name: installation.directoryName, folder: URL(fileURLWithPath: installation.canonicalPath)))
+            }
+        }.value
+        var groups: [String: UnlinkedGroup] = [:]
+        var order: [String] = []
+        for (installation, local) in read {
+            let key = installation.directoryName.lowercased() + "#" + (local?.treeID ?? installation.canonicalPath)
+            if let group = groups[key] {
+                groups[key] = UnlinkedGroup(name: group.name, installations: group.installations + [installation], local: group.local)
+            } else {
+                groups[key] = UnlinkedGroup(name: installation.directoryName, installations: [installation], local: local)
+                order.append(key)
+            }
+        }
+        return order.compactMap { groups[$0] }.sorted { $0.name.lowercased() < $1.name.lowercased() }
+    }
+
+    /// The repositories other skills on this Mac come from: likely places for the rest.
+    var yourSources: [UpstreamSource] {
+        var seen: [UpstreamSource] = []
+        for installation in own {
+            if case .github(let source)? = upstreamSource(for: installation) {
+                let bare = UpstreamSource(owner: source.owner, repository: source.repository)
+                if !seen.contains(bare) { seen.append(bare) }
+            }
+        }
+        return seen
+    }
+
+    /// Looks for one group's source. A direct action by the reader, so it runs whether or not
+    /// regular checks are on. Sends skill and repository names, nothing else.
+    func proposals(for group: UnlinkedGroup) async -> SourceFinder.Search {
+        guard let local = group.local else { return SourceFinder.Search(proposals: [], problem: nil) }
+        return await SourceFinder().search(for: local, yourSources: yourSources)
+    }
+
+    /// Links every copy in the group to the proposed folder, with how it was found.
+    func link(_ group: UnlinkedGroup, to proposal: SourceProposal) {
+        let now = Date()
+        let state: UpstreamState = if proposal.folderGone {
+            .cannotCheck(.folderGone)
+        } else if let upstream = proposal.upstreamHash, upstream != group.local?.treeID {
+            .updateAvailable(upstreamHash: upstream)
+        } else {
+            .upToDate
+        }
+        for installation in group.installations where installation.provenance == .unknown {
+            let key = Self.linkKey(for: installation)
+            links[key] = SourceLink(owner: proposal.source.owner, repository: proposal.source.repository, ref: nil,
+                                    subpath: proposal.subpath, linkedAt: now, localHash: group.local?.treeID,
+                                    note: proposal.sentence)
+            readings[key] = UpstreamReading(state: state, checkedAt: now)
+        }
+        save()
+    }
+
     func unlink(_ installation: Installation) {
         let key = Self.linkKey(for: installation)
         links[key] = nil
@@ -707,6 +778,11 @@ final class InventoryStore {
 
     /// Skills with a source that can be asked: recorded by the installer, or linked by the reader.
     var trackedCount: Int { own.filter { sourceKey(for: $0) != nil }.count }
+    /// Skills with no source, counting identical-name copies once.
+    var unknownNameCount: Int {
+        Set(own.filter { $0.provenance == .unknown && link(for: $0) == nil }.map { $0.directoryName.lowercased() }).count
+    }
+
     var unknownCount: Int { own.filter { $0.provenance == .unknown && link(for: $0) == nil }.count }
     var managedCount: Int { count { if case .managed = $0 { true } else { false } } }
     var localChangeCount: Int {

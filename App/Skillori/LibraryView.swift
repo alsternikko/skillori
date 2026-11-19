@@ -12,6 +12,7 @@ struct LibraryView: View {
     @State private var path: [LibraryPage]
     @State private var search = ""
     @State private var linking: Installation?
+    @State private var findingSources = false
 
     init(path: [LibraryPage] = []) {
         _path = State(initialValue: path)
@@ -37,6 +38,9 @@ struct LibraryView: View {
         .sheet(item: $linking) { installation in
             LinkSourceSheet(installation: installation).environment(store)
         }
+        .sheet(isPresented: $findingSources) {
+            FindSourcesSheet().environment(store)
+        }
     }
 
     // MARK: Pages
@@ -56,6 +60,7 @@ struct LibraryView: View {
         case .mine:
             VStack(spacing: 6) {
                 Crumb(title: backTitle, action: back)
+                if store.unknownCount > 0 { findSourcesCard }
                 ListCard { MySkillsList(open: open) }
             }
         case .apps:
@@ -66,6 +71,24 @@ struct LibraryView: View {
         default:
             LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 })
         }
+    }
+
+    /// Above your skills while some have no known source: one line and the way to find them.
+    private var findSourcesCard: some View {
+        let count = store.unknownNameCount
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(count == 1 ? "One skill has no known source" : "\(Assist.spelled(count).capitalized) skills have no known source")
+                    .font(TypeRole.sans(13, .medium))
+                Text("Skillori can look for where they came from and link them, so it can tell you when they change.")
+                    .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
+            }
+            Spacer(minLength: 12)
+            Button("Find sources…") { findingSources = true }
+                .buttonStyle(PillButtonStyle(prominent: true))
+        }
+        .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
     }
 
     // MARK: Home

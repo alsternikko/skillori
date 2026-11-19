@@ -263,6 +263,12 @@ struct InstallationDetail: View {
                     }
                     PlateRow("Path in source") { value(link.subpath.isEmpty ? "top level" : link.subpath) }
                     PlateRow("Linked") { value(InventoryStore.stamp(link.linkedAt), faint: "by you") }
+                    if let note = link.note {
+                        PlateRow("Found by") {
+                            Text(note).font(TypeRole.sans(12)).foregroundStyle(Palette.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     PlateRow("Local copy") {
                         value(link.localHash.map { String($0.prefix(8)) } ?? "could not be read", faint: "tree hash")
                     }

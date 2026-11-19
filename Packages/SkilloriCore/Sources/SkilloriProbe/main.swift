@@ -97,6 +97,30 @@ if checkSources {
     }
 }
 
+// With --find-sources it looks for where each skill with no known source came from.
+if CommandLine.arguments.contains("--find-sources") {
+    let finder = SourceFinder()
+    var yours: [UpstreamSource] = []
+    for inst in inventory.installations {
+        if case .skillsLock(let source, let url, _, _, _) = inst.provenance,
+           let parsed = UpstreamSource(source: source, sourceURL: url, sourceType: inst.sourceType), !yours.contains(parsed) {
+            yours.append(parsed)
+        }
+    }
+    print("\nFinding sources (your sources: \(yours.map(\.name).joined(separator: ", ")))")
+    var done: Set<String> = []
+    for inst in inventory.installations where inst.provenance == .unknown {
+        guard let skill = try? LocalSkill(name: inst.directoryName, folder: URL(fileURLWithPath: inst.canonicalPath)),
+              done.insert(inst.directoryName + skill.treeID).inserted else { continue }
+        let found = await finder.proposals(for: skill, yourSources: yours)
+        print("  \(inst.directoryName) · local \(skill.treeID.prefix(7))")
+        if found.isEmpty { print("    nothing found") }
+        for proposal in found {
+            print("    \(proposal.evidence) · \(proposal.source.name)/\(proposal.subpath)\(proposal.rewritten ? " · Codex rewrite undone" : "")\(proposal.folderGone ? " · gone from source" : "") · via \(proposal.via)")
+        }
+    }
+}
+
 if let findSource {
     print("\nLooking for \(findSource.skill) in \(findSource.repository)")
     guard let (source, _) = SkillSource.parse(findSource.repository) else { print("  not a GitHub repository or script address"); exit(1) }

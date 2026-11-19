@@ -100,6 +100,13 @@ enum DebugSnapshots {
                 render(LinkSourceSheet(installation: unknown, preview: found, text: "example/skills").environment(store),
                        size: CGSize(width: 520, height: 440), to: out.appendingPathComponent("link-source-found.png"))
             }
+            // Finding sources, with real answers: this asks mdskills.ai and GitHub.
+            var answered: [(InventoryStore.UnlinkedGroup, SourceFinder.Search)] = []
+            for group in await store.unlinkedGroups() { answered.append((group, await store.proposals(for: group))) }
+            if !answered.isEmpty {
+                render(FindSourcesSheet(preview: answered).environment(store),
+                       size: CGSize(width: 600, height: 640), to: out.appendingPathComponent("find-sources.png"))
+            }
             // The update command: waiting to be run, and after a run that printed something.
             if let target = store.updatable.first {
                 // The panel with a source opened, and after a run for that source.

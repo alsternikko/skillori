@@ -137,10 +137,47 @@ struct SourceLink: Codable, Equatable {
     var linkedAt: Date
     /// The content hash of the files on this Mac when the source was last asked.
     var localHash: String?
+    /// How the source was found, when Skillori found it: "An earlier version of …".
+    var note: String?
 
     var source: SkillSource {
         if let installer, let script = InstallerSource(installer) { return .installer(script) }
         return .github(UpstreamSource(owner: owner, repository: repository, ref: ref))
+    }
+}
+
+extension SourceProposal {
+    /// What speaks for this source, in one or two sentences.
+    var sentence: String {
+        var text: String
+        let missing: Int
+        switch evidence {
+        case .identical:
+            text = "Same content as the source."
+            missing = 0
+        case .sameSkillFile(let count):
+            text = "Same SKILL.md as the source has now."
+            missing = count
+        case .olderVersion(let date, _, let count):
+            text = "An earlier version of the source’s SKILL.md" + (date.map { ", from \($0.formatted(date: .abbreviated, time: .omitted))." } ?? ".")
+            missing = count
+        case .sameName:
+            text = "Only the name matches. Choose it only if you know it is the right one."
+            missing = 0
+        }
+        if rewritten { text += " Codex’s import changed “Claude” to “Codex” in it." }
+        if missing > 0 { text += missing == 1 ? " One file from the source is missing here." : " \(missing) files from the source are missing here." }
+        if folderGone { text += " The source has since removed this folder." }
+        return text
+    }
+
+    var chip: (text: String, kind: StatusChip.Kind, mark: String?) {
+        switch evidence {
+        case .identical: ("Same content", .neutral, "●")
+        case .sameSkillFile: ("Same skill file", .neutral, "●")
+        case .olderVersion: ("Older version", .neutral, "◐")
+        case .sameName: ("Same name", .outline, nil)
+        }
     }
 }
 
