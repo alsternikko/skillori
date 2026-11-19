@@ -356,7 +356,7 @@ final class InventoryStore {
         let keys = Set(pluginRecords.filter { $0.app == "Codex" }.map(Self.codexKey))
         guard !keys.isEmpty else { return }
         let codexFolder = environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+            ?? Self.home.appendingPathComponent(".codex")
         let folders = await Task.detached(priority: .utility) { AppPlugins.cacheFolders(in: codexFolder) }.value
         if !force, let known = codexPlugins, known.asked == keys, known.folders == folders,
            Date().timeIntervalSince(known.askedAt) < Self.checkInterval { return }
@@ -457,7 +457,7 @@ final class InventoryStore {
         let taken = Set((inventory?.installations ?? []).filter { !ids.contains($0.id) }
             .flatMap { $0.bindings.map(\.discoveredPath) + [$0.canonicalPath] })
         guard let plan = Adoption.plan(skill: first.displayName, source: source, folders: folders,
-                                       home: FileManager.default.homeDirectoryForCurrentUser.path, taken: taken) else { return nil }
+                                       home: Self.home.path, taken: taken) else { return nil }
         return LinkedAdoption(plan: plan, linkKeys: copies.map(Self.linkKey))
     }
 
@@ -825,9 +825,29 @@ final class InventoryStore {
     }
 
     private static var savedURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        #if DEBUG
+        if let test = testHome { return test.appendingPathComponent("skillori-sources.json") }
+        #endif
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Skillori/sources.json")
     }
+
+    /// The home folder skills are read from and installed under.
+    static var home: URL {
+        #if DEBUG
+        if let test = testHome { return test }
+        #endif
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    #if DEBUG
+    /// Debug builds only: `SKILLORI_TEST_HOME` makes another folder the home for a test run, with
+    /// its own saved answers and links. Start the app with `HOME` set to the same folder, so the
+    /// installer it runs writes there too.
+    static var testHome: URL? {
+        ProcessInfo.processInfo.environment["SKILLORI_TEST_HOME"].map { URL(fileURLWithPath: $0) }
+    }
+    #endif
 
     private func loadSaved() {
         guard let url = Self.savedURL, let data = try? Data(contentsOf: url),
@@ -902,7 +922,7 @@ final class InventoryStore {
         }
         isScanning = true
         let started = Date()
-        let engine = DiscoveryEngine(home: FileManager.default.homeDirectoryForCurrentUser,
+        let engine = DiscoveryEngine(home: Self.home,
                                      projects: projects,
                                      environment: environment,
                                      system: URL(fileURLWithPath: "/"))

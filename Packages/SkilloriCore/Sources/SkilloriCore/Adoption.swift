@@ -52,12 +52,15 @@ public struct Adoption: Sendable, Equatable {
         guard source.ref == nil, isPlain(source.owner), isPlain(source.repository), isPlain(skill),
               !folders.isEmpty else { return nil }
         let folderName = installName(skill)
-        let base = home.hasSuffix("/") ? String(home.dropLast()) : home
+        // Paths are compared with their folders' symlinks resolved, the skill folder itself left
+        // as it is: a copy that is a link into another skills folder still belongs to its own.
+        let base = URL(fileURLWithPath: home).resolvingSymlinksInPath().path
+        let taken = Set(taken.map(settled))
         // With more than one agent the installer keeps its own copy in `.agents/skills`.
         if taken.contains(base + "/.agents/skills/" + folderName) { return nil }
         var agents: [String] = []
         var leftovers: [String] = []
-        for folder in Set(folders).sorted() {
+        for folder in Set(folders.map(settled)).sorted() {
             let url = URL(fileURLWithPath: folder)
             let parent = url.deletingLastPathComponent().path
             guard parent.hasPrefix(base + "/"),
@@ -106,6 +109,13 @@ public struct Adoption: Sendable, Equatable {
         while let first = out.first, first == "." || first == "-" { out.removeFirst() }
         while let last = out.last, last == "." || last == "-" { out.removeLast() }
         return out.isEmpty ? "unnamed-skill" : String(out.prefix(255))
+    }
+
+    /// The path with the folders above it resolved (`/private/tmp` and `/tmp` are one place),
+    /// and its last part kept as it is.
+    static func settled(_ path: String) -> String {
+        let url = URL(fileURLWithPath: path)
+        return url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(url.lastPathComponent).path
     }
 
     /// A name that can be handed to the installer as an argument of its own.

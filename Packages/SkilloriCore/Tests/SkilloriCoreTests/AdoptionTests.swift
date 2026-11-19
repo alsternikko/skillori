@@ -56,6 +56,17 @@ import Testing
         #expect(commands[1].arguments == ["--yes", "skills@1.7.6", "add", "someone/awesome", "-s", "refactor", "-a", "claude-code", "-g", "-y"])
     }
 
+    @Test func aHomeBehindASymlinkStillMatches() throws {
+        // `/tmp` is a link to `/private/tmp`; Foundation hands out either spelling.
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("adoption-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base.appendingPathComponent(".claude/skills"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let resolved = base.resolvingSymlinksInPath().path
+        let other = resolved.hasPrefix("/private/") ? String(resolved.dropFirst("/private".count)) : "/private" + resolved
+        let plan = Adoption.plan(skill: "x", source: anthropic, folders: [resolved + "/.claude/skills/x"], home: other, taken: [])
+        #expect(plan?.agents == ["claude-code"])
+    }
+
     @Test func folderNamesFollowTheInstaller() {
         #expect(Adoption.installName("Frontend-Design") == "frontend-design")
         #expect(Adoption.installName("my skill!") == "my-skill")

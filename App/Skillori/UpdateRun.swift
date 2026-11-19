@@ -286,9 +286,11 @@ final class UpdateRunner {
         if output.count > 20_000 { output = String(output.suffix(16_000)) }
     }
 
-    /// The last lines of what was printed, without blank ones.
+    /// The last lines of what was printed, without blank ones, and without npm's own notices
+    /// (a newer npm is out), which say nothing about the skills.
     func lastLines(_ count: Int) -> [String] {
-        output.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.suffix(count).map { String($0) }
+        output.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("npm notice") }.suffix(count).map { String($0) }
     }
 
     #if DEBUG
