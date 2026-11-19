@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.9</title>
-      <pubDate>Thu, 19 Nov 2026 15:35:10 +0000</pubDate>
-      <sparkle:version>14</sparkle:version>
-      <sparkle:shortVersionString>0.2.9</sparkle:shortVersionString>
+      <title>Skillori 0.2.10</title>
+      <pubDate>Thu, 19 Nov 2026 20:39:52 +0000</pubDate>
+      <sparkle:version>15</sparkle:version>
+      <sparkle:shortVersionString>0.2.10</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.9</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Find sources can now finish the job: Link and update has npx skills put the source's newer version in place, and from then on those skills update like any other. Folders and Check now also work on the library's front page.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.10</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>The menu bar panel no longer shakes when it changes height. Opening a source's list, closing it, and the lines an update prints now grow and shrink the panel smoothly, with its top edge staying put under the menu bar.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="en1FbvjsiPtHl/KX+u0sLjIeYRmj0oMKyCQi1gEETBxBlsX7H7xV2lBp41eZUZdrsSpFjxT5gHG2lsNM8qzGBQ==" length="5245386"/>
+                 sparkle:edSignature="tv8H0lSjkmlkio5fezjm83rqMqZRul7KQvZY8d+ArTFr0Okm/596lym2PVdqu9LLYu6sHQ/0nu5ZaU6itqVbCg==" length="5248675"/>
     </item>
   </channel>
 </rss>
