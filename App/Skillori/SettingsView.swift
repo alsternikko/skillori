@@ -31,6 +31,7 @@ struct SettingsView: View {
     var onHeight: ((CGFloat) -> Void)?
     @State private var appearance = AppearanceSetting.current
     @State private var notifies = Notifier.shared.isEnabled
+    private var loginItem: LoginItem { LoginItem.shared }
 
     private static let width: CGFloat = 640
     private static let columnWidth = (width - 6 * 3) / 2
@@ -149,6 +150,21 @@ struct SettingsView: View {
                 SegmentedChoice([(.system, "System"), (.light, "Light"), (.dark, "Dark")], selection: $appearance,
                                 label: "Appearance")
             }
+            SettingRow {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Open at login")
+                    if loginItem.state == .needsApproval {
+                        Button("Allow in System Settings") { loginItem.openSystemSettings() }
+                            .buttonStyle(HintButtonStyle(underlined: true))
+                    } else if let problem = loginItem.problem {
+                        DataText(problem).foregroundStyle(Palette.ink2).lineLimit(1).help(problem)
+                    }
+                }
+            } trailing: {
+                SegmentedChoice([(false, "Off"), (true, "On")],
+                                selection: Binding(get: { loginItem.isOn }, set: { loginItem.set($0) }),
+                                label: "Open at login")
+            }
             SettingRow(isLast: true) {
                 Text("First start")
             } trailing: {
@@ -157,6 +173,10 @@ struct SettingsView: View {
             }
         }
         .onChange(of: appearance) { _, new in new.apply() }
+        .onAppear { loginItem.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            loginItem.refresh()
+        }
     }
 
     private var checking: some View {
