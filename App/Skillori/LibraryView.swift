@@ -20,7 +20,12 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 6) {
+            // On top, and opaque: the home's scroll view reaches up under the window's title bar,
+            // which is where this bar is drawn. Below it, the scroll view took the clicks meant
+            // for Folders and Check now, and scrolled content would show through.
             LibraryTopBar(search: $search, onFolders: { open(.folders) })
+                .background(Palette.panel)
+                .zIndex(1)
             if !search.isEmpty {
                 ListCard { SearchResults(query: search, open: { search = ""; open($0) }) }
             } else if let page = path.last {
@@ -35,6 +40,12 @@ struct LibraryView: View {
         .font(TypeRole.sans(13))
         .ignoresSafeArea(edges: .top)
         .animation(reduceMotion ? nil : Motion.swap, value: path)
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: DebugLibraryProbe.openPage)) { note in
+            if let page = note.object as? LibraryPage { open(page) }
+        }
+        .onChange(of: path, initial: true) { DebugLibraryProbe.path = path }
+        #endif
         .sheet(item: $linking) { installation in
             LinkSourceSheet(installation: installation).environment(store)
         }
