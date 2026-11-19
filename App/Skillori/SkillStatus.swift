@@ -137,7 +137,7 @@ struct SourceLink: Codable, Equatable {
     var linkedAt: Date
     /// The content hash of the files on this Mac when the source was last asked.
     var localHash: String?
-    /// How the source was found, when Skillori found it: "An earlier version of …".
+    /// How the source was found, when Skillori found it: "Your SKILL.md is the source's from …".
     var note: String?
 
     var source: SkillSource {
@@ -159,7 +159,9 @@ extension SourceProposal {
             text = "Same SKILL.md as the source has now."
             missing = count
         case .olderVersion(let date, _, let count):
-            text = "An earlier version of the source’s SKILL.md" + (date.map { ", from \($0.formatted(date: .abbreviated, time: .omitted))." } ?? ".")
+            // The copy here is the older one: the source has moved on since it was taken.
+            text = (date.map { "Your SKILL.md is the source’s from \($0.formatted(date: .abbreviated, time: .omitted))." }
+                ?? "Your SKILL.md is one the source had earlier.") + " The source has changed since."
             missing = count
         case .sameName:
             text = "Only the name matches. Choose it only if you know it is the right one."
@@ -175,7 +177,7 @@ extension SourceProposal {
         switch evidence {
         case .identical: ("Same content", .neutral, "●")
         case .sameSkillFile: ("Same skill file", .neutral, "●")
-        case .olderVersion: ("Older version", .neutral, "◐")
+        case .olderVersion: ("Behind source", .neutral, "◐")
         case .sameName: ("Same name", .outline, nil)
         }
     }
