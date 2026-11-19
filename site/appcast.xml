@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.10</title>
-      <pubDate>Thu, 19 Nov 2026 20:39:52 +0000</pubDate>
-      <sparkle:version>15</sparkle:version>
-      <sparkle:shortVersionString>0.2.10</sparkle:shortVersionString>
+      <title>Skillori 0.2.11</title>
+      <pubDate>Thu, 19 Nov 2026 21:47:05 +0000</pubDate>
+      <sparkle:version>16</sparkle:version>
+      <sparkle:shortVersionString>0.2.11</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.10</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>The menu bar panel no longer shakes when it changes height. Opening a source's list, closing it, and the lines an update prints now grow and shrink the panel smoothly, with its top edge staying put under the menu bar.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.11</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>When a source can't be reached, the library now says which one, how many skills it affects, and when Skillori asks again, and after an update it says the update went through. An update now asks only its own skills' source, and Skillori remembers GitHub's answers across restarts, so it is asked to wait far less often.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="tv8H0lSjkmlkio5fezjm83rqMqZRul7KQvZY8d+ArTFr0Okm/596lym2PVdqu9LLYu6sHQ/0nu5ZaU6itqVbCg==" length="5248675"/>
+                 sparkle:edSignature="siyRQgriDNgoShRFrr4m18Po9dwVZJ3g6pdWZ1p+5bJaNqnOAj543k3MNq92kGjIPgTsxNiRf1ClosppUF0nAg==" length="5274001"/>
     </item>
   </channel>
 </rss>

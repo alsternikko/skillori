@@ -112,7 +112,11 @@ h1{margin:16px 0 0;font:400 clamp(40px,6.3vw,70px)/1.01 var(--sans);letter-spaci
 
     <section class="list" aria-label="Versions">
       <!-- scripts/release.sh adds each version here, newest first. -->
-      <article class="rel is-latest" id="v0.2.10">
+      <article class="rel is-latest" id="v0.2.11">
+        <div><h2><a href="#v0.2.11">v0.2.11</a></h2><time class="mono" datetime="2026-11-19">19 Nov 2026</time></div>
+        <p>When a source can't be reached, the library now says which one, how many skills it affects, and when Skillori asks again, and after an update it says the update went through. An update now asks only its own skills' source, and Skillori remembers GitHub's answers across restarts, so it is asked to wait far less often.</p>
+      </article>
+      <article class="rel" id="v0.2.10">
         <div><h2><a href="#v0.2.10">v0.2.10</a></h2><time class="mono" datetime="2026-11-19">19 Nov 2026</time></div>
         <p>The menu bar panel no longer shakes when it changes height. Opening a source's list, closing it, and the lines an update prints now grow and shrink the panel smoothly, with its top edge staying put under the menu bar.</p>
       </article>
