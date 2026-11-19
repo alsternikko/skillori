@@ -89,7 +89,7 @@ enum DebugSnapshots {
             let unknown = installs.first { $0.provenance == .unknown }
             if let unknown {
                 let found = InventoryStore.LinkSearch(
-                    source: UpstreamSource(owner: "example", repository: "skills"), localHash: "aaa",
+                    source: .github(UpstreamSource(owner: "example", repository: "skills")), localHash: "aaa",
                     candidates: [SourceCandidate(subpath: "skills/" + unknown.directoryName, hash: "bbb", match: .sameName),
                                  SourceCandidate(subpath: "skills/docx", hash: "c", match: .other),
                                  SourceCandidate(subpath: "skills/pdf", hash: "d", match: .other),

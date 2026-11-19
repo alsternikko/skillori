@@ -123,9 +123,12 @@ struct InstallationDetail: View {
                                 .buttonStyle(PillButtonStyle(on: tone))
                         }
                     case .differs:
+                        if case .installer(let script)? = store.upstreamSource(for: installation) {
+                            CopyInstallCommandButton(script: script, prominent: true, tone: tone)
+                        }
                         if let link = sourceLink {
                             Button("Open source") { NSWorkspace.shared.open(link) }
-                                .buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                                .buttonStyle(PillButtonStyle(prominent: !isInstallerSource, on: tone))
                         }
                         Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: tone))
                     case .noSource:
@@ -179,6 +182,10 @@ struct InstallationDetail: View {
     private var tone: Tone { status.tone }
 
     private var subpath: String? { store.sourceSubpath(for: installation) }
+
+    private var isInstallerSource: Bool {
+        if case .installer? = store.upstreamSource(for: installation) { true } else { false }
+    }
 
     private var sourceLink: URL? {
         store.upstreamSource(for: installation)?.webURL(subpath: subpath)

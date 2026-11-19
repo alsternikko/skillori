@@ -6,7 +6,7 @@ import SkilloriCore
 // With --check-sources it also asks each tracked skill's source whether it has changed. That is
 // the only thing here that uses the network.
 let checkSources = CommandLine.arguments.contains("--check-sources")
-// With --find-source <repository> <skill> it asks one repository which of its folders that skill
+// With --find-source <repository or script address> <skill> it asks one repository which of its folders that skill
 // on this Mac matches, the way "Link source" does.
 var arguments = Array(CommandLine.arguments.dropFirst())
 var findSource: (repository: String, skill: String)?
@@ -59,7 +59,7 @@ if checkSources {
     for inst in inventory.installations {
         guard case .skillsLock(let source, let url, let subpath, let baseline, _) = inst.provenance else { continue }
         questions.append(UpstreamQuestion(key: inst.displayName,
-                                          source: UpstreamSource(source: source, sourceURL: url, ref: inst.sourceRef, sourceType: inst.sourceType),
+                                          source: UpstreamSource(source: source, sourceURL: url, ref: inst.sourceRef, sourceType: inst.sourceType).map(SkillSource.github),
                                           subpath: subpath, baseline: baseline))
     }
     let answers = await UpstreamChecker.check(questions)
@@ -99,10 +99,14 @@ if checkSources {
 
 if let findSource {
     print("\nLooking for \(findSource.skill) in \(findSource.repository)")
-    guard let (source, _) = UpstreamSource.parse(findSource.repository) else { print("  not a GitHub repository"); exit(1) }
+    guard let (source, _) = SkillSource.parse(findSource.repository) else { print("  not a GitHub repository or script address"); exit(1) }
     let matches = inventory.installations.filter { $0.directoryName == findSource.skill && $0.provenance == .unknown }
     guard !matches.isEmpty else { print("  no skill with that folder name and no known source"); exit(1) }
-    switch await GitHubTrees().tree(of: source) {
+    let answer: Result<SourceTree, UpstreamState.Reason> = switch source {
+    case .github(let repository): await GitHubTrees().tree(of: repository)
+    case .installer(let script): await InstallerScripts().tree(of: script)
+    }
+    switch answer {
     case .failure(let reason): print("  can't ask the source: \(reason.rawValue)")
     case .success(let tree):
         for inst in matches {

@@ -126,16 +126,22 @@ enum SkillStatus: Equatable {
 
 /// A source the reader pointed out for a skill that came with no installer record.
 struct SourceLink: Codable, Equatable {
+    /// Empty for an install script.
     var owner: String
     var repository: String
     var ref: String?
+    /// The address of the install script, when the source is one rather than a repository.
+    var installer: String?
     /// The folder inside the source; empty for the top of it.
     var subpath: String
     var linkedAt: Date
     /// The content hash of the files on this Mac when the source was last asked.
     var localHash: String?
 
-    var source: UpstreamSource { UpstreamSource(owner: owner, repository: repository, ref: ref) }
+    var source: SkillSource {
+        if let installer, let script = InstallerSource(installer) { return .installer(script) }
+        return .github(UpstreamSource(owner: owner, repository: repository, ref: ref))
+    }
 }
 
 extension UpstreamState.Reason {
@@ -143,10 +149,10 @@ extension UpstreamState.Reason {
         switch self {
         case .notFound: "The source was not found. It is private, renamed or removed."
         case .folderGone: "The source no longer has this skill's folder."
-        case .rateLimited: "GitHub asked Skillori to wait. It will ask again later."
+        case .rateLimited: "The source asked Skillori to wait. It will ask again later."
         case .offline: "No contact with the source."
         case .cancelled: "The check was stopped before the source answered."
-        case .unsupported: "Skillori can only ask GitHub sources so far."
+        case .unsupported: "Skillori cannot ask this kind of source yet."
         case .noBaseline: "The installer left nothing to compare with."
         case .failed: "The source gave an answer Skillori could not read."
         }
@@ -160,7 +166,7 @@ extension UpstreamState.Reason {
         case .rateLimited: "asked to wait"
         case .offline: "no contact"
         case .cancelled: "stopped"
-        case .unsupported: "not GitHub"
+        case .unsupported: "unsupported source"
         case .noBaseline: "no baseline"
         case .failed: "unreadable answer"
         }
@@ -196,6 +202,29 @@ struct CopyUpdateCommandButton: View {
         }
         .buttonStyle(PillButtonStyle(prominent: prominent, on: tone))
         .help(UpdateCommand.text(for: installation))
+    }
+}
+
+/// Copies the command an author gives for their install script. Skillori never runs it: a script
+/// from a site runs with the reader's rights, so that stays the reader's own step in Terminal.
+struct CopyInstallCommandButton: View {
+    let script: InstallerSource
+    var prominent = false
+    var tone: Tone?
+    @State private var copied = false
+
+    var body: some View {
+        Button(copied ? "Copied" : "Copy install command") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(script.installCommand, forType: .string)
+            copied = true
+            Task {
+                try? await Task.sleep(for: .seconds(1.6))
+                copied = false
+            }
+        }
+        .buttonStyle(PillButtonStyle(prominent: prominent, on: tone))
+        .help(script.installCommand)
     }
 }
 

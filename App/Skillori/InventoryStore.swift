@@ -150,10 +150,11 @@ final class InventoryStore {
         return links[Self.linkKey(for: installation)]
     }
 
-    func upstreamSource(for installation: Installation) -> UpstreamSource? {
+    func upstreamSource(for installation: Installation) -> SkillSource? {
         if let link = link(for: installation) { return link.source }
         guard case .skillsLock(let source, let url, _, _, _) = installation.provenance else { return nil }
         return UpstreamSource(source: source, sourceURL: url, ref: installation.sourceRef, sourceType: installation.sourceType)
+            .map(SkillSource.github)
     }
 
     /// The folder inside the source that this skill is compared with.
@@ -548,7 +549,7 @@ final class InventoryStore {
         async let local = Task.detached(priority: .utility) {
             try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).entries
         }.value
-        switch await GitHubTrees(budget: .shared).tree(of: source) {
+        switch await Self.tree(of: source) {
         case .failure(let reason): return .failure(reason)
         case .success(let tree):
             guard let entries = await local else { return .failure(.failed) }
@@ -557,11 +558,19 @@ final class InventoryStore {
         }
     }
 
+    /// One question to one source, whichever kind it is.
+    private static func tree(of source: SkillSource) async -> Result<SourceTree, UpstreamState.Reason> {
+        switch source {
+        case .github(let repository): await GitHubTrees(budget: .shared).tree(of: repository)
+        case .installer(let script): await InstallerScripts().tree(of: script)
+        }
+    }
+
     // MARK: Linking a source
 
     /// What a look at a source found for one skill.
     struct LinkSearch {
-        let source: UpstreamSource
+        let source: SkillSource
         let localHash: String?
         let candidates: [SourceCandidate]
         /// The folder the pasted address pointed at, if it pointed at one.
@@ -570,14 +579,18 @@ final class InventoryStore {
 
     enum LinkProblem: Error {
         case unreadable
-        case source(UpstreamState.Reason)
-        case noSkills
+        case source(UpstreamState.Reason, installer: Bool)
+        case noSkills(installer: Bool)
 
         var sentence: String {
             switch self {
-            case .unreadable: "That does not look like a GitHub repository. Use owner/repository or an address on github.com."
-            case .source(let reason): reason.sentence
-            case .noSkills: "That repository has no folder with a SKILL.md."
+            case .unreadable:
+                "That is neither a GitHub repository nor a script address. Use owner/repository, an address on github.com, or the https address of an install script."
+            case .source(.failed, installer: true):
+                "Skillori could not read which files that script writes. It only reads scripts that carry their files, and never runs them."
+            case .source(let reason, _): reason.sentence
+            case .noSkills(installer: false): "That repository has no folder with a SKILL.md."
+            case .noSkills(installer: true): "That script writes no SKILL.md that Skillori can read."
             }
         }
     }
@@ -585,18 +598,19 @@ final class InventoryStore {
     /// Asks the source the reader named for its skill folders and ranks them against this skill.
     /// This is a direct action by the reader, so it runs whether or not regular checks are on.
     func searchSource(_ text: String, for installation: Installation) async -> Result<LinkSearch, LinkProblem> {
-        guard let (source, subpath) = UpstreamSource.parse(text) else { return .failure(.unreadable) }
+        guard let (source, subpath) = SkillSource.parse(text) else { return .failure(.unreadable) }
+        let isInstaller = if case .installer = source { true } else { false }
         let path = installation.canonicalPath
         async let local = Task.detached(priority: .utility) {
             try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).treeID
         }.value
-        switch await GitHubTrees(budget: .shared).tree(of: source) {
-        case .failure(let reason): return .failure(.source(reason))
+        switch await Self.tree(of: source) {
+        case .failure(let reason): return .failure(.source(reason, installer: isInstaller))
         case .success(let tree):
             let localHash = await local
             let names = [installation.directoryName, installation.displayName]
             let candidates = SourceMatcher.candidates(localHash: localHash, names: names, in: tree)
-            guard !candidates.isEmpty else { return .failure(.noSkills) }
+            guard !candidates.isEmpty else { return .failure(.noSkills(installer: isInstaller)) }
             return .success(LinkSearch(source: source, localHash: localHash, candidates: candidates, suggested: subpath))
         }
     }
@@ -606,8 +620,14 @@ final class InventoryStore {
         guard installation.provenance == .unknown else { return }
         let key = Self.linkKey(for: installation)
         let now = Date()
-        links[key] = SourceLink(owner: search.source.owner, repository: search.source.repository, ref: search.source.ref,
-                                subpath: candidate.subpath, linkedAt: now, localHash: search.localHash)
+        links[key] = switch search.source {
+        case .github(let source):
+            SourceLink(owner: source.owner, repository: source.repository, ref: source.ref,
+                       subpath: candidate.subpath, linkedAt: now, localHash: search.localHash)
+        case .installer(let script):
+            SourceLink(owner: "", repository: "", ref: nil, installer: script.url.absoluteString,
+                       subpath: candidate.subpath, linkedAt: now, localHash: search.localHash)
+        }
         // The search already has the answer a check would give.
         let state: UpstreamState = candidate.hash == search.localHash ? .upToDate : .updateAvailable(upstreamHash: candidate.hash)
         readings[key] = UpstreamReading(state: state, checkedAt: now)

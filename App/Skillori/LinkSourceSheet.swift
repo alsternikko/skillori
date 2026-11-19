@@ -4,8 +4,9 @@ import SkilloriUI
 import SwiftUI
 
 /// Lets the reader say where a skill with no installer record came from. Skillori asks the
-/// named repository for its skill folders, compares them with the files on this Mac, and
-/// remembers the folder the reader picks. Nothing on disk is changed.
+/// named repository for its skill folders, or reads which files a named install script writes,
+/// compares them with the files on this Mac, and remembers the folder the reader picks.
+/// Nothing on disk is changed, and a script is never run.
 struct LinkSourceSheet: View {
     @Environment(InventoryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -42,7 +43,7 @@ struct LinkSourceSheet: View {
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
-            Text("Paste the GitHub repository, or the address of the skill's folder in it. Skillori asks GitHub for the repository's folders and compares them with the files on this Mac. Nothing is changed.")
+            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
                 .font(TypeRole.sans(12))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.ink2)
@@ -50,7 +51,7 @@ struct LinkSourceSheet: View {
                 .padding(.top, 6)
 
             HStack(spacing: 6) {
-                TextField("owner/repository or https://github.com/…", text: $text)
+                TextField("owner/repository, https://github.com/… or a script address", text: $text)
                     .textFieldStyle(.plain)
                     .font(TypeRole.mono(11.5))
                     .focused($fieldFocused)
@@ -90,6 +91,12 @@ struct LinkSourceSheet: View {
         .onAppear { fieldFocused = true }
     }
 
+    /// The host being asked, for the line shown while waiting.
+    private var askedHost: String {
+        if case .installer(let script)? = SkillSource.parse(text)?.source { return script.url.host ?? "the site" }
+        return "github.com"
+    }
+
     private var isSearching: Bool { if case .searching = phase { true } else { false } }
     private var hasResult: Bool { if case .found = phase { true } else { false } }
 
@@ -98,7 +105,7 @@ struct LinkSourceSheet: View {
         case .idle:
             EmptyView()
         case .searching:
-            Text("Asking github.com…").font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
+            Text("Asking \(askedHost)…").font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
         case .failed(let sentence):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 StatusChip("Not found", kind: .attention, mark: "✕")
@@ -127,7 +134,7 @@ struct LinkSourceSheet: View {
         let isChosen = candidate.subpath == chosen
         return HStack(spacing: 10) {
             Text(isChosen ? "●" : "○").font(TypeRole.mono(11.5))
-            Text(candidate.subpath.isEmpty ? "top of the repository" : candidate.subpath)
+            Text(candidate.subpath.isEmpty ? "top of the source" : candidate.subpath)
                 .font(TypeRole.mono(11.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -151,6 +158,13 @@ struct LinkSourceSheet: View {
     private func summary(of search: InventoryStore.LinkSearch) -> String {
         let best = search.candidates.first?.match
         let name = search.source.name
+        if case .installer = search.source {
+            switch best {
+            case .identical: return "The script writes the same content as this copy."
+            case .sameName: return "The script writes a skill with the same name but other files. It may be a newer version."
+            default: return "The script writes no skill with the same content or name. Choose one only if you know it is the right one."
+            }
+        }
         switch best {
         case .identical: return "Found the same content in \(name)."
         case .sameName: return "No folder in \(name) has the same content. One has the same name; it may be a newer version."

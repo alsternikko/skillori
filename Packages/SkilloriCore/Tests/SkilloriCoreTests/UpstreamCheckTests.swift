@@ -55,11 +55,11 @@ import Testing
         }
         let here = UpstreamSource(owner: "o", repository: "here")
         let answers = await UpstreamChecker.check([
-            UpstreamQuestion(key: "a", source: here, subpath: "skills/a", baseline: "aaa"),
-            UpstreamQuestion(key: "b", source: here, subpath: "skills/b", baseline: "old"),
-            UpstreamQuestion(key: "c", source: UpstreamSource(owner: "o", repository: "gone"), subpath: "s", baseline: "x"),
-            UpstreamQuestion(key: "d", source: UpstreamSource(owner: "o", repository: "busy"), subpath: "s", baseline: "x"),
-            UpstreamQuestion(key: "e", source: UpstreamSource(owner: "o", repository: "down"), subpath: "s", baseline: "x"),
+            UpstreamQuestion(key: "a", source: .github(here), subpath: "skills/a", baseline: "aaa"),
+            UpstreamQuestion(key: "b", source: .github(here), subpath: "skills/b", baseline: "old"),
+            UpstreamQuestion(key: "c", source: .github(UpstreamSource(owner: "o", repository: "gone")), subpath: "s", baseline: "x"),
+            UpstreamQuestion(key: "d", source: .github(UpstreamSource(owner: "o", repository: "busy")), subpath: "s", baseline: "x"),
+            UpstreamQuestion(key: "e", source: .github(UpstreamSource(owner: "o", repository: "down")), subpath: "s", baseline: "x"),
             UpstreamQuestion(key: "f", source: nil, subpath: "s", baseline: "x"),
         ], using: trees)
         #expect(answers["a"] == .upToDate)

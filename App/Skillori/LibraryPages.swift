@@ -156,6 +156,17 @@ struct SkillPage: View {
                           extra: extra)
         case .differs:
             var extra: [(String, Bool, () -> Void)] = []
+            if case .installer(let script)? = store.upstreamSource(for: installation) {
+                // Skillori reads the script but never runs it; installing again is the reader's step.
+                extra.append(("Copy install command", true, {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(script.installCommand, forType: .string)
+                }))
+                if let web { extra.append(("Open site", false, { NSWorkspace.shared.open(web) })) }
+                extra.append(("Keep this version", false, { store.hold(installation) }))
+                return Advice(tone: .new, title: "The install script has other files than this copy",
+                              text: "Run the author’s install command in Terminal to get its version, or keep this one as it is.", extra: extra)
+            }
             if let web { extra.append(("Open source", true, { NSWorkspace.shared.open(web) })) }
             extra.append(("Keep this version", false, { store.hold(installation) }))
             return Advice(tone: .new, title: "The source has other files than this copy",
@@ -304,7 +315,7 @@ struct SkillPage: View {
                 FactRow { Text("Not known") } value: {
                     Button("Link…", action: onLink).buttonStyle(PillButtonStyle())
                 }
-                Text("Linking it to a repository lets Skillori tell you when it changes. Optional.")
+                Text("Linking it to a repository or an install script lets Skillori tell you when it changes. Optional.")
                     .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
             }
         }

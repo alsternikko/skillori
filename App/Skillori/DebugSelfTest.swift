@@ -156,6 +156,18 @@ enum DebugSelfTest {
                 check("menu item Open Library… opens the Library", windows.library?.isVisible == true)
                 windows.library?.close()
             }
+            // Reading an install script, without linking: only runs when the skill is on this Mac.
+            if let craft = store.inventory?.installations.first(where: { $0.directoryName == "interface-craft" && $0.provenance == .unknown }) {
+                let pasted = "curl -fsSL https://www.interfacecraft.dev/api/install-skills | bash"
+                switch await store.searchSource(pasted, for: craft) {
+                case .success(let search):
+                    check("install script is read as a source", search.candidates.first?.subpath == "interface-craft",
+                          "\(search.candidates.first.map { "\($0.subpath) \($0.match)" } ?? "none")")
+                case .failure(let problem):
+                    check("install script is read as a source", false, problem.sentence)
+                }
+            }
+
             let quit = menu.items.first { $0.title == "Quit Skillori" }
             check("menu item Quit targets the app", quit?.action == #selector(NSApplication.terminate(_:)))
 

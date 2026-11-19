@@ -413,11 +413,11 @@ public actor GitHubBudget {
 /// One tracked skill to ask about.
 public struct UpstreamQuestion: Sendable {
     public let key: String
-    public let source: UpstreamSource?
+    public let source: SkillSource?
     public let subpath: String?
     public let baseline: String?
 
-    public init(key: String, source: UpstreamSource?, subpath: String?, baseline: String?) {
+    public init(key: String, source: SkillSource?, subpath: String?, baseline: String?) {
         self.key = key
         self.source = source
         self.subpath = subpath
@@ -430,9 +430,10 @@ public enum UpstreamChecker {
     /// How many sources are asked at the same time.
     public static let maxConcurrent = 4
 
-    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared)) async -> [String: UpstreamState] {
+    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared),
+                             installers: InstallerScripts = InstallerScripts()) async -> [String: UpstreamState] {
         var answers: [String: UpstreamState] = [:]
-        var bySource: [UpstreamSource: [UpstreamQuestion]] = [:]
+        var bySource: [SkillSource: [UpstreamQuestion]] = [:]
         for question in questions {
             if let source = question.source {
                 bySource[source, default: []].append(question)
@@ -440,17 +441,23 @@ public enum UpstreamChecker {
                 answers[question.key] = .cannotCheck(.unsupported)
             }
         }
-        await withTaskGroup(of: (UpstreamSource, Result<SourceTree, UpstreamState.Reason>).self) { group in
+        @Sendable func ask(_ source: SkillSource) async -> Result<SourceTree, UpstreamState.Reason> {
+            switch source {
+            case .github(let repository): await trees.tree(of: repository)
+            case .installer(let script): await installers.tree(of: script)
+            }
+        }
+        await withTaskGroup(of: (SkillSource, Result<SourceTree, UpstreamState.Reason>).self) { group in
             // A few at a time: GitHub counts concurrent requests too, and once it says to wait,
             // the rest are answered from that without being sent.
             var pending = bySource.keys.sorted { $0.name < $1.name }[...]
             for _ in 0..<min(maxConcurrent, pending.count) {
                 let source = pending.removeFirst()
-                group.addTask { (source, await trees.tree(of: source)) }
+                group.addTask { (source, await ask(source)) }
             }
             for await (source, result) in group {
                 if let next = pending.popFirst() {
-                    group.addTask { (next, await trees.tree(of: next)) }
+                    group.addTask { (next, await ask(next)) }
                 }
                 for question in bySource[source] ?? [] {
                     switch result {

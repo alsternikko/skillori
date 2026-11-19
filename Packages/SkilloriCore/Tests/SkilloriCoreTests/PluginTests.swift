@@ -170,7 +170,7 @@ import Testing
                                             headerFields: ["x-ratelimit-remaining": "0", "x-ratelimit-reset": "\(Int(Date().timeIntervalSince1970) + 600)"])!)
         }
         let questions = (0..<10).map {
-            UpstreamQuestion(key: "\($0)", source: UpstreamSource(owner: "o", repository: "r\($0)"), subpath: nil, baseline: "x")
+            UpstreamQuestion(key: "\($0)", source: .github(UpstreamSource(owner: "o", repository: "r\($0)")), subpath: nil, baseline: "x")
         }
         let answers = await UpstreamChecker.check(questions, using: trees)
         #expect(answers.values.allSatisfy { $0 == .cannotCheck(.rateLimited) })
@@ -187,7 +187,7 @@ import Testing
             return (Data(#"{"sha":"root","tree":[]}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
         }
         let questions = (0..<12).map {
-            UpstreamQuestion(key: "\($0)", source: UpstreamSource(owner: "o", repository: "r\($0)"), subpath: nil, baseline: "root")
+            UpstreamQuestion(key: "\($0)", source: .github(UpstreamSource(owner: "o", repository: "r\($0)")), subpath: nil, baseline: "root")
         }
         let answers = await UpstreamChecker.check(questions, using: trees)
         #expect(answers.count == 12)
