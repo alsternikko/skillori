@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.7</title>
-      <pubDate>Thu, 19 Nov 2026 09:52:23 +0000</pubDate>
-      <sparkle:version>12</sparkle:version>
-      <sparkle:shortVersionString>0.2.7</sparkle:shortVersionString>
+      <title>Skillori 0.2.8</title>
+      <pubDate>Thu, 19 Nov 2026 13:42:42 +0000</pubDate>
+      <sparkle:version>13</sparkle:version>
+      <sparkle:shortVersionString>0.2.8</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.7</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>A skill that its author shares as an install script on their own site can now be linked as its source. Paste the script's address, or the whole curl command, under Link…; Skillori reads which files the script would write, without running it, and tells you when they change.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.8</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skills that showed up without a return address can now find one: Find sources looks up where they came from and tells you when your copy is behind.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="8J+KpN3Xs9tcF9Cjm+zGrTFNLuwyzXTOMD47/tgiq0aoTYR3asEyVEkBvh7vVpR4A0BMbHZ2iRfFOlwygVv9Ag==" length="5091298"/>
+                 sparkle:edSignature="BWXGJ2DCvlB1DaBD3JlNGlXiYW/6iHcGJHfo9AP9gHy8Jygo8xF5Q/R2tggA79HD6sRGTMRsg+RdEH2AlQxtDA==" length="5203105"/>
     </item>
   </channel>
 </rss>
