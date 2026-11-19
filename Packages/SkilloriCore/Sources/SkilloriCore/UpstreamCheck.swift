@@ -362,9 +362,20 @@ public struct GitHubTrees: Sendable {
 
 /// What GitHub has said about how much to ask: answers it gave with an ETag, so the same
 /// question can be asked conditionally, and a time not to ask before after it said to wait.
-/// Kept in memory only; the app asks every few hours, which is long enough to matter.
+///
+/// With a `directory`, both are also kept on disk, so a restart builds on them: a conditional
+/// question answered "unchanged" doesn't count against GitHub's hourly limit, and a fresh
+/// launch that asked everything anew used that limit up quickly. Only public repositories'
+/// file lists are kept, the same ones anyone can read on GitHub.
 public actor GitHubBudget {
-    public static let shared = GitHubBudget()
+    public static let shared = GitHubBudget(directory: GitHubBudget.defaultDirectory)
+
+    /// The app's own caches folder.
+    public static var defaultDirectory: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "Skillori", isDirectory: true)
+            .appendingPathComponent("GitHub", isDirectory: true)
+    }
 
     public struct Cached: Sendable {
         public let etag: String
@@ -375,38 +386,98 @@ public actor GitHubBudget {
     private var order: [String] = []
     private var bytes = 0
     private let maxBytes: Int
+    private let directory: URL?
     /// GitHub asked not to be asked again before this.
     public private(set) var retryAt: Date?
 
-    public init(maxBytes: Int = 32_000_000) {
+    public init(maxBytes: Int = 32_000_000, directory: URL? = nil) {
         self.maxBytes = maxBytes
+        self.directory = directory
+        if let directory,
+           let text = try? String(contentsOf: directory.appendingPathComponent(Self.retryFile), encoding: .utf8),
+           let seconds = TimeInterval(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            let date = Date(timeIntervalSince1970: seconds)
+            if date > Date() { retryAt = date }
+        }
     }
 
-    func cached(_ url: String) -> Cached? { answers[url] }
+    func cached(_ url: String) -> Cached? {
+        if let answer = answers[url] { return answer }
+        guard let file = file(for: url), let saved = try? Data(contentsOf: file),
+              let newline = saved.firstIndex(of: UInt8(ascii: "\n")),
+              let etag = String(data: saved[..<newline], encoding: .utf8), !etag.isEmpty else { return nil }
+        let answer = Cached(etag: etag, data: Data(saved[saved.index(after: newline)...]))
+        remember(url, answer)
+        return answer
+    }
 
     func store(_ url: String, etag: String, data: Data) {
+        guard data.count <= maxBytes else { return }
+        remember(url, Cached(etag: etag, data: data))
+        guard let file = file(for: url), !etag.contains("\n") else { return }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? (Data((etag + "\n").utf8) + data).write(to: file, options: .atomic)
+        trimDisk()
+    }
+
+    func wait(until date: Date) {
+        retryAt = max(retryAt ?? date, date)
+        guard let directory, let retryAt else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? "\(retryAt.timeIntervalSince1970)".write(to: directory.appendingPathComponent(Self.retryFile), atomically: true, encoding: .utf8)
+    }
+
+    func mustWait(now: Date = Date()) -> Bool {
+        guard let retryAt else { return false }
+        if retryAt <= now {
+            self.retryAt = nil
+            if let directory { try? FileManager.default.removeItem(at: directory.appendingPathComponent(Self.retryFile)) }
+            return false
+        }
+        return true
+    }
+
+    // MARK: Kept
+
+    private static let retryFile = "retry-at"
+
+    private func remember(_ url: String, _ answer: Cached) {
         if let old = answers[url] {
             bytes -= old.data.count
             order.removeAll { $0 == url }
         }
-        guard data.count <= maxBytes else { return }
-        answers[url] = Cached(etag: etag, data: data)
+        answers[url] = answer
         order.append(url)
-        bytes += data.count
+        bytes += answer.data.count
         while bytes > maxBytes, let oldest = order.first {
             order.removeFirst()
             bytes -= answers.removeValue(forKey: oldest)?.data.count ?? 0
         }
     }
 
-    func wait(until date: Date) {
-        retryAt = max(retryAt ?? date, date)
+    /// One file per question, named for it without saying what it is.
+    private func file(for url: String) -> URL? {
+        guard let directory else { return nil }
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in url.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+        return directory.appendingPathComponent(String(format: "%016llx", hash) + ".answer")
     }
 
-    func mustWait(now: Date = Date()) -> Bool {
-        guard let retryAt else { return false }
-        if retryAt <= now { self.retryAt = nil; return false }
-        return true
+    /// Keeps the files on disk under the same limit as in memory, the oldest going first.
+    private func trimDisk() {
+        guard let directory else { return }
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: keys)
+            .filter({ $0.pathExtension == "answer" }) else { return }
+        let sized = files.map { url -> (url: URL, size: Int, date: Date) in
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return (url, values?.fileSize ?? 0, values?.contentModificationDate ?? .distantPast)
+        }.sorted { $0.date < $1.date }
+        var total = sized.reduce(0) { $0 + $1.size }
+        for file in sized where total > maxBytes {
+            try? FileManager.default.removeItem(at: file.url)
+            total -= file.size
+        }
     }
 }
 

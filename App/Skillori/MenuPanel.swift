@@ -442,6 +442,11 @@ extension PanelModel {
             if let last = store.lastCheck {
                 rows.append(.line(text: "Statuses shown are from", data: InventoryStore.stamp(last).uppercased(), muted: true))
             }
+            // A source that said how long to wait: trying before then only lengthens the wait.
+            let waiting = store.isWaiting
+            if waiting, let until = store.waitUntil {
+                rows.append(.line(text: "Skillori asks again at", data: InventoryStore.stamp(until).uppercased(), muted: true))
+            }
             rows += tail
             return PanelModel(
                 tone: .attention, label: reason == .rateLimited ? "Asked to wait" : "No contact",
@@ -449,8 +454,9 @@ extension PanelModel {
                 lead: tracked == 1 ? "source could not be asked" : "sources could not be asked",
                 note: store.lastCheck == nil ? "No status yet." : "The statuses are older than they look.",
                 rows: rows,
-                buttons: [Button(title: "Try again", prominent: true, command: .rescan),
-                          Button(title: "Library", prominent: false, command: .library)],
+                buttons: waiting ? [Button(title: "Library", prominent: false, command: .library)]
+                    : [Button(title: "Try again", prominent: true, command: .rescan),
+                       Button(title: "Library", prominent: false, command: .library)],
                 hint: hint, hintEnabled: !busy)
         }
 

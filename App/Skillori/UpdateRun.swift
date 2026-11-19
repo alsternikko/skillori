@@ -176,7 +176,16 @@ final class UpdateRunner {
         case failed(String)
     }
 
-    private(set) var phase = Phase.idle
+    private(set) var phase = Phase.idle {
+        didSet {
+            switch phase {
+            case .succeeded, .failed: endedAt = Date()
+            case .idle, .running: break
+            }
+        }
+    }
+    /// When the latest run ended, well or not.
+    private(set) var endedAt: Date?
     /// The skill folder names the current or latest run was for.
     private(set) var names: [String] = []
     private(set) var output = ""

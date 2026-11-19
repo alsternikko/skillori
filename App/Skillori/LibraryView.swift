@@ -129,6 +129,7 @@ struct LibraryView: View {
     /// One block for what needs the reader: a sentence and a button per thing. With nothing to
     /// do it says so, in the resting light.
     private func today(_ todos: [Todo]) -> some View {
+        let notices = Assist.notices(store)
         let updates = todos.contains { $0.id.hasPrefix("skills:") || $0.id.hasPrefix("plugins:") }
         let tone: Tone = todos.isEmpty ? .rest : updates ? .new : .attention
         return VStack(alignment: .leading, spacing: 0) {
@@ -139,10 +140,11 @@ struct LibraryView: View {
             if todos.isEmpty {
                 Text("\(Assist.mine(store).count) skills of yours and \((store.inventory?.installations ?? []).filter(Assist.isManaged).count) from your apps. Nothing needs you.")
                     .font(TypeRole.sans(13)).foregroundStyle(tone.blockSecondary)
-                    .padding(.top, 4).padding(.bottom, 6)
-            } else {
+                    .padding(.top, 4).padding(.bottom, notices.isEmpty ? 6 : 0)
+            }
+            if !todos.isEmpty || !notices.isEmpty {
                 VStack(spacing: 0) {
-                    ForEach(todos) { todo in
+                    ForEach(todos + notices) { todo in
                         tone.blockForeground.opacity(0.2).frame(height: 1)
                         TodoLine(todo: todo, tone: tone, open: open)
                     }
@@ -151,7 +153,7 @@ struct LibraryView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: 18, leading: 22, bottom: todos.isEmpty ? 18 : 6, trailing: 22))
+        .padding(EdgeInsets(top: 18, leading: 22, bottom: todos.isEmpty && notices.isEmpty ? 18 : 6, trailing: 22))
         .foregroundStyle(tone.blockForeground)
         .background { tone.blockBackground(phase: 3) }
     }

@@ -178,6 +178,43 @@ import Testing
         #expect(await count.paths.count <= UpstreamChecker.maxConcurrent)
     }
 
+    @Test func remembersAnswersAndTheWaitAcrossARestart() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("budget-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let seen = Asked()
+        let transport: GitHubTrees.Transport = { request in
+            let url = request.url!
+            await seen.add(request.value(forHTTPHeaderField: "If-None-Match") ?? "-")
+            if url.path.contains("/busy/") {
+                return (Data(), HTTPURLResponse(url: url, statusCode: 403, httpVersion: nil,
+                                                headerFields: ["x-ratelimit-remaining": "0", "x-ratelimit-reset": "\(Int(Date().timeIntervalSince1970) + 600)"])!)
+            }
+            if request.value(forHTTPHeaderField: "If-None-Match") == "\"v1\"" {
+                return (Data(), HTTPURLResponse(url: url, statusCode: 304, httpVersion: nil, headerFields: [:])!)
+            }
+            return (Data(#"{"sha":"root","tree":[]}"#.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: ["ETag": "\"v1\""])!)
+        }
+        let source = UpstreamSource(owner: "o", repository: "r")
+        let before = GitHubTrees(transport: transport, budget: GitHubBudget(directory: directory))
+        let first = try await before.tree(of: source).get()
+        _ = await before.tree(of: UpstreamSource(owner: "busy", repository: "r"))
+
+        // A new budget on the same folder, as after a restart.
+        let budget = GitHubBudget(directory: directory)
+        #expect(await budget.retryAt != nil)
+        #expect(await budget.mustWait())
+        let after = GitHubTrees(transport: transport, budget: budget)
+        if case .failure(.rateLimited) = await after.tree(of: source) {} else { Issue.record("asked GitHub during the wait") }
+        #expect(await seen.paths == ["-", "-"])
+
+        // Once the wait is over, the remembered answer makes the question conditional.
+        let later = GitHubBudget(directory: directory)
+        _ = await later.mustWait(now: Date().addingTimeInterval(3600))
+        let second = try await GitHubTrees(transport: transport, budget: later).tree(of: source).get()
+        #expect(second == first)
+        #expect(await seen.paths == ["-", "-", "\"v1\""])
+    }
+
     @Test func asksAFewSourcesAtATime() async {
         let gauge = Gauge()
         let trees = GitHubTrees { request in

@@ -283,7 +283,8 @@ extension InventoryStore {
     var checkStamp: String {
         guard checksEnabled else { return "Checks off" }
         if isChecking { return "Checking now" }
-        guard let lastCheck else { return lastProblem == nil ? "Not checked yet" : "No contact" }
-        return (lastProblem == nil ? "Checked " : "No contact · last ") + Self.stamp(lastCheck)
+        let trouble = lastProblem == .rateLimited ? "Asked to wait" : "No contact"
+        guard let lastCheck else { return lastProblem == nil ? "Not checked yet" : trouble }
+        return (lastProblem == nil ? "Checked " : trouble + " · last ") + Self.stamp(lastCheck)
     }
 }

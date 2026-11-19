@@ -38,6 +38,14 @@ final class InventoryStore {
     private(set) var lastCheck: Date?
     /// Why the latest attempt got no answer, if it did not.
     private(set) var lastProblem: UpstreamState.Reason?
+    /// The tracked skills, by `sourceKey`, whose source gave no answer the last time it was asked.
+    private(set) var unanswered: Set<String> = []
+    /// When a source that asked Skillori to wait may be asked again, if it said.
+    private(set) var waitUntil: Date?
+    /// When the latest attempt to ask the sources ended, answered or not.
+    private(set) var lastAttempt: Date?
+    /// Asks again once the wait is over, as the library says it will.
+    @ObservationIgnored private var askAgain: Task<Void, Never>?
     /// Runs the installer's update command when the reader asks for it.
     let updater = UpdateRunner()
     /// Runs Claude Code's update for its plugins when the reader asks for it.
@@ -396,7 +404,12 @@ final class InventoryStore {
             finishAdoptions(plan.prefix(finished).flatMap(\.adoptions))
         }
         Notifier.shared.runEnded(names: names, phase: updater.phase)
-        await refresh()
+        // Read this Mac, then ask only the sources of the skills that ran. Asking every source
+        // after every update used up GitHub's hourly allowance, and the reader then saw a
+        // line about all their skills when they had updated one.
+        await rescan()
+        let keys = Set((inventory?.installations ?? []).filter { names.contains($0.directoryName) }.compactMap { sourceKey(for: $0) })
+        await checkSources(force: true, only: keys.isEmpty ? nil : keys)
     }
 
     /// The installer commands an update of these skills runs, as they would be typed.
@@ -521,7 +534,9 @@ final class InventoryStore {
     }
 
     /// Asks each source once whether its skills have changed. Does nothing while checks are off.
-    func checkSources(force: Bool = false) async {
+    /// With `only`, asks about just those skills (by `sourceKey`) and leaves the rest, the
+    /// plugins and the time of the last full answer as they are.
+    func checkSources(force: Bool = false, only: Set<String>? = nil) async {
         guard checksEnabled else { return }
         if isChecking {
             // A check that started before this was asked for may use an old reading of this
@@ -540,8 +555,11 @@ final class InventoryStore {
                                                            localHash: "83b528722eed2d5663a7fa843be58369c7a0235c")
         }
         #endif
-        let tracked = inventory.installations.filter { sourceKey(for: $0) != nil }
-        let plugins = pluginRecords
+        let tracked = inventory.installations.filter { installation in
+            guard let key = sourceKey(for: installation) else { return false }
+            return only?.contains(key) ?? true
+        }
+        let plugins = only == nil ? pluginRecords : []
         guard !tracked.isEmpty || !plugins.isEmpty else { return }
         isChecking = true
         defer { isChecking = false }
@@ -573,7 +591,7 @@ final class InventoryStore {
         }
         let answers = await UpstreamChecker.check(questions)
         var baselines = pluginBaselines
-        let pluginAnswers = await PluginChecker().check(plugins, baselines: &baselines)
+        let pluginAnswers = plugins.isEmpty ? [:] : await PluginChecker().check(plugins, baselines: &baselines)
         pluginBaselines = baselines
         let now = Date()
         var problem: UpstreamState.Reason?
@@ -596,6 +614,8 @@ final class InventoryStore {
         // Start from what is known now, not from before the network wait: a link made while
         // the sources were being asked keeps the answer its search gave.
         var next = readings
+        var failed: Set<String> = []
+        var heard: Set<String> = []
         for question in questions {
             guard let state = answers[question.key] else { continue }
             switch state {
@@ -605,9 +625,11 @@ final class InventoryStore {
             case .cannotCheck(let reason) where reason == .offline || reason == .rateLimited || reason == .failed:
                 // No answer this time. Keep the last real one, with its own date, so it reads as old.
                 problem = reason
+                failed.insert(question.key)
                 if next[question.key] == nil { next[question.key] = UpstreamReading(state: state, checkedAt: now) }
             default:
                 answered = true
+                heard.insert(question.key)
                 next[question.key] = UpstreamReading(state: state, checkedAt: now)
             }
         }
@@ -620,10 +642,19 @@ final class InventoryStore {
         let present = Set(current.installations.compactMap { sourceKey(for: $0) })
         next = next.filter { asked.contains($0.key) || present.contains($0.key) || !scanWasComplete }
         readings = next
-        lastProblem = problem
-        if answered { lastCheck = now }
+        if only == nil {
+            unanswered = failed
+            lastProblem = problem
+            if answered { lastCheck = now }
+        } else {
+            // A few skills asked again say nothing about the rest, which keep what they had.
+            unanswered = unanswered.subtracting(heard).union(failed)
+            lastProblem = problem ?? lastProblem
+        }
+        lastAttempt = now
+        await planAskingAgain()
         save()
-        await askCodex(force: force)
+        if only == nil { await askCodex(force: force) }
         notifyUpdates()
         if checkAgain {
             // This check started before something changed, such as an update. Ask again now;
@@ -632,6 +663,51 @@ final class InventoryStore {
             isChecking = false
             await checkSources(force: true)
         }
+    }
+
+    /// When a source asked Skillori to wait and said until when, the sources are asked again
+    /// right after that, as the library says they will be.
+    private func planAskingAgain() async {
+        askAgain?.cancel()
+        askAgain = nil
+        waitUntil = nil
+        guard lastProblem == .rateLimited, let date = await GitHubBudget.shared.retryAt, date > Date() else { return }
+        waitUntil = date
+        askAgain = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(date.timeIntervalSinceNow + 5))
+            guard !Task.isCancelled, let self else { return }
+            // Cleared first: the check below plans the next one, which must not cancel this.
+            self.askAgain = nil
+            await self.checkSources(force: true)
+        }
+    }
+
+    /// The source asked Skillori to wait and said until when, so there is nothing to try before then.
+    var isWaiting: Bool { lastProblem == .rateLimited && (waitUntil.map { $0 > Date() } ?? false) }
+
+    /// How many of the reader's tracked skills show an answer older than the latest attempt.
+    var unansweredCount: Int { own.filter { sourceKey(for: $0).map(unanswered.contains) ?? false }.count }
+
+    /// Who did not answer, when that is one service: GitHub, or the site of an install script.
+    var unansweredBy: String? {
+        let names = Set(own.filter { sourceKey(for: $0).map(unanswered.contains) ?? false }.compactMap { installation -> String? in
+            switch upstreamSource(for: installation) {
+            case .github?: "GitHub"
+            case .installer(let script)?: script.name
+            case nil: nil
+            }
+        })
+        // Plugins are asked at GitHub too, and have no keys of their own here.
+        if names.isEmpty { return pluginRecords.isEmpty ? nil : "GitHub" }
+        return names.count == 1 ? names.first : nil
+    }
+
+    /// The reader's latest update went well, and the check that followed it is the one that got
+    /// no answer. Said once, for half an hour, so the line about the sources isn't read as the
+    /// update having failed.
+    var updateWentThrough: Bool {
+        guard case .succeeded = updater.phase, let ended = updater.endedAt, let lastAttempt else { return false }
+        return lastAttempt >= ended && Date().timeIntervalSince(ended) < 30 * 60
     }
 
     // MARK: What an update changes
@@ -870,6 +946,16 @@ final class InventoryStore {
     }
 
     #if DEBUG
+    /// Pictures of the library when sources gave no answer: every tracked skill unanswered, and
+    /// a wait until `until` when the reason is that a source asked Skillori to wait.
+    func setSampleTrouble(_ reason: UpstreamState.Reason?, until: Date? = nil) {
+        lastProblem = reason
+        unanswered = reason == nil ? [] : Set(own.compactMap { sourceKey(for: $0) })
+        waitUntil = until
+        lastAttempt = Date()
+        if lastCheck == nil { lastCheck = Date().addingTimeInterval(-20 * 60) }
+    }
+
     /// Fixed answers for pictures and tests, so they need no network: one update, one held back
     /// with the source moved on, one source that cannot be found, the rest up to date.
     private func applySampleReadings(to tracked: [Installation]) {

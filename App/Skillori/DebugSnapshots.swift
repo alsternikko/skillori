@@ -134,6 +134,22 @@ enum DebugSnapshots {
                 render(open.environment(store), size: CGSize(width: 420, height: 820), to: out.appendingPathComponent("panel-update-one-failed.png"))
                 store.updater.setSample(names: [], phase: .idle, output: "")
             }
+            // When the sources gave no answer: asked to wait with a time, the same right after an
+            // update went through, and no contact at all, where Try again can help.
+            let inAnHour = Date().addingTimeInterval(60 * 60)
+            store.setSampleTrouble(.rateLimited, until: inAnHour)
+            render(LibraryView().environment(store), size: lib, to: out.appendingPathComponent("library-asked-to-wait.png"))
+            picture(PanelBackdrop { MenuPanel().frame(width: StatusPanelController.panelWidth) }.environment(store),
+                    size: CGSize(width: 420, height: 760), to: out.appendingPathComponent("panel-asked-to-wait.png"))
+            if let one = store.inventory?.installations.first(where: { store.sourceKey(for: $0) != nil }) {
+                store.updater.setSample(names: [one.directoryName], phase: .succeeded, output: "Updated 1 skill\n")
+                store.setSampleTrouble(.rateLimited, until: inAnHour)
+                render(LibraryView().environment(store), size: lib, to: out.appendingPathComponent("library-updated-then-wait.png"))
+                store.updater.setSample(names: [], phase: .idle, output: "")
+            }
+            store.setSampleTrouble(.offline)
+            render(LibraryView().environment(store), size: lib, to: out.appendingPathComponent("library-no-contact.png"))
+            store.setSampleTrouble(nil)
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale
             if let image = icon.cgImage {

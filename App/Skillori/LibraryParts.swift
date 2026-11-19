@@ -141,12 +141,46 @@ enum Assist {
                                  + ", so agents may load different ones. Keeping the newer one is usually right.",
                              button: "Keep newer", act: .keepNewer(twice), page: first.map { .skill($0.id) }))
         }
-        if store.isStale, let reason = store.lastProblem {
-            list.append(Todo(id: "stale", app: nil, title: "Skillori could not reach the sources",
-                             detail: reason.sentence + " What you see is from the last answer.",
-                             button: "Try again", act: .refresh))
+        // Sources that gave no answer, when trying again can help. A source that said how
+        // long to wait is a notice instead: there is nothing to press until then.
+        if store.isStale, let reason = store.lastProblem, !store.isWaiting {
+            let title = switch reason {
+            case .rateLimited: "\(store.unansweredBy ?? "A source") asked Skillori to wait"
+            case .failed: "Skillori could not read the sources’ answers"
+            default: "No contact with the sources"
+            }
+            list.append(Todo(id: "stale", app: nil, title: title, detail: staleDetail(store),
+                             button: "Try again", act: .refresh, page: .mine))
         }
         return list
+    }
+
+    /// What the reader should know but has nothing to do about, under the things to do.
+    static func notices(_ store: InventoryStore) -> [Todo] {
+        guard store.isStale, store.isWaiting, let until = store.waitUntil else { return [] }
+        let again = InventoryStore.stamp(until)
+        let detail = store.updateWentThrough
+            ? "Your update of \(updatedName(store)) went through. Skillori checks it against its source at \(again)."
+            : staleDetail(store) + " Skillori asks again at \(again)."
+        return [Todo(id: "wait", app: nil, title: "\(store.unansweredBy ?? "A source") asked Skillori to wait",
+                     detail: detail, button: "", act: .refresh, page: .mine)]
+    }
+
+    /// Which statuses are older than they look, and from when.
+    private static func staleDetail(_ store: InventoryStore) -> String {
+        let lead = store.updateWentThrough ? "Your update of \(updatedName(store)) went through. " : ""
+        let count = store.unansweredCount
+        guard let last = store.lastCheck else { return lead + "There is no answer from the sources yet." }
+        let when = InventoryStore.stamp(last)
+        if count == 0 { return lead + "What you see is from the answer at \(when)." }
+        return lead + (count == 1 ? "One skill shows the answer from \(when)." : "\(spelled(count)) skills show the answer from \(when).")
+    }
+
+    /// The skill the latest run updated, or how many.
+    private static func updatedName(_ store: InventoryStore) -> String {
+        let names = store.updater.names
+        guard names.count == 1 else { return "\(names.count) skills" }
+        return store.inventory?.installations.first { $0.directoryName == names[0] }?.displayName ?? names[0]
     }
 
     /// The line for Codex plugins Codex no longer reads: what happened, and the button that adds
@@ -520,7 +554,8 @@ struct TodoLine: View {
                 Text(todo.detail).font(TypeRole.sans(12)).foregroundStyle(secondary).lineLimit(2)
             }
             Spacer(minLength: 12)
-            if !leadsHere { TodoButton(todo: todo, style: style, open: open) }
+            // A notice has no button: there is nothing to do but know it.
+            if !leadsHere, !todo.button.isEmpty { TodoButton(todo: todo, style: style, open: open) }
         }
         .padding(.vertical, 12)
         .padding(.horizontal, tone == nil ? 12 : 0)
