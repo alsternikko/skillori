@@ -76,17 +76,33 @@ enum Assist {
                              detail: "Skillori asks each source whether a skill has changed. It sends the source’s name and nothing about you.",
                              button: "Turn on", act: .turnOnChecks, prominent: true))
         }
-        // Skills of yours the installer can update, one line per source.
+        // Skills of yours the installer can update, one line per source. A skill linked by hand
+        // can have a copy in several folders; it is still one skill.
         let bySource = Dictionary(grouping: store.updatable) { store.upstreamSource(for: $0)?.name ?? "" }
         for source in bySource.keys.sorted() {
             let skills = bySource[source]!.sorted { $0.displayName < $1.displayName }
+            var titles: [String] = []
+            for skill in skills where !titles.contains(skill.displayName) { titles.append(skill.displayName) }
             let running = store.updater.isRunning && Set(store.updater.names) == Set(skills.map(\.directoryName))
             list.append(Todo(id: "skills:" + source, app: nil,
-                             title: skills.count == 1 ? "Update \(skills[0].displayName)" : "Update \(skills.count) skills from \(source)",
-                             detail: (skills.count == 1 ? "A newer version is at \(source). " : names(skills.map(\.displayName)) + ". ")
-                                 + "Updating replaces them with the source’s version.",
+                             title: titles.count == 1 ? "Update \(titles[0])" : "Update \(titles.count) skills from \(source)",
+                             detail: (titles.count == 1 ? "A newer version is at \(source). " : names(titles) + ". ")
+                                 + (titles.count == 1 ? "Updating replaces it with the source’s version." : "Updating replaces them with the source’s version."),
                              button: running ? "Updating…" : "▶ Update", act: .updateSkills(skills),
-                             page: skills.count == 1 ? .skill(skills[0].id) : nil, busy: store.updater.isRunning, prominent: true))
+                             page: titles.count == 1 ? .skill(skills[0].id) : nil, busy: store.updater.isRunning, prominent: true))
+        }
+        // Skills linked to an install script whose files have changed. Skillori reads the script
+        // but never runs it, so getting the new files is the reader's step, in Terminal.
+        var scripted: [String] = []
+        for installation in store.updates {
+            guard case .differs = store.status(for: installation),
+                  case .installer(let script)? = store.upstreamSource(for: installation),
+                  !scripted.contains(installation.displayName) else { continue }
+            scripted.append(installation.displayName)
+            list.append(Todo(id: "script:" + installation.displayName, app: nil,
+                             title: "\(installation.displayName) has changed at \(script.name)",
+                             detail: "Skillori doesn’t run install scripts. Copy the author’s command and run it in Terminal to get the new version.",
+                             button: "Copy command", act: .copy(script.installCommand), page: .skill(installation.id)))
         }
         // Claude Code plugins, which Skillori can update by running Claude Code's own update.
         // Cursor and Codex bring new versions of their plugins themselves, so a newer version at
@@ -175,7 +191,12 @@ enum Assist {
     static func note(for skill: MySkill, store: InventoryStore) -> (text: String, kind: StatusChip.Kind)? {
         if case .different = store.copies(of: skill.primary) { return ("Exists twice", .attention) }
         switch store.status(for: skill.primary) {
-        case .updateAvailable, .differs: return ("Update", .new)
+        case .updateAvailable: return ("Update", .new)
+        // An install script's new version is the reader's to fetch, with a command to copy. A
+        // linked folder the installer can't take over can only be compared, not updated.
+        case .differs:
+            if case .installer? = store.upstreamSource(for: skill.primary) { return ("Update", .new) }
+            return ("Differs", .neutral)
         case .changedHere: return ("Changed here", .attention)
         case .heldBack: return ("Kept as is", .neutral)
         case .noSource: return ("No source", .outline)

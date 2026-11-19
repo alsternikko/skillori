@@ -109,7 +109,8 @@ struct LibraryView: View {
 
     private var mineNote: String {
         let mine = Assist.mine(store)
-        let off = mine.filter { Assist.note(for: $0, store: store).map { $0.kind != .outline } ?? false }.count
+        // What the block of things for you lists too: updates and things to look at, not choices made.
+        let off = mine.filter { Assist.note(for: $0, store: store).map { $0.kind == .new || $0.kind == .attention } ?? false }.count
         return off == 0 ? "Installed by you. Skillori checks them against their source."
             : "Installed by you. \(off == 1 ? "One needs" : "\(off) need") a look."
     }
@@ -195,6 +196,7 @@ extension LibraryView {
         let mine = all.filter { !Assist.isManaged($0) }
         let tracked = mine.first { if case .skillsLock = $0.provenance { true } else { false } }
         let unknown = mine.first { store.status(for: $0) == .noSource }
+        let linkedUpdate = mine.first { skill in store.link(for: skill) != nil && store.updatable.contains { $0.id == skill.id } }
         let twice = store.differingCopyNames.first.flatMap { name in
             Assist.mine(store).first { $0.name.lowercased() == name.lowercased() }?.primary
         }
@@ -217,6 +219,7 @@ extension LibraryView {
             list.append(("library-details", LibraryView(path: [.mine, .skill(tracked.id), .details(tracked.id)])))
         }
         if let unknown { list.append(("library-skill-unknown", LibraryView(path: [.mine, .skill(unknown.id)]))) }
+        if let linkedUpdate { list.append(("library-skill-linked-update", LibraryView(path: [.mine, .skill(linkedUpdate.id)]))) }
         if let twice { list.append(("library-skill-twice", LibraryView(path: [.skill(twice.id)]))) }
         if let plugin { list.append(("library-skill-plugin", LibraryView(path: [.apps, .app(Assist.app(of: plugin)), .skill(plugin.id)]))) }
         return list

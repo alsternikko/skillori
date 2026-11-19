@@ -137,7 +137,7 @@ struct SourceLink: Codable, Equatable {
     var linkedAt: Date
     /// The content hash of the files on this Mac when the source was last asked.
     var localHash: String?
-    /// How the source was found, when Skillori found it: "Your SKILL.md is the source's from …".
+    /// How the source was found, when Skillori found it: "You have the version from …".
     var note: String?
 
     var source: SkillSource {
@@ -160,8 +160,8 @@ extension SourceProposal {
             missing = count
         case .olderVersion(let date, _, let count):
             // The copy here is the older one: the source has moved on since it was taken.
-            text = (date.map { "Your SKILL.md is the source’s from \($0.formatted(date: .abbreviated, time: .omitted))." }
-                ?? "Your SKILL.md is one the source had earlier.") + " The source has changed since."
+            text = (date.map { "You have the version from \($0.formatted(date: .abbreviated, time: .omitted))." }
+                ?? "You have an earlier version.") + " The source has a newer one."
             missing = count
         case .sameName:
             text = "Only the name matches. Choose it only if you know it is the right one."
@@ -177,7 +177,7 @@ extension SourceProposal {
         switch evidence {
         case .identical: ("Same content", .neutral, "●")
         case .sameSkillFile: ("Same skill file", .neutral, "●")
-        case .olderVersion: ("Behind source", .neutral, "◐")
+        case .olderVersion: ("Newer at source", .new, "◐")
         case .sameName: ("Same name", .outline, nil)
         }
     }
@@ -215,15 +215,10 @@ extension UpstreamState.Reason {
 // MARK: Acting on a status
 
 
-/// Skillori never changes a skill. To update one, the reader runs the installer; this is its command.
-enum UpdateCommand {
-    static func text(for installation: Installation) -> String {
-        UpdateRunner.commandText(for: [installation.directoryName])
-    }
-}
-
-/// Copies the installer's update command and says so for a moment.
+/// Copies the installer's update command and says so for a moment. Skillori leaves the skill
+/// itself to the installer; this is the command it runs.
 struct CopyUpdateCommandButton: View {
+    @Environment(InventoryStore.self) private var store
     let installation: Installation
     var prominent = true
     var tone: Tone?
@@ -232,7 +227,7 @@ struct CopyUpdateCommandButton: View {
     var body: some View {
         Button(copied ? "Copied" : "Copy update command") {
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(UpdateCommand.text(for: installation), forType: .string)
+            NSPasteboard.general.setString(store.updateCommandText(for: [installation]), forType: .string)
             copied = true
             Task {
                 try? await Task.sleep(for: .seconds(1.6))
@@ -240,7 +235,7 @@ struct CopyUpdateCommandButton: View {
             }
         }
         .buttonStyle(PillButtonStyle(prominent: prominent, on: tone))
-        .help(UpdateCommand.text(for: installation))
+        .help(store.updateCommandText(for: [installation]))
     }
 }
 

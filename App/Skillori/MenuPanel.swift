@@ -220,7 +220,7 @@ struct MenuPanel: View {
                 Button("▶") { Task { await store.update([installation]) } }
                     .buttonStyle(IconButtonStyle(ghost: true))
                     .disabled(store.updater.isRunning)
-                    .help(UpdateRunner.commandText(for: [installation.directoryName]))
+                    .help(store.updateCommandText(for: [installation]))
                     .accessibilityLabel("Update \(item.title)")
             } else if reservesButton {
                 // Keeps the revisions in one column when some skills here cannot be updated.

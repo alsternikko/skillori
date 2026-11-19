@@ -103,7 +103,10 @@ enum DebugSnapshots {
             // Finding sources, with real answers: this asks mdskills.ai and GitHub.
             var answered: [(InventoryStore.UnlinkedGroup, SourceFinder.Search)] = []
             let finder = SourceFinder()
-            for group in await store.unlinkedGroups() { answered.append((group, await store.proposals(for: group, using: finder))) }
+            // With every skill linked already, the linked ones stand in, so the sheet can still be seen.
+            var unlinked = await store.unlinkedGroups()
+            if unlinked.isEmpty { unlinked = await store.unlinkedGroups(includingLinked: true) }
+            for group in unlinked { answered.append((group, await store.proposals(for: group, using: finder))) }
             if !answered.isEmpty {
                 render(FindSourcesSheet(preview: answered).environment(store),
                        size: CGSize(width: 600, height: 640), to: out.appendingPathComponent("find-sources.png"))

@@ -194,7 +194,10 @@ final class InventoryStore {
                 return .heldBack(sourceMoved: false)
             }
             switch state {
-            case .updateAvailable(let upstream): return .differs(upstream: upstream)
+            // From GitHub the installer can take it over and bring the source's version; from
+            // anywhere else, or in a folder it doesn't write, all Skillori can say is that it differs.
+            case .updateAvailable(let upstream):
+                return adoption(for: installation) == nil ? .differs(upstream: upstream) : .updateAvailable(upstream: upstream)
             case .upToDate: return .upToDate
             case .cannotCheck(let reason): return .cantCheck(reason)
             case nil: return .notChecked
@@ -257,7 +260,8 @@ final class InventoryStore {
         save()
     }
 
-    /// The skills the installer can update: it recorded them, and their source has moved on.
+    /// The skills the installer can update: it recorded them, or can take them over from the
+    /// source they were linked to, and that source has moved on.
     var updatable: [Installation] {
         own.filter { if case .updateAvailable = status(for: $0) { true } else { false } }
     }
@@ -376,13 +380,106 @@ final class InventoryStore {
     }
 
     /// Runs the installer's update for these skills, then reads this Mac and asks the sources
-    /// again, so every status shows what is true afterwards.
+    /// again, so every status shows what is true afterwards. Skills the installer recorded get
+    /// its `update`; skills the reader linked get `add` from their source, which also puts them
+    /// on the installer's record.
     func update(_ installations: [Installation]) async {
         let names = installations.map(\.directoryName)
         guard !names.isEmpty, !updater.isRunning else { return }
-        _ = await updater.run(names: names)
+        let plan = updatePlan(for: installations)
+        if plan.isEmpty {
+            // Only a recorded skill with a name that can't be passed on gets here; the run says so.
+            guard installations.contains(where: { if case .skillsLock = $0.provenance { true } else { false } }) else { return }
+            _ = await updater.run(names: names)
+        } else {
+            let finished = await updater.run(names: names, commands: plan.map(\.arguments))
+            finishAdoptions(plan.prefix(finished).flatMap(\.adoptions))
+        }
         Notifier.shared.runEnded(names: names, phase: updater.phase)
         await refresh()
+    }
+
+    /// The installer commands an update of these skills runs, as they would be typed.
+    func updateCommandText(for installations: [Installation]) -> String {
+        let plan = updatePlan(for: installations)
+        guard !plan.isEmpty else { return UpdateRunner.commandText(for: installations.map(\.directoryName)) }
+        return plan.map { (["npx"] + $0.arguments.dropFirst()).joined(separator: " ") }.joined(separator: " && ")
+    }
+
+    // MARK: Handing linked skills to the installer
+
+    /// One linked skill the installer is to take over, with the links it replaces.
+    struct LinkedAdoption {
+        let plan: Adoption
+        let linkKeys: [String]
+    }
+
+    private struct UpdateStep {
+        let arguments: [String]
+        let adoptions: [LinkedAdoption]
+    }
+
+    /// `update` for the skills the installer recorded, then one `add` per source for linked ones.
+    private func updatePlan(for installations: [Installation]) -> [UpdateStep] {
+        var steps: [UpdateStep] = []
+        let recorded = installations.filter { if case .skillsLock = $0.provenance { true } else { false } }.map(\.directoryName)
+        if !recorded.isEmpty, recorded.allSatisfy(UpdateRunner.isSafeName) {
+            steps.append(UpdateStep(arguments: UpdateRunner.arguments(for: recorded), adoptions: []))
+        }
+        var adoptions: [LinkedAdoption] = []
+        for installation in installations where installation.provenance == .unknown {
+            guard let adoption = adoption(for: installation),
+                  !adoptions.contains(where: { $0.plan == adoption.plan }) else { continue }
+            adoptions.append(adoption)
+        }
+        for command in Adoption.commands(for: adoptions.map(\.plan), package: UpdateRunner.installerPackage) {
+            steps.append(UpdateStep(arguments: command.arguments,
+                                    adoptions: adoptions.filter { adoption in command.adoptions.contains(adoption.plan) }))
+        }
+        return steps
+    }
+
+    /// How the installer can take over this linked skill, with every copy of it linked to the
+    /// same source. Nil when it can't: the source isn't a GitHub repository, a copy sits in a
+    /// folder the installer doesn't write, or another skill has the name it would use.
+    func adoption(for installation: Installation) -> LinkedAdoption? {
+        guard let link = link(for: installation), case .github(let source) = link.source else { return nil }
+        let name = installation.displayName.lowercased()
+        let copies = own.filter { $0.provenance == .unknown && $0.displayName.lowercased() == name && self.link(for: $0)?.source == link.source }
+        return adoption(of: copies, from: source)
+    }
+
+    /// The same for copies that are about to be linked to this source.
+    func adoption(of copies: [Installation], from source: UpstreamSource) -> LinkedAdoption? {
+        guard let first = copies.first else { return nil }
+        let ids = Set(copies.map(\.id))
+        let folders = copies.flatMap { $0.bindings.map(\.discoveredPath) + [$0.canonicalPath] }
+        let taken = Set((inventory?.installations ?? []).filter { !ids.contains($0.id) }
+            .flatMap { $0.bindings.map(\.discoveredPath) + [$0.canonicalPath] })
+        guard let plan = Adoption.plan(skill: first.displayName, source: source, folders: folders,
+                                       home: FileManager.default.homeDirectoryForCurrentUser.path, taken: taken) else { return nil }
+        return LinkedAdoption(plan: plan, linkKeys: copies.map(Self.linkKey))
+    }
+
+    /// After the installer has put these skills in place: folders under an older name go to the
+    /// Trash, and the links give way to the installer's record.
+    private func finishAdoptions(_ adoptions: [LinkedAdoption]) {
+        let files = FileManager.default
+        for adoption in adoptions {
+            for folder in adoption.plan.leftovers {
+                let url = URL(fileURLWithPath: folder)
+                // Only when the installer's folder is there beside it, and only what is still there.
+                let placed = url.deletingLastPathComponent().appendingPathComponent(adoption.plan.folderName).path
+                guard files.fileExists(atPath: placed), (try? files.attributesOfItem(atPath: folder)) != nil else { continue }
+                try? files.trashItem(at: url, resultingItemURL: nil)
+            }
+            for key in adoption.linkKeys {
+                links[key] = nil
+                readings[key] = nil
+                held[key] = nil
+            }
+        }
+        if !adoptions.isEmpty { save() }
     }
 
     /// Runs Claude Code's update for these plugins, then reads this Mac and asks again.
@@ -645,8 +742,9 @@ final class InventoryStore {
         var id: String { name + "#" + (local?.treeID ?? installations.map(\.canonicalPath).joined()) }
     }
 
-    func unlinkedGroups() async -> [UnlinkedGroup] {
-        let unlinked = own.filter { $0.provenance == .unknown && link(for: $0) == nil }
+    /// `includingLinked` also takes skills that are linked already, for pictures of the sheet.
+    func unlinkedGroups(includingLinked: Bool = false) async -> [UnlinkedGroup] {
+        let unlinked = own.filter { $0.provenance == .unknown && (includingLinked || link(for: $0) == nil) }
         let read = await Task.detached(priority: .utility) {
             unlinked.map { installation in
                 (installation, try? LocalSkill(name: installation.directoryName, folder: URL(fileURLWithPath: installation.canonicalPath)))

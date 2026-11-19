@@ -215,13 +215,23 @@ final class UpdateRunner {
 
     /// Runs the update for these skills. True when the installer said it went well.
     func run(names: [String]) async -> Bool {
-        guard !isRunning, !names.isEmpty else { return false }
-        self.names = names
-        output = ""
         guard names.allSatisfy(Self.isSafeName) else {
+            guard !isRunning else { return false }
+            self.names = names
+            output = ""
             phase = .failed("This skill's folder name cannot be passed to a command.")
             return false
         }
+        return await run(names: names, commands: [Self.arguments(for: names)]) == 1
+    }
+
+    /// Runs the installer once for each list of arguments, one after the other, and stops at the
+    /// first that ends badly. `names` are the skills the run is for, which the views go by.
+    /// Returns how many of the commands went well.
+    func run(names: [String], commands: [[String]]) async -> Int {
+        guard !isRunning, !names.isEmpty, !commands.isEmpty else { return 0 }
+        self.names = names
+        output = ""
         phase = .running
         let control = ShellControl()
         self.control = control
@@ -232,26 +242,32 @@ final class UpdateRunner {
             interactive = true
             if await Shell.run(script: "command -v npx >/dev/null", interactive: true, timeout: 20, control: control) != 0 {
                 phase = .failed(control.wasStopped ? "Stopped." : "npx was not found. Updating needs Node. You can still copy the command.")
-                return false
+                return 0
             }
         }
-        // A first run downloads the installer, which can take a while on a slow line.
-        let status = await Shell.run(script: "exec npx \"$@\"", arguments: Self.arguments(for: names),
-                                     interactive: interactive, timeout: 300, control: control) { [weak self] text in
-            Task { @MainActor in self?.append(text) }
+        var finished = 0
+        for arguments in commands {
+            // A first run downloads the installer, which can take a while on a slow line.
+            let status = await Shell.run(script: "exec npx \"$@\"", arguments: arguments,
+                                         interactive: interactive, timeout: 300, control: control) { [weak self] text in
+                Task { @MainActor in self?.append(text) }
+            }
+            // Let the last lines land before the verdict.
+            try? await Task.sleep(for: .milliseconds(120))
+            guard status == 0 else {
+                if control.didTimeOut {
+                    phase = .failed("Stopped after five minutes without finishing.")
+                } else if control.wasStopped {
+                    phase = .failed("Stopped. The installer may have updated some of the files; Skillori reads them again now.")
+                } else {
+                    phase = .failed("The installer ended with code \(status).")
+                }
+                return finished
+            }
+            finished += 1
         }
-        // Let the last lines land before the verdict.
-        try? await Task.sleep(for: .milliseconds(120))
-        if status == 0 {
-            phase = .succeeded
-        } else if control.didTimeOut {
-            phase = .failed("Stopped after five minutes without finishing.")
-        } else if control.wasStopped {
-            phase = .failed("Stopped. The installer may have updated some of the files; Skillori reads them again now.")
-        } else {
-            phase = .failed("The installer ended with code \(status).")
-        }
-        return status == 0
+        phase = .succeeded
+        return finished
     }
 
     /// Adds printed text the way a terminal would show it: colour codes dropped, and a line
@@ -307,7 +323,7 @@ struct CommandFrame: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("$").foregroundStyle(tone.secondary)
-                Text(UpdateRunner.commandText(for: names))
+                Text(store.updateCommandText(for: installations))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
