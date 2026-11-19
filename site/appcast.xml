@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.5</title>
-      <pubDate>Wed, 18 Nov 2026 23:33:36 +0000</pubDate>
-      <sparkle:version>10</sparkle:version>
-      <sparkle:shortVersionString>0.2.5</sparkle:shortVersionString>
+      <title>Skillori 0.2.6</title>
+      <pubDate>Thu, 19 Nov 2026 07:12:48 +0000</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>0.2.6</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.5</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Things for you now only lists what Skillori can actually do. Newer Cursor plugin versions are shown on Cursor's page as information, and Codex plugins that Codex stopped reading after moving them to a new catalog can be added again with one click.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.6</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skillori can now open when you log in. Turn on Open at login under General in Settings; macOS keeps the choice, so it also shows under Login Items in System Settings.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="EU5kXIUnNGtx3iVaC0xUwZnx4UrbDAP8NTbn4XCCMEpMg2OUSD26xRJjweDgRs/ryNGVyfBL4N7B3IacpLkaCA==" length="5030477"/>
+                 sparkle:edSignature="ZSVmot5Bp0sxsEj9ItX8+YSeEscpdcXM2Iz6WUXBxsGm2VNxBYiz1Z3ZLyBm8sZhRP4EvXbt8ty4hdm+bYb2Cg==" length="5044710"/>
     </item>
   </channel>
 </rss>
