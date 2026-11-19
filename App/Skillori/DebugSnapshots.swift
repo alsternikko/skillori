@@ -102,7 +102,8 @@ enum DebugSnapshots {
             }
             // Finding sources, with real answers: this asks mdskills.ai and GitHub.
             var answered: [(InventoryStore.UnlinkedGroup, SourceFinder.Search)] = []
-            for group in await store.unlinkedGroups() { answered.append((group, await store.proposals(for: group))) }
+            let finder = SourceFinder()
+            for group in await store.unlinkedGroups() { answered.append((group, await store.proposals(for: group, using: finder))) }
             if !answered.isEmpty {
                 render(FindSourcesSheet(preview: answered).environment(store),
                        size: CGSize(width: 600, height: 640), to: out.appendingPathComponent("find-sources.png"))

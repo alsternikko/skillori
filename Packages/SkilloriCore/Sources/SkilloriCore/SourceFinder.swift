@@ -184,6 +184,21 @@ public enum KnownCollections {
     ]
 }
 
+/// The repositories one search has read, so each is asked once however many skills it is
+/// compared with. GitHub counts every request against its hourly limit, unchanged answers too.
+actor TreeMemory {
+    private var trees: [UpstreamSource: Result<SourceTree, UpstreamState.Reason>] = [:]
+
+    func tree(of source: UpstreamSource, asking ask: GitHubTrees) async -> Result<SourceTree, UpstreamState.Reason> {
+        if let known = trees[source] { return known }
+        let answer = await ask.tree(of: source)
+        // A withdrawn question says nothing; ask again next time.
+        if answer != .failure(.cancelled) { trees[source] = answer }
+        return answer
+    }
+}
+
+/// Keep one finder for a whole search: it remembers each repository it has read.
 public struct SourceFinder: Sendable {
     public typealias FileFetcher = @Sendable (_ source: UpstreamSource, _ ref: String, _ path: String) async -> Data?
     public typealias HistoryFetcher = @Sendable (_ source: UpstreamSource, _ path: String) async -> Result<[(sha: String, date: Date?)], UpstreamState.Reason>
@@ -192,6 +207,7 @@ public struct SourceFinder: Sendable {
     private let registry: SkillRegistry
     private let fetchFile: FileFetcher
     private let history: HistoryFetcher
+    private let memory = TreeMemory()
     /// How many earlier versions of one skill file are read at most.
     public static let maxVersions = 30
 
@@ -240,7 +256,7 @@ public struct SourceFinder: Sendable {
             for repository in repositories where !seenRepositories.contains(repository.name) {
                 seenRepositories.insert(repository.name)
                 let tree: SourceTree
-                switch await trees.tree(of: repository) {
+                switch await memory.tree(of: repository, asking: trees) {
                 case .success(let answer): tree = answer
                 case .failure(let reason): note(reason); continue
                 }
@@ -287,7 +303,7 @@ public struct SourceFinder: Sendable {
     /// Compares a skill with one folder of a source; a failure means the source could not be asked.
     func check(_ skill: LocalSkill, in source: UpstreamSource, subpath: String, via: String) async -> Result<SourceProposal?, UpstreamState.Reason> {
         let tree: SourceTree
-        switch await trees.tree(of: source) {
+        switch await memory.tree(of: source, asking: trees) {
         case .success(let answer): tree = answer
         case .failure(let reason): return .failure(reason)
         }

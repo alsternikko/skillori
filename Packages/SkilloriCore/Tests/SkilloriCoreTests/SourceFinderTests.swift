@@ -36,6 +36,11 @@ import Testing
         (Data(#"{"error":"Skill not found"}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: nil, headerFields: nil)!)
     }
 
+    private actor Asked {
+        var count = 0
+        func add() { count += 1 }
+    }
+
     @Test func readsWhereTheRegistrySaysASkillLives() {
         let folder = #"{"skill":{"owner":"nextlevelbuilder","repo":"ui-ux-pro-max-skill","skill_path":".claude/skills/ui-ux-pro-max","github_url":"https://github.com/nextlevelbuilder/ui-ux-pro-max-skill"}}"#
         #expect(SkillRegistry.read(Data(folder.utf8)) == RegistryHit(registry: "mdskills.ai",
@@ -123,6 +128,20 @@ import Testing
         let fine = SourceFinder(trees: Self.trees(["o/r": Self.listing("skills/demo", ["SKILL.md": text])]),
                                 registry: Self.noRegistry, fetchFile: { _, _, _ in nil }, history: { _, _ in .success([]) })
         #expect(await fine.search(for: Self.skill("demo", text), yourSources: [UpstreamSource(owner: "o", repository: "r")]).problem == nil)
+    }
+
+    @Test func oneSearchAsksEachRepositoryOnce() async {
+        let asked = Asked()
+        let body = Self.listing("skills/demo", ["SKILL.md": "x\n"])
+        let trees = GitHubTrees { request in
+            await asked.add()
+            return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let finder = SourceFinder(trees: trees, registry: Self.noRegistry, fetchFile: { _, _, _ in nil }, history: { _, _ in .success([]) })
+        let yours = [UpstreamSource(owner: "o", repository: "r")]
+        for name in ["demo", "other", "third"] { _ = await finder.search(for: Self.skill(name, name + "\n"), yourSources: yours) }
+        // Your one repository and the known collections, once each, for three skills.
+        #expect(await asked.count == 1 + KnownCollections.repositories.count)
     }
 
     @Test func readsCommitHistory() throws {

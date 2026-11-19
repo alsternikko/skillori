@@ -186,9 +186,10 @@ struct FindSourcesSheet: View {
         groups = found
         started = true
         for group in found { findings[group.id] = .asking }
+        let finder = SourceFinder()
         // One skill at a time: each asks a few sources, and GitHub counts requests per hour.
         for group in found {
-            let search = await store.proposals(for: group)
+            let search = await store.proposals(for: group, using: finder)
             findings[group.id] = .found(search)
             // Tick only what is proven and can be followed: not a name alone, not a folder that is gone.
             if let best = search.proposals.first, best.evidence.isConfirmed, !best.folderGone {

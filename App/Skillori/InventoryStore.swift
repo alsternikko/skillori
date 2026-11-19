@@ -680,9 +680,10 @@ final class InventoryStore {
 
     /// Looks for one group's source. A direct action by the reader, so it runs whether or not
     /// regular checks are on. Sends skill and repository names, nothing else.
-    func proposals(for group: UnlinkedGroup) async -> SourceFinder.Search {
+    /// Pass the same finder for every group of one search: it asks each repository once.
+    func proposals(for group: UnlinkedGroup, using finder: SourceFinder) async -> SourceFinder.Search {
         guard let local = group.local else { return SourceFinder.Search(proposals: [], problem: nil) }
-        return await SourceFinder().search(for: local, yourSources: yourSources)
+        return await finder.search(for: local, yourSources: yourSources)
     }
 
     /// Links every copy in the group to the proposed folder, with how it was found.
