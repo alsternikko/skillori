@@ -6,15 +6,32 @@ import SwiftUI
 public struct PanelSurface<Content: View>: View {
     @Environment(\.colorScheme) private var scheme
     let content: Content
+    let reportHeight: ((CGFloat) -> Void)?
 
-    public init(@ViewBuilder content: () -> Content) { self.content = content() }
+    /// In a window that follows the content's height, pass `reportHeight`. The content then
+    /// keeps its own height and reports it, and the surface fills whatever height the window
+    /// has on its way there, so the panel grows and shrinks as one piece, rounded corners and all.
+    public init(reportHeight: ((CGFloat) -> Void)? = nil, @ViewBuilder content: () -> Content) {
+        self.reportHeight = reportHeight
+        self.content = content()
+    }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 0) { content }
-            .padding(6)
-            .background(Palette.panel, in: shape)
-            .overlay(shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.12 : 0), lineWidth: 1))
-            .foregroundStyle(Palette.ink)
+        let stack = VStack(alignment: .leading, spacing: 0) { content }.padding(6)
+        Group {
+            if let reportHeight {
+                stack
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reportHeight($0) }
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .clipShape(shape)
+            } else {
+                stack
+            }
+        }
+        .background(Palette.panel, in: shape)
+        .overlay(shape.strokeBorder(Color.white.opacity(scheme == .dark ? 0.12 : 0), lineWidth: 1))
+        .foregroundStyle(Palette.ink)
     }
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.panel, style: .circular) }

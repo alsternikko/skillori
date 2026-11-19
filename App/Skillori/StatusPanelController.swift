@@ -38,13 +38,15 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                         NSWorkspace.shared.open(url)
                     }
                 },
-                contentResized: { [weak self] in self?.layoutPanel(animated: true) }
+                contentHeightChanged: { [weak self] height in self?.contentHeightChanged(height) }
             ))
             .environment(store)
             .frame(width: Self.panelWidth)
-            // While the window is still on its way to a new height, the content stays at its top.
-            .frame(maxHeight: .infinity, alignment: .top)
         )
+        // The window's height is ours alone. Left to the hosting view as well, Auto Layout
+        // pushed the window to the content's new height at once, mid-animation, and the content
+        // jumped up and slid back down for every line an update printed.
+        host.sizingOptions = []
         panel.setContent(host)
         panel.delegate = self
         panel.onCancel = { [weak self] in self?.panelDidCancel() }
@@ -56,6 +58,16 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         observeStore()
+        // The menu bar item can still be on its way into place when the panel opens, and it
+        // moves when the menu bar does. The panel stays hung under it.
+        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: nil, queue: .main) { [weak self] note in
+            let moved = (note.object as AnyObject?).map(ObjectIdentifier.init)
+            MainActor.assumeIsolated {
+                guard let self, self.isOpen, let window = self.statusItem.button?.window,
+                      moved == ObjectIdentifier(window) else { return }
+                self.layoutPanel(animated: false)
+            }
+        }
     }
 
     // MARK: Menu bar item
@@ -71,19 +83,9 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                 store.needsAttention ? "Skillori, local changes"
                     : updates > 0 ? "Skillori, \(updates) update\(updates == 1 ? "" : "s")"
                     : store.isStale ? "Skillori, sources not reached" : "Skillori")
-            _ = store.isChecking
-            // The panel grows when an update prints something.
-            _ = store.updater.phase
-            _ = store.updater.output
-            _ = store.inventory?.scannedAt
-            _ = store.isScanning
-            // A line about a new Skillori comes and goes in the panel.
-            _ = AppUpdater.shared.phase
         } onChange: { [weak self] in
-            Task { @MainActor in
-                self?.observeStore()
-                self?.layoutPanel(animated: true)
-            }
+            // The panel's height follows its content on its own; see `contentHeightChanged`.
+            Task { @MainActor in self?.observeStore() }
         }
     }
 
@@ -138,6 +140,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     func open() {
         closeGeneration += 1
         isOpen = true
+        // The content's height is reported during layout; this makes it current before placing.
+        host.layoutSubtreeIfNeeded()
         layoutPanel(animated: false)
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if !panel.isVisible { panel.alphaValue = 0 }
@@ -173,6 +177,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
         outsideClickMonitor = nil
         host.layer?.removeAnimation(forKey: "open")
+        stopResizing()
 
         guard animated else {
             panel.orderOut(nil)
@@ -203,36 +208,98 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         return CGPoint(x: x, y: top)
     }
 
+    /// The height the panel's content asks for, as it last reported it.
+    private(set) var contentHeight: CGFloat = 0
+    private var layoutScheduled = false
+
+    /// The content reports its height from inside a layout pass. The window follows once that
+    /// pass is over, and changes that land together make one move.
+    private func contentHeightChanged(_ height: CGFloat) {
+        guard height != contentHeight else { return }
+        contentHeight = height
+        guard !layoutScheduled else { return }
+        layoutScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.layoutScheduled = false
+            self.layoutPanel(animated: true)
+        }
+    }
+
     /// Sizes the panel to its content and hangs it under the menu bar item, kept on screen.
     /// When the panel is open and its content changes height, the change is eased.
     private func layoutPanel(animated: Bool) {
-        var size = host.fittingSize
+        guard contentHeight > 0 else { return }
+        let width = Self.panelWidth
+        // Whole points, so the top edge stays exactly where it is while the height moves.
+        var height = contentHeight.rounded(.up)
         guard let button = statusItem.button, let buttonWindow = button.window else {
-            panel.setContentSize(size)
+            stopResizing()
+            panel.setContentSize(NSSize(width: width, height: height))
             return
         }
         let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
-        var x = anchor.midX - size.width / 2
+        var x = anchor.midX - width / 2
         if let screen = buttonWindow.screen ?? NSScreen.main {
-            x = min(max(x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - size.width - 8)
+            x = min(max(x, screen.visibleFrame.minX + 8), screen.visibleFrame.maxX - width - 8)
             // Never taller than the room under the menu bar, however many lists are open.
-            size.height = min(size.height, max(anchor.minY - 6 - screen.visibleFrame.minY - 8, 200))
+            height = min(height, max(anchor.minY - 6 - screen.visibleFrame.minY - 8, 200).rounded(.down))
         }
-        let frame = NSRect(x: x, y: anchor.minY - 6 - size.height, width: size.width, height: size.height)
-        guard frame != panel.frame else { return }
-        if animated, isOpen, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Motion.resize
-                context.timingFunction = Motion.easeOut
-                panel.animator().setFrame(frame, display: true)
-            } completionHandler: { [weak self] in
-                // The shadow follows the window's shape, which just changed.
-                Task { @MainActor in self?.panel.invalidateShadow() }
-            }
+        let top = (anchor.minY - 6).rounded(.down)
+        let frame = NSRect(x: x.rounded(), y: top - height, width: width, height: height)
+        if animated, isOpen, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            guard frame != (resize?.to ?? panel.frame) else { return }
+            startResizing(to: frame)
         } else {
+            stopResizing()
+            guard frame != panel.frame else { return }
             panel.setFrame(frame, display: true)
             panel.invalidateShadow()
         }
+    }
+
+    // MARK: Resizing
+
+    /// A height change on its way. The window's animator moves the origin and the size
+    /// separately and rounds each, so the top edge wavered by a point, frame after frame. This
+    /// moves the height only, a whole point at a time, and sets the origin from the fixed top.
+    private struct Resize {
+        let from: NSRect
+        let to: NSRect
+        let start: CFTimeInterval
+    }
+
+    private var resize: Resize?
+    private var resizeLink: CADisplayLink?
+
+    private func startResizing(to frame: NSRect) {
+        // A new height while one is on its way: carry on from where the window is now.
+        resize = Resize(from: panel.frame, to: frame, start: CACurrentMediaTime())
+        if resizeLink == nil {
+            let link = host.displayLink(target: self, selector: #selector(resizeStep))
+            link.add(to: .main, forMode: .common)
+            resizeLink = link
+        }
+    }
+
+    private func stopResizing() {
+        resizeLink?.invalidate()
+        resizeLink = nil
+        resize = nil
+    }
+
+    @objc private func resizeStep() {
+        guard let resize else { stopResizing(); return }
+        let progress = min((CACurrentMediaTime() - resize.start) / Motion.resize, 1)
+        let eased = Motion.easeOutCurve.value(at: progress)
+        let height = (resize.from.height + (resize.to.height - resize.from.height) * eased).rounded()
+        let frame = NSRect(x: resize.to.minX, y: resize.to.maxY - height, width: resize.to.width, height: height)
+        if frame != panel.frame {
+            panel.setFrame(frame, display: true)
+            // The shadow follows the window's shape, which just changed.
+            panel.invalidateShadow()
+        }
+        if progress >= 1 { stopResizing() }
     }
 
     /// True while the pointer is over our menu bar item.
@@ -296,15 +363,13 @@ final class PanelWindow: NSPanel {
         contentView = container
     }
 
+    /// The view fills the window and follows it. Its size comes only from the window's frame,
+    /// never the other way around.
     func setContent(_ view: NSView) {
-        view.translatesAutoresizingMaskIntoConstraints = false
+        view.translatesAutoresizingMaskIntoConstraints = true
+        view.frame = container.bounds
+        view.autoresizingMask = [.width, .height]
         container.addSubview(view)
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            view.topAnchor.constraint(equalTo: container.topAnchor),
-            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
     }
 
     override var canBecomeKey: Bool { true }
@@ -323,6 +388,49 @@ private enum Motion {
     static let openScale: CGFloat = 0.96
     /// A strong ease-out: fast at first, then settling.
     static let easeOut = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+    /// The same curve, for animations we step ourselves.
+    static let easeOutCurve = UnitBezier(0.23, 1, 0.32, 1)
+}
+
+/// A cubic Bézier timing curve from (0, 0) to (1, 1), as CSS and Core Animation define them,
+/// evaluated by solving for x and reading y.
+struct UnitBezier {
+    private let ax, bx, cx, ay, by, cy: Double
+
+    init(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) {
+        cx = 3 * x1; bx = 3 * (x2 - x1) - cx; ax = 1 - cx - bx
+        cy = 3 * y1; by = 3 * (y2 - y1) - cy; ay = 1 - cy - by
+    }
+
+    func value(at x: Double) -> Double {
+        guard x > 0 else { return 0 }
+        guard x < 1 else { return 1 }
+        return sampleY(solveT(x))
+    }
+
+    private func sampleX(_ t: Double) -> Double { ((ax * t + bx) * t + cx) * t }
+    private func sampleY(_ t: Double) -> Double { ((ay * t + by) * t + cy) * t }
+    private func slopeX(_ t: Double) -> Double { (3 * ax * t + 2 * bx) * t + cx }
+
+    private func solveT(_ x: Double) -> Double {
+        // Newton's method first; it settles in a few steps almost everywhere.
+        var t = x
+        for _ in 0..<8 {
+            let error = sampleX(t) - x
+            if abs(error) < 1e-6 { return t }
+            let slope = slopeX(t)
+            if abs(slope) < 1e-6 { break }
+            t -= error / slope
+        }
+        // Bisection where the slope is too flat for it.
+        var low = 0.0, high = 1.0
+        t = x
+        while high - low > 1e-6 {
+            if sampleX(t) < x { low = t } else { high = t }
+            t = (low + high) / 2
+        }
+        return t
+    }
 }
 
 private extension CATransform3D {

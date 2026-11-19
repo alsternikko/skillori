@@ -10,8 +10,8 @@ struct PanelActions {
     var addFolder: () -> Void = {}
     var rescan: () -> Void = {}
     var openPrivacySettings: () -> Void = {}
-    /// The panel's own content changed height, so its window has to follow.
-    var contentResized: () -> Void = {}
+    /// Set by the window that shows the panel: it follows the content's height, which arrives here.
+    var contentHeightChanged: ((CGFloat) -> Void)?
 }
 
 /// Everything the panel shows, as plain values. The live model comes from the inventory;
@@ -99,7 +99,7 @@ struct MenuPanel: View {
 
     var body: some View {
         let model = fixedModel ?? PanelModel.live(from: store)
-        PanelSurface {
+        PanelSurface(reportHeight: actions.contentHeightChanged) {
             HeroBlock(tone: model.tone, label: model.label, stamp: model.stamp, number: model.number,
                       dimmed: model.dimmed, lead: model.lead, note: model.note, scale: model.scale)
             if !model.groups.isEmpty || !model.rows.isEmpty {
@@ -167,8 +167,6 @@ struct MenuPanel: View {
             ListRow(isLast: isLast && !open && !hasCommand, tree: true, rule: false) {
                 Button {
                     if open { opened.remove(group.id) } else { opened.insert(group.id) }
-                    // The window follows once the list has its new height.
-                    Task { @MainActor in actions.contentResized() }
                 } label: {
                     HStack(spacing: 8) {
                         DataText(open ? "−" : "+").frame(width: 8)
