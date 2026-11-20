@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.12</title>
-      <pubDate>Fri, 20 Nov 2026 12:10:30 +0000</pubDate>
-      <sparkle:version>17</sparkle:version>
-      <sparkle:shortVersionString>0.2.12</sparkle:shortVersionString>
+      <title>Skillori 0.2.13</title>
+      <pubDate>Fri, 20 Nov 2026 14:14:46 +0000</pubDate>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>0.2.13</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.12</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skills whose source is gone can be moved to where they live now, or kept as a local copy. A skill page now stays put after an update.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.13</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>After an update, a skill's page keeps the result in view, and a moved skill says where it came from.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="EMqXS2wj+Ro1ntNMB5iltrr4oICwgi8YfDLFqX3zDDm/6RaSGqw2cIzkVC/9Ab81YMH4qCk79tJhmyl2RtFeAA==" length="5399916"/>
+                 sparkle:edSignature="IjecwNNrSTDMi5PlCAywlcXRNtHHDyPKVp/tRv+Uw+zAQMkUJ4VYXp5AUqq5Atspp6q9AJlL84Owb/EFyxEwCQ==" length="5409505"/>
     </item>
   </channel>
 </rss>
