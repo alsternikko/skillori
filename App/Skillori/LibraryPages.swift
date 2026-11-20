@@ -28,6 +28,10 @@ struct SkillPage: View {
     var onLink: () -> Void
     /// Looks for this skill's source, with the copies that share its name.
     var onFindSources: () -> Void = {}
+    /// The last update of this skill, kept while the page is open. The store's receipt folds
+    /// away after a few seconds, as its line in the library's list does; here the reader came
+    /// for this skill, so the result stays until they leave.
+    @State private var heldReceipt: InventoryStore.Receipt?
 
     var body: some View {
         VStack(spacing: 6) {
@@ -59,6 +63,18 @@ struct SkillPage: View {
             .scrollIndicators(.never)
         }
         .onKeyPress(.escape) { back(); return .handled }
+        .onChange(of: store.receipt?.at, initial: true) {
+            if let receipt = store.receipt, receipt.contains(installation) { heldReceipt = receipt }
+        }
+        .onChange(of: store.updater.isRunning) { if store.updater.isRunning { heldReceipt = nil } }
+    }
+
+    /// The update to tell about: the store's while it shows one, then the one this page kept.
+    private var receipt: InventoryStore.Receipt? {
+        if let receipt = store.receipt, receipt.contains(installation) { return receipt }
+        guard !store.updater.isRunning, var held = heldReceipt else { return nil }
+        held.showsOutput = false
+        return held
     }
 
     // MARK: Facts
@@ -150,9 +166,16 @@ struct SkillPage: View {
                           extra: [("Show in Finder", false, { NSWorkspace.shared.activateFileViewerSelecting(urls) })])
         }
         // Just updated: say so for a moment, with where it came from, before the page settles.
-        if let receipt = store.receipt, receipt.contains(installation) {
+        if let receipt {
+            let at = InventoryStore.stamp(receipt.at)
+            // A move happens in the same run as the update; its record is a moment older than the receipt.
+            if let move = store.move(of: installation), abs(move.at.timeIntervalSince(receipt.at)) < 120 {
+                return Advice(tone: .new, title: "Moved to \(move.to)",
+                              text: "Moved from \(move.from) and updated at \(at). Start a new agent session to load it.",
+                              command: receipt.showsOutput ? receipt.installations : nil)
+            }
             return Advice(tone: .new, title: "Updated from \(receipt.source)",
-                          text: "At \(InventoryStore.stamp(receipt.at)). Start a new agent session to load it.",
+                          text: "At \(at). Start a new agent session to load it.",
                           command: receipt.showsOutput ? receipt.installations : nil)
         }
         // The source the installer recorded is gone: say what probably happened, and the ways on.
@@ -375,6 +398,10 @@ struct SkillPage: View {
                 }
                 if case .cantCheck(let reason) = status {
                     Text(reason.sentence).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                }
+                if let move = store.move(of: installation) {
+                    Text("Moved here from \(move.from) on \(Assist.day(move.at)).")
+                        .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 }
                 if store.link(for: installation) != nil, let recorded = store.recordedSource(of: installation) {
                     // Linked to a new home because the installer's recorded one was gone.

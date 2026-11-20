@@ -12,7 +12,7 @@ import SkilloriCore
 /// materic-inc/plugins, where a second skill has the same name.
 @MainActor
 enum DebugLostSourceProbe {
-    static func runIfRequested(store: InventoryStore) {
+    static func runIfRequested(store: InventoryStore, windows: WindowRouter) {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["SKILLORI_LOST_PROBE"], let target = env["SKILLORI_LOST_PROBE_SOURCE"],
               let home = InventoryStore.testHome else { return }
@@ -32,6 +32,14 @@ enum DebugLostSourceProbe {
                 }.joined(separator: "; ")
             }
             @MainActor func done() { log("-- end"); NSApp.terminate(nil) }
+            /// The library window as it looks now, next to the log.
+            @MainActor func picture(_ name: String) {
+                guard let view = windows.library?.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("lost-\(name).png"))
+            }
 
             while store.inventory == nil || store.isScanning { await pause(100) }
             log("checks on: \(store.checksEnabled)")
@@ -61,7 +69,15 @@ enum DebugLostSourceProbe {
             log("updatable: \(updatable.map(\.directoryName))")
             log("command: \(store.updateCommandText(for: updatable))")
             guard !updatable.isEmpty else { done(); return }
-            await store.update(updatable)
+            // Updated from its page, as the reader would.
+            windows.showLibrary(at: .skill(lost.id))
+            await pause(1500)
+            picture("1-before")
+            let run = Task { await store.update(updatable) }
+            while store.receipt == nil, !run.isCancelled { await pause(50) }
+            await pause(300)
+            picture("2-receipt")
+            await run.value
             while store.isChecking || store.isScanning { await pause(100) }
             log("run: \(store.updater.phase)")
             for line in store.updater.lastLines(4) { log("  | \(line)") }
@@ -77,6 +93,8 @@ enum DebugLostSourceProbe {
             after("after")
             await pause(3000)
             after("3 s later")
+            log("store receipt now: \(store.receipt.map { $0.source } ?? "folded")")
+            picture("3-settled")
             await store.rescan()
             after("read again")
             done()

@@ -425,6 +425,9 @@ struct InstallationDetail: View {
             } else {
                 steps.append(("no date", "Installed with npx skills", false))
             }
+            if let move = store.move(of: installation) {
+                steps.append((stamp(move.at), "Moved from \(move.from) by you", true))
+            }
             if let updated = installation.updatedAt, updated != installation.installedAt {
                 steps.append((stamp(updated), "Updated by npx skills", true))
             }

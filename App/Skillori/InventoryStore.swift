@@ -30,6 +30,15 @@ final class InventoryStore {
     /// Skills the reader keeps as local copies, no longer checked against a source, and since
     /// when. By folder, like links.
     private(set) var keptLocal: [String: Date] = [:]
+    /// Skills moved from a source the installer recorded to the one the reader linked, by folder.
+    /// Kept, so the skill's page can tell where it came from before.
+    private(set) var moves: [String: Move] = [:]
+
+    struct Move: Codable, Equatable {
+        let from: String
+        let to: String
+        let at: Date
+    }
     /// What each Claude Code plugin's marketplace last said, by plugin id (`name@marketplace`).
     private(set) var pluginReadings: [String: UpstreamReading] = [:]
     /// Folder hashes at installed plugin commits. They never change, so each is asked for once.
@@ -211,6 +220,13 @@ final class InventoryStore {
     func canLink(_ installation: Installation) -> Bool {
         guard link(for: installation) == nil else { return false }
         return installation.provenance == .unknown || lostSource(of: installation) != nil
+    }
+
+    /// Where this skill moved from, while the installer's record still names the source it moved to.
+    func move(of installation: Installation) -> Move? {
+        guard let move = moves[Self.linkKey(for: installation)], recordedSource(of: installation) == move.to,
+              link(for: installation) == nil else { return nil }
+        return move
     }
 
     func isKeptLocal(_ installation: Installation) -> Bool {
@@ -519,6 +535,8 @@ final class InventoryStore {
     struct LinkedAdoption {
         let plan: Adoption
         let linkKeys: [String]
+        /// The source the installer recorded for each copy, when it had one: the skill moves from it.
+        var recorded: [String: String] = [:]
     }
 
     private struct UpdateStep {
@@ -575,7 +593,9 @@ final class InventoryStore {
             .flatMap { $0.bindings.map(\.discoveredPath) + [$0.canonicalPath] })
         guard let plan = Adoption.plan(skill: first.displayName, source: source, folders: folders,
                                        home: Self.home.path, taken: taken, subpath: subpath, links: links) else { return nil }
-        return LinkedAdoption(plan: plan, linkKeys: copies.map(Self.linkKey))
+        var recorded: [String: String] = [:]
+        for copy in copies { if let source = recordedSource(of: copy) { recorded[Self.linkKey(for: copy)] = source } }
+        return LinkedAdoption(plan: plan, linkKeys: copies.map(Self.linkKey), recorded: recorded)
     }
 
     /// After the installer has put these skills in place: folders under an older name go to the
@@ -594,6 +614,9 @@ final class InventoryStore {
                 links[key] = nil
                 readings[key] = nil
                 held[key] = nil
+                if let from = adoption.recorded[key], from != adoption.plan.source.name {
+                    moves[key] = Move(from: from, to: adoption.plan.source.name, at: Date())
+                }
             }
         }
         if !adoptions.isEmpty { save() }
@@ -1025,6 +1048,7 @@ final class InventoryStore {
         var pluginBaselines: [String: String]?
         var codexPlugins: CodexPluginList?
         var keptLocal: [String: Date]?
+        var moves: [String: Move]?
     }
 
     private static var savedURL: URL? {
@@ -1063,6 +1087,7 @@ final class InventoryStore {
         pluginBaselines = saved.pluginBaselines ?? [:]
         codexPlugins = saved.codexPlugins
         keptLocal = saved.keptLocal ?? [:]
+        moves = saved.moves ?? [:]
     }
 
     private func save() {
@@ -1070,7 +1095,7 @@ final class InventoryStore {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
                           pluginReadings: pluginReadings, pluginBaselines: pluginBaselines, codexPlugins: codexPlugins,
-                          keptLocal: keptLocal)
+                          keptLocal: keptLocal, moves: moves)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 

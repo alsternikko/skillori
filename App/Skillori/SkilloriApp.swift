@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DebugLibraryProbe.runIfRequested(store: store, windows: windows)
         DebugLibraryRunProbe.runIfRequested(store: store, windows: windows)
         DebugAdoptProbe.runIfRequested(store: store)
-        DebugLostSourceProbe.runIfRequested(store: store)
+        DebugLostSourceProbe.runIfRequested(store: store, windows: windows)
         DebugPluginUpdate.runIfRequested(store: store)
         if let statusPanel { DebugSelfTest.runIfRequested(store: store, panel: statusPanel, windows: windows) }
         if let statusPanel { DebugPanelProbe.runIfRequested(store: store, panel: statusPanel) }
