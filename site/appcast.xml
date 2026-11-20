@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.15</title>
-      <pubDate>Fri, 20 Nov 2026 21:33:16 +0000</pubDate>
-      <sparkle:version>20</sparkle:version>
-      <sparkle:shortVersionString>0.2.15</sparkle:shortVersionString>
+      <title>Skillori 0.2.16</title>
+      <pubDate>Fri, 20 Nov 2026 21:47:08 +0000</pubDate>
+      <sparkle:version>21</sparkle:version>
+      <sparkle:shortVersionString>0.2.16</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.15</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>When a source has moved and leaves a note, the skill page shows what it says, with a button to the new address.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.16</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>When you unlink a source that stopped answering, Skillori remembers it and what it said, on the skill's page and in Find sources.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="b1Q4KtMzjsDv65TwMBH6XxbF0ho0r2IznLd3q3NQomgih94otqvXzyb17OWQSpOe+T8LsUjYP+znshxkxMbJBQ==" length="5434489"/>
+                 sparkle:edSignature="mS82lL8bX4ohpsto2D4ZiOftbsRG783HW7Q93/SkefFSFGqyAeYnncrd+Y11VyP7ZaS/g4NDtGXQEljuRykfDA==" length="5445116"/>
     </item>
   </channel>
 </rss>
