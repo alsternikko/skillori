@@ -418,11 +418,14 @@ struct SkillPage: View {
                 }
                 .padding(.top, 8)
             } else {
-                FactRow { Text("Not known") } value: {
+                FactRow { Text("Not known") } value: { EmptyView() }
+                Text("Find or link where it came from, and Skillori tells you when it changes. Optional.")
+                    .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                HStack(spacing: 6) {
+                    Button("Find sources", action: onFindSources).buttonStyle(PillButtonStyle())
                     Button("Link…", action: onLink).buttonStyle(PillButtonStyle())
                 }
-                Text("Linking it to a repository or an install script lets Skillori tell you when it changes. Optional.")
-                    .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                .padding(.top, 8)
             }
         }
     }
