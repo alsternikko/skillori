@@ -231,9 +231,17 @@ struct FindSourcesSheet: View {
                           : "Some places gave answers Skillori could not read, so not every place was asked."))
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
                 } else if search.proposals.isEmpty {
+                    let past = group.installations.lazy.compactMap { store.pastSource(of: $0) }.first
                     Text(group.local == nil ? "The files on this Mac could not be read."
-                         : "Nothing found. Link it by hand from its page if you know where it came from.")
+                         : past.map { "Nothing found. It was linked to \($0.name) until \(Assist.day($0.until)). "
+                             + SkillPage.pastSentence($0) + " Link it by hand from its page once you know where it went." }
+                         ?? "Nothing found. Link it by hand from its page if you know where it came from.")
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if group.local != nil, let url = past?.notice?.url {
+                        Button(SkillPage.openLabel(for: url)) { NSWorkspace.shared.open(url) }
+                            .buttonStyle(PillButtonStyle()).padding(.top, 2)
+                    }
                 }
             }
         }

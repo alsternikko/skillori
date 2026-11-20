@@ -39,6 +39,18 @@ final class InventoryStore {
         let to: String
         let at: Date
     }
+    /// Sources the reader unlinked after they stopped answering, by folder. Kept, so the trail to
+    /// where the skill went isn't lost with the link: its page and Find sources can still say it.
+    private(set) var pastSources: [String: PastSource] = [:]
+
+    struct PastSource: Codable, Equatable {
+        /// The source as Skillori named it, such as `example.com/api/install-skills`.
+        let name: String
+        /// When the reader unlinked it.
+        let until: Date
+        /// What the source said when it stopped answering, if anything.
+        let notice: SourceNotice?
+    }
     /// What each Claude Code plugin's marketplace last said, by plugin id (`name@marketplace`).
     private(set) var pluginReadings: [String: UpstreamReading] = [:]
     /// Folder hashes at installed plugin commits. They never change, so each is asked for once.
@@ -227,6 +239,13 @@ final class InventoryStore {
         guard let move = moves[Self.linkKey(for: installation)], recordedSource(of: installation) == move.to,
               link(for: installation) == nil else { return nil }
         return move
+    }
+
+    /// The source this skill was linked to until it stopped answering and the reader unlinked it,
+    /// while it has no other.
+    func pastSource(of installation: Installation) -> PastSource? {
+        guard link(for: installation) == nil else { return nil }
+        return pastSources[Self.linkKey(for: installation)]
     }
 
     func isKeptLocal(_ installation: Installation) -> Bool {
@@ -955,6 +974,7 @@ final class InventoryStore {
         // The search already has the answer a check would give.
         let state: UpstreamState = candidate.hash == search.localHash ? .upToDate : .updateAvailable(upstreamHash: candidate.hash)
         readings[key] = UpstreamReading(state: state, checkedAt: now)
+        pastSources[key] = nil
         save()
     }
 
@@ -1032,12 +1052,17 @@ final class InventoryStore {
                                     subpath: proposal.subpath, linkedAt: now, localHash: group.local?.treeID,
                                     note: proposal.sentence)
             readings[key] = UpstreamReading(state: state, checkedAt: now)
+            pastSources[key] = nil
         }
         save()
     }
 
     func unlink(_ installation: Installation) {
         let key = Self.linkKey(for: installation)
+        // A link whose source stopped answering: remember it, and what it said, so the trail stays.
+        if let link = links[key], case .cannotCheck(let reason)? = readings[key]?.state, Self.lostReasons.contains(reason) {
+            pastSources[key] = PastSource(name: link.source.name, until: Date(), notice: readings[key]?.notice)
+        }
         links[key] = nil
         readings[key] = nil
         held[key] = nil
@@ -1056,6 +1081,7 @@ final class InventoryStore {
         var codexPlugins: CodexPluginList?
         var keptLocal: [String: Date]?
         var moves: [String: Move]?
+        var pastSources: [String: PastSource]?
     }
 
     private static var savedURL: URL? {
@@ -1095,6 +1121,7 @@ final class InventoryStore {
         codexPlugins = saved.codexPlugins
         keptLocal = saved.keptLocal ?? [:]
         moves = saved.moves ?? [:]
+        pastSources = saved.pastSources ?? [:]
     }
 
     private func save() {
@@ -1102,7 +1129,7 @@ final class InventoryStore {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
                           pluginReadings: pluginReadings, pluginBaselines: pluginBaselines, codexPlugins: codexPlugins,
-                          keptLocal: keptLocal, moves: moves)
+                          keptLocal: keptLocal, moves: moves, pastSources: pastSources)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 
@@ -1115,6 +1142,11 @@ final class InventoryStore {
         links[key] = SourceLink(owner: owner, repository: repository, ref: nil, subpath: subpath, linkedAt: Date(),
                                 localHash: installation.contentHash)
         readings[key] = UpstreamReading(state: .updateAvailable(upstreamHash: "2f14c7791e51007344512e80d8634ad913660af2"), checkedAt: Date())
+    }
+
+    /// Forgets the old source a picture of an unlinked skill left behind.
+    func forgetSamplePastSource(_ installation: Installation) {
+        pastSources[Self.linkKey(for: installation)] = nil
     }
 
     /// Pictures of a skill linked to an install script that has moved and says where to.

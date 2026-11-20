@@ -135,7 +135,11 @@ struct SkillPage: View {
             if let reading = store.reading(for: installation) { return "Same as its source. Checked \(InventoryStore.stamp(reading.checkedAt))." }
             return "Same as its source."
         case .managed: return "\(app) keeps it current. Nothing for you to do."
-        case .noSource: return "Nothing to do. Skillori doesn’t know where it came from, which is fine."
+        case .noSource:
+            if store.pastSource(of: installation) != nil {
+                return "Nothing to do. Its old source stopped answering, so Skillori doesn’t know where it lives now."
+            }
+            return "Nothing to do. Skillori doesn’t know where it came from, which is fine."
         case .keptLocal: return "Nothing to do. You keep it as a local copy, so Skillori doesn’t check it against a source."
         case .cantCheck(let reason): return "Nothing to do. " + reason.sentence
         case .notChecked: return "Its source hasn’t been asked yet."
@@ -155,6 +159,12 @@ struct SkillPage: View {
     private var noteButton: [(label: String, prominent: Bool, run: () -> Void)] {
         guard let url = store.notice(for: installation)?.url else { return [] }
         return [(Self.openLabel(for: url), false, { NSWorkspace.shared.open(url) })]
+    }
+
+    /// What became of a source the reader unlinked after it stopped answering, in a sentence or two.
+    static func pastSentence(_ past: InventoryStore.PastSource) -> String {
+        let said = past.notice.map(\.message).flatMap { $0.isEmpty ? nil : $0 }
+        return "It stopped answering and you unlinked it." + (said.map { " It said: “\($0)”" } ?? "")
     }
 
     static func openLabel(for url: URL) -> String {
@@ -442,12 +452,23 @@ struct SkillPage: View {
                 }
                 .padding(.top, 8)
             } else {
+                let past = store.pastSource(of: installation)
                 FactRow { Text("Not known") } value: { EmptyView() }
-                Text("Find or link where it came from, and Skillori tells you when it changes. Optional.")
+                if let past {
+                    // The source it was linked to before, struck out, and what it said on the way out.
+                    FactRow { Text(past.name).strikethrough() } value: { Text("until " + Assist.day(past.until)) }
+                    Text(Self.pastSentence(past))
+                        .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                }
+                Text(past == nil ? "Find or link where it came from, and Skillori tells you when it changes. Optional."
+                     : "Find or link where it lives now, and Skillori tells you when it changes. Optional.")
                     .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 HStack(spacing: 6) {
                     Button("Find sources", action: onFindSources).buttonStyle(PillButtonStyle())
                     Button("Link…", action: onLink).buttonStyle(PillButtonStyle())
+                    if let url = past?.notice?.url {
+                        Button(Self.openLabel(for: url)) { NSWorkspace.shared.open(url) }.buttonStyle(PillButtonStyle())
+                    }
                 }
                 .padding(.top, 8)
             }

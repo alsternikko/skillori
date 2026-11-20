@@ -179,7 +179,16 @@ enum DebugSnapshots {
                 let page = { LibraryView(path: [.mine, .skill(unknown.id)]).environment(store) }
                 render(page(), size: lib, to: out.appendingPathComponent("library-source-moved.png"))
                 render(page().environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("library-source-moved-dark.png"))
-                store.setSampleMovedInstaller(unknown, notice: nil)
+                // The same skill once unlinked: no source now, but the trail to the old one stays.
+                store.unlink(unknown)
+                try? "past: \(String(describing: store.pastSource(of: unknown)))\n"
+                    .write(to: out.appendingPathComponent("past.txt"), atomically: true, encoding: .utf8)
+                render(page(), size: lib, to: out.appendingPathComponent("library-source-past.png"))
+                render(page().environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("library-source-past-dark.png"))
+                let alone = await store.unlinkedGroups(only: [unknown.id])
+                render(FindSourcesSheet(preview: alone.map { ($0, SourceFinder.Search(proposals: [], problem: nil)) }).environment(store),
+                       size: CGSize(width: 600, height: 420), to: out.appendingPathComponent("find-sources-past.png"))
+                store.forgetSamplePastSource(unknown)
             }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale
