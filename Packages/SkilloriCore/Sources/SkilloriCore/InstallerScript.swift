@@ -395,25 +395,37 @@ public struct InstallerScripts: Sendable {
     }
 
     public func tree(of source: InstallerSource) async -> Result<SourceTree, UpstreamState.Reason> {
+        await read(source).tree
+    }
+
+    /// The script's files, or why there are none; when the source answered "gone", also what
+    /// it said, such as where the installer moved to.
+    public func read(_ source: InstallerSource) async -> (tree: Result<SourceTree, UpstreamState.Reason>, notice: SourceNotice?) {
         let data: Data
         let response: HTTPURLResponse
         do {
             (data, response) = try await transport(Self.request(for: source))
         } catch is CancellationError {
-            return .failure(.cancelled)
+            return (.failure(.cancelled), nil)
         } catch let error as URLError where error.code == .cancelled {
-            return .failure(.cancelled)
+            return (.failure(.cancelled), nil)
         } catch {
-            return .failure(.offline)
+            return (.failure(.offline), nil)
         }
         // A redirect may only end on https; the session follows it, so look where it ended.
-        if let final = response.url, final.scheme?.lowercased() != "https" { return .failure(.failed) }
+        if let final = response.url, final.scheme?.lowercased() != "https" { return (.failure(.failed), nil) }
         switch response.statusCode {
         case 200: break
-        case 404, 410: return .failure(.notFound)
-        case 429: return .failure(.rateLimited)
-        default: return .failure(.failed)
+        case 404, 410:
+            let said = data.count <= SourceNotice.maxBytes ? String(data: data, encoding: .utf8).flatMap(SourceNotice.init(body:)) : nil
+            return (.failure(.notFound), said)
+        case 429: return (.failure(.rateLimited), nil)
+        default: return (.failure(.failed), nil)
         }
+        return (Self.files(from: data), nil)
+    }
+
+    private static func files(from data: Data) -> Result<SourceTree, UpstreamState.Reason> {
         guard data.count <= InstallerScript.maxBytes, let text = String(data: data, encoding: .utf8) else { return .failure(.failed) }
         // A web page is not a script, whatever its address.
         if text.prefix(512).lowercased().contains("<!doctype html") || text.prefix(512).lowercased().contains("<html") {
@@ -421,5 +433,95 @@ public struct InstallerScripts: Sendable {
         }
         guard let files = try? InstallerScript.files(in: text) else { return .failure(.failed) }
         return .success(InstallerScript.tree(from: files))
+    }
+}
+
+/// What a source said when it answered "gone": the lines its script prints, or its plain text,
+/// and the first https address among them. Kept short and as plain text; a web page says nothing.
+public struct SourceNotice: Sendable, Equatable, Codable {
+    public let message: String
+    public let url: URL?
+
+    public init(message: String, url: URL?) {
+        self.message = message
+        self.url = url
+    }
+
+    /// Larger answers are not notes to a person.
+    static let maxBytes = 16 * 1024
+    static let maxLines = 6
+    static let maxCharacters = 400
+
+    public init?(body: String) {
+        let head = body.prefix(512).lowercased()
+        if head.contains("<!doctype html") || head.contains("<html") { return nil }
+        let lines = body.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let isScript = lines.first?.hasPrefix("#!") == true || lines.contains { Self.printed(by: $0) != nil }
+        var said = Array((isScript ? lines.compactMap(Self.printed(by:)) : lines)
+            .map { String($0.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }) }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .prefix(Self.maxLines))
+        let url = said.lazy.compactMap(Self.firstAddress(in:)).first
+        // A line that is only the address becomes the button; the rest is the message.
+        if let url { said = said.filter { $0 != url.absoluteString } }
+        var message = said.joined(separator: " ")
+        if message.count > Self.maxCharacters { message = String(message.prefix(Self.maxCharacters - 1)) + "…" }
+        guard !message.isEmpty || url != nil else { return nil }
+        self.init(message: message, url: url)
+    }
+
+    /// The text an `echo` or `printf` line prints, as written; nil for any other line.
+    static func printed(by line: String) -> String? {
+        var rest: Substring
+        let isPrintf: Bool
+        if line.hasPrefix("echo ") { rest = line.dropFirst(5); isPrintf = false }
+        else if line.hasPrefix("printf ") { rest = line.dropFirst(7); isPrintf = true }
+        else { return nil }
+        // Where it goes doesn't matter here: drop a trailing redirect such as `>&2`.
+        if let range = rest.range(of: #"\s*[0-9]?>&?[0-9]\s*;?$"#, options: .regularExpression) { rest = rest[..<range.lowerBound] }
+        var arguments = quotedWords(String(rest))
+        if line.hasPrefix("echo "), arguments.first == "-e" || arguments.first == "-n" { arguments.removeFirst() }
+        // A line that prints a variable or feeds a pipe is the script working, not talking.
+        guard !arguments.isEmpty, !arguments.contains(where: { $0.contains("$") || $0 == "|" }) else { return nil }
+        if isPrintf {
+            let format = arguments.removeFirst()
+            if format.contains("%s") { return arguments.isEmpty ? nil : arguments.joined(separator: " ") }
+            return format.replacingOccurrences(of: "\\n", with: "").replacingOccurrences(of: "\\t", with: " ")
+        }
+        return arguments.joined(separator: " ").replacingOccurrences(of: "\\n", with: " ")
+    }
+
+    /// Splits a line into words the way the shell would for plain quotes, without expanding anything.
+    static func quotedWords(_ text: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        var quote: Character?
+        var inWord = false
+        for character in text {
+            if let open = quote {
+                if character == open { quote = nil } else { current.append(character) }
+            } else if character == "\"" || character == "'" {
+                quote = character
+                inWord = true
+            } else if character == " " || character == "\t" {
+                if inWord { words.append(current); current = ""; inWord = false }
+            } else {
+                current.append(character)
+                inWord = true
+            }
+        }
+        if inWord { words.append(current) }
+        return words
+    }
+
+    static func firstAddress(in line: String) -> URL? {
+        guard let range = line.range(of: #"https://[^\s"'<>]+"#, options: .regularExpression) else { return nil }
+        var text = String(line[range])
+        while let last = text.last, ".,;:)".contains(last) { text.removeLast() }
+        guard let url = URL(string: text), url.host?.isEmpty == false else { return nil }
+        return url
     }
 }

@@ -145,6 +145,23 @@ struct SkillPage: View {
 
     // MARK: Advice
 
+    /// What the gone source said, quoted as it said it, for the advice.
+    private var noteSentence: String? {
+        guard let message = store.notice(for: installation)?.message, !message.isEmpty else { return nil }
+        return "It says: “\(message)” "
+    }
+
+    /// The address the gone source pointed to, opened in the browser.
+    private var noteButton: [(label: String, prominent: Bool, run: () -> Void)] {
+        guard let url = store.notice(for: installation)?.url else { return [] }
+        return [(Self.openLabel(for: url), false, { NSWorkspace.shared.open(url) })]
+    }
+
+    static func openLabel(for url: URL) -> String {
+        let host = url.host ?? url.absoluteString
+        return "Open " + (host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
+    }
+
     private var advice: Advice? {
         if isMine, differing, copies.count > 1 {
             let new = newest
@@ -183,7 +200,8 @@ struct SkillPage: View {
             let recorded = store.recordedSource(of: installation) ?? "Its source"
             let (title, text): (String, String) = switch reason {
             case .notFound:
-                ("The source is gone", "\(recorded) no longer answers. It may be private or removed, or have moved. Your copy works as it is.")
+                ("The source is gone", "\(recorded) no longer answers. "
+                    + (noteSentence ?? "It may be private or removed, or have moved. ") + "Your copy works as it is.")
             case .folderGone:
                 ("The skill is gone from its source", "\(recorded) no longer has this skill’s folder. It may have moved. Your copy works as it is.")
             case .unsupported:
@@ -192,9 +210,8 @@ struct SkillPage: View {
                 ("Nothing to compare with", "The installer left no record of what it installed. Link the skill to its source to compare with it.")
             }
             return Advice(tone: .quiet, title: title, text: text,
-                          extra: [("Find sources", true, onFindSources),
-                                  ("Link…", false, onLink),
-                                  ("Keep as local", false, { store.keepLocal(installation) })])
+                          extra: [("Find sources", true, onFindSources), ("Link…", false, onLink)] + noteButton
+                              + [("Keep as local", false, { store.keepLocal(installation) })])
         }
         // The source the reader linked is gone in turn: unlinking leaves the way on open again.
         if isMine, store.link(for: installation) != nil, case .cantCheck(let reason) = status,
@@ -202,8 +219,8 @@ struct SkillPage: View {
             let back = store.recordedSource(of: installation).map { " Unlinking goes back to \($0), the source the installer recorded." }
                 ?? " Unlink it to link it again or look for where it went."
             return Advice(tone: .quiet, title: "The linked source is gone",
-                          text: "\(source.name) no longer answers. Your copy works as it is." + back,
-                          extra: [("Unlink", true, { store.unlink(installation) })])
+                          text: "\(source.name) no longer answers. " + (noteSentence ?? "") + "Your copy works as it is." + back,
+                          extra: [("Unlink", true, { store.unlink(installation) })] + noteButton)
         }
         let history = store.upstreamSource(for: installation)?.historyURL(subpath: store.sourceSubpath(for: installation))
         let web = store.upstreamSource(for: installation)?.webURL(subpath: store.sourceSubpath(for: installation))
@@ -397,7 +414,11 @@ struct SkillPage: View {
                     if let reading = store.reading(for: installation) { Text("checked " + InventoryStore.stamp(reading.checkedAt)) }
                 }
                 if case .cantCheck(let reason) = status {
-                    Text(reason.sentence).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                    let note = store.notice(for: installation)
+                    Text(note == nil ? reason.sentence
+                         : note?.url == nil ? "The source no longer answers. It left a note."
+                         : "The source no longer answers. It left a note and a new address.")
+                        .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 }
                 if let move = store.move(of: installation) {
                     Text("Moved here from \(move.from) on \(Assist.day(move.at)).")
@@ -409,7 +430,10 @@ struct SkillPage: View {
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 }
                 HStack(spacing: 6) {
-                    if let url = source.webURL(subpath: store.sourceSubpath(for: installation)) {
+                    // A gone source that names its new address: that is the one worth opening.
+                    if let moved = store.notice(for: installation)?.url {
+                        Button(Self.openLabel(for: moved)) { NSWorkspace.shared.open(moved) }.buttonStyle(PillButtonStyle())
+                    } else if let url = source.webURL(subpath: store.sourceSubpath(for: installation)) {
                         Button("Open source") { NSWorkspace.shared.open(url) }.buttonStyle(PillButtonStyle())
                     }
                     if store.link(for: installation) != nil {

@@ -268,6 +268,12 @@ final class InventoryStore {
         sourceKey(for: installation).flatMap { readings[$0] }
     }
 
+    /// What a gone source said along with its answer, such as where its installer moved to.
+    func notice(for installation: Installation) -> SourceNotice? {
+        guard let reading = reading(for: installation), case .cannotCheck(.notFound) = reading.state else { return nil }
+        return reading.notice
+    }
+
     func isHeld(_ installation: Installation) -> Bool {
         sourceKey(for: installation).map { held[$0] != nil } ?? false
     }
@@ -717,7 +723,7 @@ final class InventoryStore {
             guard case .skillsLock(_, _, let subpath, let baseline, _) = installation.provenance else { return nil }
             return UpstreamQuestion(key: key, source: upstreamSource(for: installation), subpath: subpath, baseline: baseline)
         }
-        let answers = await UpstreamChecker.check(questions)
+        let answers = await UpstreamChecker.answers(to: questions)
         var baselines = pluginBaselines
         let pluginAnswers = plugins.isEmpty ? [:] : await PluginChecker().check(plugins, baselines: &baselines)
         pluginBaselines = baselines
@@ -745,7 +751,8 @@ final class InventoryStore {
         var failed: Set<String> = []
         var heard: Set<String> = []
         for question in questions {
-            guard let state = answers[question.key] else { continue }
+            guard let answer = answers[question.key] else { continue }
+            let state = answer.state
             switch state {
             case .cannotCheck(.cancelled):
                 // Withdrawn, not answered: leave the last reading as it is.
@@ -758,7 +765,7 @@ final class InventoryStore {
             default:
                 answered = true
                 heard.insert(question.key)
-                next[question.key] = UpstreamReading(state: state, checkedAt: now)
+                next[question.key] = UpstreamReading(state: state, checkedAt: now, notice: answer.notice)
             }
         }
         // Forget answers only for skills that this scan read and that no longer have a source.
@@ -1108,6 +1115,15 @@ final class InventoryStore {
         links[key] = SourceLink(owner: owner, repository: repository, ref: nil, subpath: subpath, linkedAt: Date(),
                                 localHash: installation.contentHash)
         readings[key] = UpstreamReading(state: .updateAvailable(upstreamHash: "2f14c7791e51007344512e80d8634ad913660af2"), checkedAt: Date())
+    }
+
+    /// Pictures of a skill linked to an install script that has moved and says where to.
+    func setSampleMovedInstaller(_ installation: Installation, notice: SourceNotice?) {
+        let key = Self.linkKey(for: installation)
+        guard let notice else { links[key] = nil; readings[key] = nil; return }
+        links[key] = SourceLink(owner: "", repository: "", ref: nil, installer: "https://www.example.com/api/install-skills",
+                                subpath: installation.directoryName, linkedAt: Date(), localHash: installation.contentHash)
+        readings[key] = UpstreamReading(state: .cannotCheck(.notFound), checkedAt: Date(), notice: notice)
     }
 
     /// Pictures of the library when sources gave no answer: every tracked skill unanswered, and

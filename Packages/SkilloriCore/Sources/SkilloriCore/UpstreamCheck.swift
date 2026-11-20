@@ -126,10 +126,24 @@ public enum UpstreamState: Sendable, Equatable, Codable {
 public struct UpstreamReading: Sendable, Equatable, Codable {
     public var state: UpstreamState
     public var checkedAt: Date
+    /// What the source said along with a "gone", such as where its installer moved to.
+    public var notice: SourceNotice?
 
-    public init(state: UpstreamState, checkedAt: Date) {
+    public init(state: UpstreamState, checkedAt: Date, notice: SourceNotice? = nil) {
         self.state = state
         self.checkedAt = checkedAt
+        self.notice = notice
+    }
+}
+
+/// One answer to a question, with what the source said along with it.
+public struct UpstreamAnswer: Sendable, Equatable {
+    public let state: UpstreamState
+    public let notice: SourceNotice?
+
+    public init(state: UpstreamState, notice: SourceNotice? = nil) {
+        self.state = state
+        self.notice = notice
     }
 }
 
@@ -510,22 +524,28 @@ public enum UpstreamChecker {
 
     public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared),
                              installers: InstallerScripts = InstallerScripts()) async -> [String: UpstreamState] {
-        var answers: [String: UpstreamState] = [:]
+        await answers(to: questions, using: trees, installers: installers).mapValues(\.state)
+    }
+
+    /// Answers every question, asking each source once, with what a gone source said.
+    public static func answers(to questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared),
+                               installers: InstallerScripts = InstallerScripts()) async -> [String: UpstreamAnswer] {
+        var answers: [String: UpstreamAnswer] = [:]
         var bySource: [SkillSource: [UpstreamQuestion]] = [:]
         for question in questions {
             if let source = question.source {
                 bySource[source, default: []].append(question)
             } else {
-                answers[question.key] = .cannotCheck(.unsupported)
+                answers[question.key] = UpstreamAnswer(state: .cannotCheck(.unsupported))
             }
         }
-        @Sendable func ask(_ source: SkillSource) async -> Result<SourceTree, UpstreamState.Reason> {
+        @Sendable func ask(_ source: SkillSource) async -> (tree: Result<SourceTree, UpstreamState.Reason>, notice: SourceNotice?) {
             switch source {
-            case .github(let repository): await trees.tree(of: repository)
-            case .installer(let script): await installers.tree(of: script)
+            case .github(let repository): (await trees.tree(of: repository), nil)
+            case .installer(let script): await installers.read(script)
             }
         }
-        await withTaskGroup(of: (SkillSource, Result<SourceTree, UpstreamState.Reason>).self) { group in
+        await withTaskGroup(of: (SkillSource, (tree: Result<SourceTree, UpstreamState.Reason>, notice: SourceNotice?)).self) { group in
             // A few at a time: GitHub counts concurrent requests too, and once it says to wait,
             // the rest are answered from that without being sent.
             var pending = bySource.keys.sorted { $0.name < $1.name }[...]
@@ -538,11 +558,12 @@ public enum UpstreamChecker {
                     group.addTask { (next, await ask(next)) }
                 }
                 for question in bySource[source] ?? [] {
-                    switch result {
+                    switch result.tree {
                     case .success(let tree):
-                        answers[question.key] = UpstreamComparer.state(baseline: question.baseline, subpath: question.subpath, in: tree)
+                        answers[question.key] = UpstreamAnswer(state: UpstreamComparer.state(baseline: question.baseline,
+                                                                                             subpath: question.subpath, in: tree))
                     case .failure(let reason):
-                        answers[question.key] = .cannotCheck(reason)
+                        answers[question.key] = UpstreamAnswer(state: .cannotCheck(reason), notice: result.notice)
                     }
                 }
             }

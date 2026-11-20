@@ -157,6 +157,67 @@ import Testing
     }
 }
 
+@Suite struct SourceNoticeTests {
+    /// What interfacecraft.dev answered with its 410 once the installer moved behind its library.
+    static let moved = """
+    #!/bin/sh
+    printf '%s\\n' "This installer has moved."
+    printf '%s\\n' "Members can copy their new install command from the Library:"
+    printf '%s\\n' "https://www.interfacecraft.dev/library/interface-craft-skills"
+    exit 1
+    """
+
+    @Test func readsWhatAMovedInstallerPrints() {
+        let notice = SourceNotice(body: Self.moved)
+        #expect(notice?.message == "This installer has moved. Members can copy their new install command from the Library:")
+        #expect(notice?.url?.absoluteString == "https://www.interfacecraft.dev/library/interface-craft-skills")
+    }
+
+    @Test func readsEchoLinesAndPlainText() {
+        let echoed = SourceNotice(body: "#!/bin/bash\necho \"Moved to https://example.com/new.\" >&2\nexit 1\n")
+        #expect(echoed?.message == "Moved to https://example.com/new.")
+        #expect(echoed?.url?.absoluteString == "https://example.com/new")
+        let plain = SourceNotice(body: "Gone for good.\n")
+        #expect(plain == SourceNotice(message: "Gone for good.", url: nil))
+    }
+
+    @Test func aWebPageOrAScriptAtWorkSaysNothing() {
+        #expect(SourceNotice(body: "<!DOCTYPE html><html><body>Not found</body></html>") == nil)
+        #expect(SourceNotice(body: "") == nil)
+        #expect(SourceNotice(body: "#!/bin/sh\necho \"$SKILL_md\" | base64 -d > \"$DIR/SKILL.md\"\n") == nil)
+    }
+
+    @Test func onlyHttpsAddressesAndShortMessages() {
+        let notice = SourceNotice(body: "See http://example.com/new\n" + String(repeating: "word ", count: 200))
+        #expect(notice?.url == nil)
+        #expect((notice?.message.count ?? 0) <= SourceNotice.maxCharacters)
+    }
+
+    @Test func aGoneInstallerKeepsWhatItSaid() async {
+        let scripts = InstallerScripts { request in
+            let url = request.url!
+            return (Data(Self.moved.utf8), HTTPURLResponse(url: url, statusCode: 410, httpVersion: nil, headerFields: nil)!)
+        }
+        let read = await scripts.read(InstallerSource("https://www.interfacecraft.dev/api/install-skills")!)
+        #expect(read.tree == .failure(.notFound))
+        #expect(read.notice?.url?.host == "www.interfacecraft.dev")
+
+        let answers = await UpstreamChecker.answers(
+            to: [UpstreamQuestion(key: "k", source: .installer(InstallerSource("https://www.interfacecraft.dev/api/install-skills")!),
+                                  subpath: "interface-craft", baseline: "abc")],
+            installers: scripts)
+        #expect(answers["k"]?.state == .cannotCheck(.notFound))
+        #expect(answers["k"]?.notice?.message.hasPrefix("This installer has moved.") == true)
+    }
+
+    @Test func readingsSavedBeforeNoticesStillLoad() throws {
+        let old = #"{"checkedAt": 816885109.36, "state": {"cannotCheck": {"_0": "notFound"}}}"#
+        let reading = try JSONDecoder().decode(UpstreamReading.self, from: Data(old.utf8))
+        #expect(reading.state == .cannotCheck(.notFound))
+        #expect(reading.notice == nil)
+    }
+}
+
 private actor Requests {
     var requests: [URLRequest] = []
     func add(_ request: URLRequest) { requests.append(request) }

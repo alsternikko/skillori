@@ -170,6 +170,17 @@ enum DebugSnapshots {
                     .write(to: out.appendingPathComponent("relinked.txt"), atomically: true, encoding: .utf8)
                 store.setSampleLink(lost, owner: "", repository: "", subpath: nil)
             }
+            // A skill linked to an install script that answered "gone" and said where it went.
+            if let unknown = installs.first(where: { $0.provenance == .unknown }) {
+                let said = SourceNotice(body: "#!/bin/sh\nprintf '%s\\n' \"This installer has moved.\"\n"
+                    + "printf '%s\\n' \"Members can copy their new install command from the Library:\"\n"
+                    + "printf '%s\\n' \"https://www.example.com/library/skills\"\nexit 1\n")
+                store.setSampleMovedInstaller(unknown, notice: said)
+                let page = { LibraryView(path: [.mine, .skill(unknown.id)]).environment(store) }
+                render(page(), size: lib, to: out.appendingPathComponent("library-source-moved.png"))
+                render(page().environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("library-source-moved-dark.png"))
+                store.setSampleMovedInstaller(unknown, notice: nil)
+            }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale
             if let image = icon.cgImage {
