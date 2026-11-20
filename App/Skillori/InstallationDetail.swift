@@ -134,7 +134,10 @@ struct InstallationDetail: View {
                     case .noSource:
                         Button("Link source…", action: onLink).buttonStyle(PillButtonStyle(prominent: true, on: tone))
                     default:
-                        if let link = sourceLink {
+                        if store.canLink(installation) {
+                            // The installer's recorded source is gone, or one Skillori can't ask.
+                            Button("Link source…", action: onLink).buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                        } else if let link = sourceLink {
                             Button("Open source") { NSWorkspace.shared.open(link) }
                                 .buttonStyle(PillButtonStyle(prominent: true, on: tone))
                         }

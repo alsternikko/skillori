@@ -23,6 +23,8 @@ enum SkillStatus: Equatable {
     /// The files on this Mac could not be hashed.
     case checkFailed
     case noSource
+    /// The reader keeps it as a local copy: its recorded source is gone, and it is no longer checked.
+    case keptLocal
     case managed
     /// A Claude Code plugin whose marketplace has a newer version. Skillori can run Claude Code's update.
     case ownerUpdate(owner: String, upstream: String)
@@ -52,6 +54,7 @@ enum SkillStatus: Equatable {
         case .notChecked: "Not checked"
         case .checkFailed: "Check failed"
         case .noSource: "No source"
+        case .keptLocal: "Local copy"
         case .managed: "Managed"
         case .ownerUpdate: "Plugin update"
         case .sourceAhead: "Newer at source"
@@ -70,6 +73,7 @@ enum SkillStatus: Equatable {
         case .cantCheck, .checkFailed: "✕"
         case .notChecked: "○"
         case .noSource: "◌"
+        case .keptLocal: "◇"
         case .managed, .sourceAhead: "■"
         case .ownerUpdate: "▲"
         case .leftBehind: "◌"
@@ -80,7 +84,7 @@ enum SkillStatus: Equatable {
         switch self {
         case .updateAvailable, .differs, .ownerUpdate: .new
         case .changedHere, .checkFailed, .leftBehind: .attention
-        case .cantCheck, .notChecked, .noSource: .outline
+        case .cantCheck, .notChecked, .noSource, .keptLocal: .outline
         case .heldBack, .upToDate, .managed, .sourceAhead: .neutral
         }
     }
@@ -91,7 +95,7 @@ enum SkillStatus: Equatable {
         case .updateAvailable, .differs, .ownerUpdate: .new
         case .changedHere, .checkFailed, .leftBehind: .attention
         case .upToDate, .heldBack: .rest
-        case .cantCheck, .notChecked, .noSource, .managed, .sourceAhead: .quiet
+        case .cantCheck, .notChecked, .noSource, .keptLocal, .managed, .sourceAhead: .quiet
         }
     }
 
@@ -108,6 +112,7 @@ enum SkillStatus: Equatable {
         case .notChecked: "The source has not been asked yet."
         case .checkFailed: "The files on this Mac could not be read for comparison."
         case .noSource: "Nothing on this Mac says where this came from."
+        case .keptLocal: "Kept as a local copy. Skillori no longer checks it against a source."
         case .managed: "The app that owns it keeps it up to date."
         case .ownerUpdate(let owner, _): "The plugin's marketplace has a newer version. Skillori can run \(owner)’s update."
         case .sourceAhead(let owner, _): "The plugin's source has a newer version. \(owner) brings it once its catalog has it."
@@ -186,12 +191,12 @@ extension SourceProposal {
 extension UpstreamState.Reason {
     var sentence: String {
         switch self {
-        case .notFound: "The source was not found. It is private, renamed or removed."
-        case .folderGone: "The source no longer has this skill's folder."
+        case .notFound: "The source no longer answers. It may be private or removed, or have moved."
+        case .folderGone: "The source no longer has this skill's folder. It may have moved."
         case .rateLimited: "The source asked Skillori to wait. It will ask again later."
         case .offline: "No contact with the source."
         case .cancelled: "The check was stopped before the source answered."
-        case .unsupported: "Skillori cannot ask this kind of source yet."
+        case .unsupported: "Skillori can’t ask this kind of source."
         case .noBaseline: "The installer left nothing to compare with."
         case .failed: "The source gave an answer Skillori could not read."
         }
@@ -282,7 +287,7 @@ extension InventoryStore {
     /// One line about how fresh the source answers are.
     var checkStamp: String {
         guard checksEnabled else { return "Checks off" }
-        if isChecking { return "Checking now" }
+        if isChecking { return checkingCount == 1 ? "Checking 1 skill…" : checkingCount > 1 ? "Checking \(checkingCount) skills…" : "Checking now" }
         let trouble = lastProblem == .rateLimited ? "Asked to wait" : "No contact"
         guard let lastCheck else { return lastProblem == nil ? "Not checked yet" : trouble }
         return (lastProblem == nil ? "Checked " : trouble + " · last ") + Self.stamp(lastCheck)

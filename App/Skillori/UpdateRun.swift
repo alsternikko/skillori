@@ -319,6 +319,8 @@ struct CommandFrame: View {
     let installations: [Installation]
     /// In the menu bar panel: a slim bar, no copy button and fewer lines of output.
     var compact = false
+    /// Off where the line around the frame has its own run button, as in the library's list.
+    var showsRun = true
 
     var body: some View {
         let runner = store.updater
@@ -342,15 +344,20 @@ struct CommandFrame: View {
                 if !compact, let first = installations.first, installations.count == 1 {
                     CopyUpdateCommandButton(installation: first, prominent: false, tone: tone)
                 }
-                if phase == .running {
+                if reported == .running {
                     Button("Stop") { runner.stop() }
                         .buttonStyle(PillButtonStyle(prominent: false, on: tone, compact: compact))
                         .help("Stops the installer and what it started")
+                        .transition(.opacity)
                 }
-                Button(label(for: phase)) { Task { await store.update(installations) } }
-                    .buttonStyle(PillButtonStyle(prominent: phase != .succeeded, on: tone, compact: compact))
-                    .disabled(runner.isRunning || phase == .succeeded)
+                if showsRun {
+                    Button(label(for: phase)) { Task { await store.update(installations) } }
+                        .buttonStyle(PillButtonStyle(prominent: phase != .succeeded, on: tone, compact: compact))
+                        .disabled(runner.isRunning || phase == .succeeded)
+                }
             }
+            // Keeps the bar as tall with the run button gone as with it.
+            .frame(minHeight: showsRun ? nil : (compact ? 22 : 28))
             .font(TypeRole.mono(compact ? 10.5 : 11.5))
             .padding(compact ? EdgeInsets(top: 5, leading: inset, bottom: 5, trailing: 5)
                      : EdgeInsets(top: 8, leading: inset, bottom: 8, trailing: 8))
@@ -379,8 +386,43 @@ struct CommandFrame: View {
         }
         .foregroundStyle(tone.foreground)
         .background(tone.background, in: RoundedRectangle(cornerRadius: compact ? Radius.row : Radius.block, style: .circular))
+        // While the installer runs, a soft light goes along the lower edge.
+        .overlay(alignment: .bottom) {
+            if reported == .running { RunningEdge(color: tone.foreground).transition(.opacity) }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: compact ? Radius.row : Radius.block, style: .circular))
         .animation(Motion.swap, value: reported)
         .accessibilityElement(children: .contain)
+    }
+
+    /// Something is happening: a band of light runs along the frame's lower edge, over and over.
+    /// With Reduce Motion it is a still, faint line.
+    private struct RunningEdge: View {
+        let color: Color
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var start = Date()
+
+        var body: some View {
+            if reduceMotion {
+                color.opacity(0.3).frame(height: 1.5)
+            } else {
+                TimelineView(.animation) { timeline in
+                    GeometryReader { proxy in
+                        let period = 1.4
+                        let t = timeline.date.timeIntervalSince(start).truncatingRemainder(dividingBy: period) / period
+                        // Eased in and out along the way, so it reads as a breath rather than a scan.
+                        let eased = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+                        let band = proxy.size.width * 0.38
+                        LinearGradient(colors: [color.opacity(0), color.opacity(0.85), color.opacity(0)],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: band)
+                            .offset(x: -band + (proxy.size.width + band) * eased)
+                    }
+                }
+                .frame(height: 2)
+                .allowsHitTesting(false)
+            }
+        }
     }
 
     private func label(for phase: UpdateRunner.Phase) -> String {

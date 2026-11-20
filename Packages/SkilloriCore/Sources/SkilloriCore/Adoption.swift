@@ -18,6 +18,11 @@ public struct Adoption: Sendable, Equatable {
     /// Folders under another name than the installer's, which it does not write over. They go to
     /// the Trash once the installer has put the skill in place beside them.
     public let leftovers: [String]
+    /// The skill's folder in the source, when it is known. The installer is then told the folder,
+    /// as `owner/repository/folder`, instead of the name: a repository can hold two skills with
+    /// one name, and `-s` takes whichever it finds first (seen in materic-inc/plugins, which has
+    /// `twombly` and `twombly-hosted/…/twombly`; checked with skills 1.7.6 on 2026-11-20).
+    public var subpath: String? = nil
 
     /// The installer's agent for each personal skills folder it writes, relative to home. From
     /// the `npx skills` agent table (`globalSkillsDir`), checked in version 1.7.6.
@@ -47,10 +52,18 @@ public struct Adoption: Sendable, Equatable {
     ///   - folders: every folder that holds a copy, as found in a skills folder and as resolved.
     ///   - home: the home folder the skills folders are under.
     ///   - taken: folders that belong to other skills.
+    ///   - subpath: the skill's folder in the source, if known.
+    ///   - links: symbolic links to one of `folders`, which keeps the installer's name. Each
+    ///     follows whatever the installer puts there, so one anywhere else is left as it is; one
+    ///     in a folder the installer writes gives it that agent.
     public static func plan(skill: String, source: UpstreamSource, folders: [String], home: String,
-                            taken: Set<String>) -> Adoption? {
-        guard source.ref == nil, isPlain(source.owner), isPlain(source.repository), isPlain(skill),
-              !folders.isEmpty else { return nil }
+                            taken: Set<String>, subpath: String? = nil, links: [String] = []) -> Adoption? {
+        guard isPlain(source.owner), isPlain(source.repository), isPlain(skill), !folders.isEmpty else { return nil }
+        let parts = subpath.map { $0.split(separator: "/", omittingEmptySubsequences: false).map(String.init) } ?? []
+        // Every part of the folder becomes part of an argument, so each must be plain too.
+        let folder: String? = parts.isEmpty || parts.contains(where: { !isPlain($0) }) ? nil : parts.joined(separator: "/")
+        // A branch can only be passed with the folder, as a tree address.
+        if let ref = source.ref, folder == nil || !isPlain(ref) { return nil }
         let folderName = installName(skill)
         // Paths are compared with their folders' symlinks resolved, the skill folder itself left
         // as it is: a copy that is a link into another skills folder still belongs to its own.
@@ -70,21 +83,35 @@ public struct Adoption: Sendable, Equatable {
             if !agents.contains(agent) { agents.append(agent) }
             if url.lastPathComponent != folderName { leftovers.append(folder) }
         }
-        return Adoption(source: source, skill: skill, folderName: folderName, agents: agents.sorted(), leftovers: leftovers)
+        for link in Set(links.map(settled)) {
+            let parent = URL(fileURLWithPath: link).deletingLastPathComponent().path
+            guard parent.hasPrefix(base + "/"), URL(fileURLWithPath: link).lastPathComponent == folderName,
+                  let agent = agentForFolder[String(parent.dropFirst(base.count + 1))] else { continue }
+            if !agents.contains(agent) { agents.append(agent) }
+        }
+        return Adoption(source: source, skill: skill, folderName: folderName, agents: agents.sorted(), leftovers: leftovers,
+                        subpath: folder)
     }
 
-    /// One `add` per source and set of agents: the installer takes several skills at once.
+    /// One `add` per source and set of agents: the installer takes several skills at once. A
+    /// skill whose folder is known gets an `add` of its own, naming the folder.
     public static func commands(for adoptions: [Adoption], package: String) -> [(arguments: [String], adoptions: [Adoption])] {
         var order: [String] = []
         var groups: [String: [Adoption]] = [:]
         for adoption in adoptions {
-            let key = adoption.source.name + " " + adoption.agents.joined(separator: ",")
+            let target = adoption.subpath.map { adoption.source.name + "@" + (adoption.source.ref ?? "") + "/" + $0 } ?? adoption.source.name
+            let key = target + " " + adoption.agents.joined(separator: ",")
             if groups[key] == nil { order.append(key) }
             groups[key, default: []].append(adoption)
         }
         return order.map { key in
             let group = groups[key]!
             var skills: [String] = []
+            if let folder = group[0].subpath {
+                let source = group[0].source
+                let target = source.ref.map { "https://github.com/\(source.name)/tree/\($0)/\(folder)" } ?? source.name + "/" + folder
+                return (["--yes", package, "add", target, "-a"] + group[0].agents + ["-g", "-y"], group)
+            }
             for adoption in group where !skills.contains(adoption.skill) { skills.append(adoption.skill) }
             let arguments = ["--yes", package, "add", group[0].source.name, "-s"] + skills
                 + ["-a"] + group[0].agents + ["-g", "-y"]

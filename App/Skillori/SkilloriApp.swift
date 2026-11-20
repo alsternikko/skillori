@@ -60,11 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.firstStart?.show() }
         }
         let env = ProcessInfo.processInfo.environment
-        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_LIBRARY_PROBE"] == nil, env["SKILLORI_ADOPT_PROBE"] == nil, env["SKILLORI_PANEL_PROBE"] == nil { firstStart.showIfNeeded() }
+        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_LIBRARY_PROBE"] == nil, env["SKILLORI_ADOPT_PROBE"] == nil, env["SKILLORI_PANEL_PROBE"] == nil, env["SKILLORI_LIBRARY_RUN_PROBE"] == nil, env["SKILLORI_LOST_PROBE"] == nil { firstStart.showIfNeeded() }
         #if DEBUG
         DebugSnapshots.runIfRequested(store: store, statusPanel: statusPanel)
         DebugLibraryProbe.runIfRequested(store: store, windows: windows)
+        DebugLibraryRunProbe.runIfRequested(store: store, windows: windows)
         DebugAdoptProbe.runIfRequested(store: store)
+        DebugLostSourceProbe.runIfRequested(store: store)
         DebugPluginUpdate.runIfRequested(store: store)
         if let statusPanel { DebugSelfTest.runIfRequested(store: store, panel: statusPanel, windows: windows) }
         if let statusPanel { DebugPanelProbe.runIfRequested(store: store, panel: statusPanel) }
@@ -84,11 +86,14 @@ final class WindowRouter {
 
     init(store: InventoryStore) { self.store = store }
 
-    func showLibrary() {
+    /// Opens the library, at `page` when one is given.
+    func showLibrary(at page: LibraryPage? = nil) {
         if library == nil {
             library = makeWindow(title: "Skillori Library", size: NSSize(width: 1120, height: 760),
                                  minSize: NSSize(width: 900, height: 520), resizable: true, ownChrome: true,
-                                 content: LibraryView().environment(store))
+                                 content: LibraryView(path: page.map { [$0] } ?? []).environment(store))
+        } else if let page {
+            NotificationCenter.default.post(name: LibraryView.openPage, object: page)
         }
         present(library)
     }

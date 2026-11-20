@@ -60,6 +60,10 @@ public extension LightRamp {
 /// put: its bands run across the whole block, and what changes, slowly, is the gradient's own
 /// range: where the bands crowd, how wide each is, and how far they wrap round the edge.
 /// It holds still when Reduce Motion is on.
+///
+/// When the block changes tone, the light changes colour slowly instead of at once: each
+/// step of the old ramp moves to the same step of the new one, in OKLab, so the bands keep
+/// their places while their colour turns. With Reduce Motion it changes at once.
 public struct LightField: View {
     let ramp: LightRamp
     let radius: CGFloat
@@ -78,6 +82,17 @@ public struct LightField: View {
     /// Whether any part of the block's window can be seen. A closed panel or a library behind
     /// other windows keeps its views, and without this the light would go on drawing there.
     @State private var onScreen = true
+    /// The ramp the light is turning from, and when it began.
+    @State private var turning: Turn?
+
+    private struct Turn {
+        let from: [Float]
+        let fromInk: LightRamp.Ink
+        let start: Date
+    }
+
+    /// How long the light takes to turn from one ramp to another.
+    public static let turnDuration: TimeInterval = 0.9
 
     public init(_ ramp: LightRamp, radius: CGFloat = Radius.block, corners: RoundedCornerStyle = .circular,
                 phase: Double = 0, still: Bool = false, easedThroughout: Bool = false) {
@@ -94,29 +109,49 @@ public struct LightField: View {
         return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: holds || !onScreen)) { timeline in
             GeometryReader { proxy in
                 let elapsed = holds ? 0 : timeline.date.timeIntervalSince(start)
+                let (lut, ink) = colours(at: timeline.date)
                 Rectangle()
-                    .fill(shader(size: proxy.size, time: Self.opening + phase + elapsed * Self.speed))
+                    .fill(shader(size: proxy.size, time: Self.opening + phase + elapsed * Self.speed, lut: lut, ink: ink))
                     .clipShape(RoundedRectangle(cornerRadius: radius, style: corners))
             }
         }
         .background(WindowVisibility(isVisible: $onScreen))
+        .onChange(of: ramp) { old, _ in
+            guard !(reduceMotion || still) else { turning = nil; return }
+            // From what is on screen now, which may itself be on its way from another ramp.
+            let now = Date()
+            let shown = turning == nil ? (old.lut, old.ink) : colours(at: now, towards: old)
+            turning = Turn(from: shown.0, fromInk: shown.1, start: now)
+        }
         .accessibilityHidden(true)
+    }
+
+    /// The ramp's colours at a moment: the ramp itself, or on the way to it.
+    private func colours(at date: Date, towards target: LightRamp? = nil) -> ([Float], LightRamp.Ink) {
+        let target = target ?? ramp
+        guard let turning else { return (target.lut, target.ink) }
+        let k = min(max(date.timeIntervalSince(turning.start) / Self.turnDuration, 0), 1)
+        guard k < 1 else { return (target.lut, target.ink) }
+        // Slow in and slow out: a change of mood, not a switch.
+        let e = Float(k < 0.5 ? 4 * k * k * k : 1 - pow(-2 * k + 2, 3) / 2)
+        let lut = zip(turning.from, target.lut).map { $0 + ($1 - $0) * e }
+        return (lut, k < 0.5 ? turning.fromInk : target.ink)
     }
 
     /// Where on the clock a block starts, and how fast the clock runs.
     private static let opening = 30.0
     private static let speed = 2.0
 
-    private func shader(size: CGSize, time: Double) -> Shader {
+    private func shader(size: CGSize, time: Double, lut: [Float], ink: LightRamp.Ink) -> Shader {
         ShaderLibrary.bundle(.module).lightField(
             .float2(size),
             .float(time),
             .float(displayScale),
             .float(radius),
-            .floatArray(ramp.lut),
+            .floatArray(lut),
             // which way the bands run (radians from top-to-bottom), how far they wrap round the
             // edge, how much the text's side is eased, and whether the text is dark
-            .float4(0.6, 1, 0.8, ramp.ink == .dark ? 1 : 0),
+            .float4(0.6, 1, 0.8, ink == .dark ? 1 : 0),
             // edge light, grain, seed, eased throughout
             .float4(0.8, 0.012, 0, easedThroughout ? 1 : 0)
         )

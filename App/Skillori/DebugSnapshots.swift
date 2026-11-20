@@ -150,6 +150,26 @@ enum DebugSnapshots {
             store.setSampleTrouble(.offline)
             render(LibraryView().environment(store), size: lib, to: out.appendingPathComponent("library-no-contact.png"))
             store.setSampleTrouble(nil)
+            // A skill whose recorded source is gone: its page and the panel, the link sheet, kept
+            // as a local copy, and linked to a new home.
+            if let lost = store.lostSources.first {
+                let page = { LibraryView(path: [.skill(lost.id)]).environment(store) }
+                render(page(), size: lib, to: out.appendingPathComponent("library-source-gone.png"))
+                render(page().environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("library-source-gone-dark.png"))
+                picture(PanelBackdrop { MenuPanel().frame(width: StatusPanelController.panelWidth) }.environment(store),
+                        size: CGSize(width: 420, height: 760), to: out.appendingPathComponent("panel-source-gone.png"))
+                render(LinkSourceSheet(installation: lost).environment(store), size: CGSize(width: 600, height: 420),
+                       to: out.appendingPathComponent("link-source-gone.png"))
+                store.keepLocal(lost)
+                render(page(), size: lib, to: out.appendingPathComponent("library-kept-local.png"))
+                render(LibraryView(path: [.mine]).environment(store), size: lib, to: out.appendingPathComponent("library-mine-kept-local.png"))
+                store.stopKeepingLocal(lost)
+                store.setSampleLink(lost, owner: "example", repository: "plugins", subpath: lost.directoryName + "/skills/" + lost.directoryName)
+                render(page(), size: lib, to: out.appendingPathComponent("library-source-relinked.png"))
+                try? "relinked: \(store.status(for: lost)) · \(store.updateCommandText(for: [lost]))\n"
+                    .write(to: out.appendingPathComponent("relinked.txt"), atomically: true, encoding: .utf8)
+                store.setSampleLink(lost, owner: "", repository: "", subpath: nil)
+            }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale
             if let image = icon.cgImage {

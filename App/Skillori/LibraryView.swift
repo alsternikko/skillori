@@ -13,10 +13,18 @@ struct LibraryView: View {
     @State private var search = ""
     @State private var linking: Installation?
     @State private var findingSources = false
+    /// A skill whose source is being looked for from its own page.
+    @State private var findingFor: Installation?
+    /// The tone the block of things to do shows. It follows the real one a moment later, so the
+    /// light turns after the line that changed it has folded away.
+    @State private var shownTone: Tone?
 
     init(path: [LibraryPage] = []) {
         _path = State(initialValue: path)
     }
+
+    /// Posted with a `LibraryPage` to open it in the library that is already showing.
+    static let openPage = Notification.Name("SkilloriLibraryOpenPage")
 
     var body: some View {
         VStack(spacing: 6) {
@@ -40,6 +48,9 @@ struct LibraryView: View {
         .font(TypeRole.sans(13))
         .ignoresSafeArea(edges: .top)
         .animation(reduceMotion ? nil : Motion.swap, value: path)
+        .onReceive(NotificationCenter.default.publisher(for: Self.openPage)) { note in
+            if let page = note.object as? LibraryPage { search = ""; open(page) }
+        }
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: DebugLibraryProbe.openPage)) { note in
             if let page = note.object as? LibraryPage { open(page) }
@@ -51,6 +62,9 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $findingSources) {
             FindSourcesSheet().environment(store)
+        }
+        .sheet(item: $findingFor) { installation in
+            FindSourcesSheet(only: installation).environment(store)
         }
     }
 
@@ -80,7 +94,8 @@ struct LibraryView: View {
                 ListCard { AppsList(open: open) }
             }
         default:
-            LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 })
+            LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 },
+                            onFindSources: { findingFor = $0 })
         }
     }
 
@@ -106,6 +121,10 @@ struct LibraryView: View {
 
     private var home: some View {
         let todos = Assist.todos(store)
+        // What changes the block's height: lines coming and going, a run unfolding under its line,
+        // and what the installer prints. The doors below move with it.
+        let shape = todos.map { $0.id + ($0.command == nil ? "" : "+") } + Assist.notices(store).map(\.id)
+            + [String(store.updater.lastLines(3).count)]
         return ScrollView {
             VStack(spacing: 6) {
                 if store.inventory != nil { today(todos) }
@@ -114,6 +133,7 @@ struct LibraryView: View {
                      note: Assist.names(Assist.apps(store).map(\.name)) + " keep these current themselves.",
                      number: (store.inventory?.installations ?? []).filter(Assist.isManaged).count) { open(.apps) }
             }
+            .animation(Motion.fold, value: shape)
         }
         .scrollIndicators(.never)
     }
@@ -130,27 +150,42 @@ struct LibraryView: View {
     /// do it says so, in the resting light.
     private func today(_ todos: [Todo]) -> some View {
         let notices = Assist.notices(store)
-        let updates = todos.contains { $0.id.hasPrefix("skills:") || $0.id.hasPrefix("plugins:") }
-        let tone: Tone = todos.isEmpty ? .rest : updates ? .new : .attention
+        let updates = todos.contains { $0.id.hasPrefix("skills:") || $0.id.hasPrefix("plugins:") || $0.id.hasPrefix("receipt:") }
+        let real: Tone = todos.isEmpty ? .rest : updates ? .new : .attention
+        let tone = shownTone ?? real
+        // A receipt is not a thing to do, so it isn't counted; while it shows, the title waits.
+        let pending = todos.filter { !$0.done }
+        let title = todos.isEmpty ? "You’re all set" : pending.count <= 1 ? "One thing for you" : "\(Assist.spelled(pending.count)) things for you"
         return VStack(alignment: .leading, spacing: 0) {
-            LabelText(store.checksEnabled ? store.checkStamp : "Today").foregroundStyle(tone.blockSecondary)
-            Text(todos.isEmpty ? "You’re all set" : todos.count == 1 ? "One thing for you" : "\(Assist.spelled(todos.count)) things for you")
+            SwappingLabel(store.checksEnabled ? store.checkStamp : "Today").foregroundStyle(tone.blockSecondary)
+            // After the line that changed it has folded away.
+            SwappingText(title, alignment: .leading, delay: 0.24)
                 .font(TypeRole.sans(24, .medium)).tracking(-0.4)
                 .padding(.top, 8)
             if todos.isEmpty {
                 Text("\(Assist.mine(store).count) skills of yours and \((store.inventory?.installations ?? []).filter(Assist.isManaged).count) from your apps. Nothing needs you.")
                     .font(TypeRole.sans(13)).foregroundStyle(tone.blockSecondary)
                     .padding(.top, 4).padding(.bottom, notices.isEmpty ? 6 : 0)
+                    .transition(.opacity.animation(.easeOut(duration: 0.24).delay(0.3)))
             }
             if !todos.isEmpty || !notices.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(todos + notices) { todo in
-                        tone.blockForeground.opacity(0.2).frame(height: 1)
-                        TodoLine(todo: todo, tone: tone, open: open)
+                        VStack(spacing: 0) {
+                            tone.blockForeground.opacity(0.2).frame(height: 1)
+                            TodoLine(todo: todo, tone: tone, open: open)
+                        }
+                        .transition(.opacity)
                     }
                 }
                 .padding(.top, 12)
             }
+        }
+        .task(id: real) {
+            // The first time, at once. After that, a moment after the change, as the line folds.
+            guard shownTone != nil else { shownTone = real; return }
+            try? await Task.sleep(for: .milliseconds(360))
+            shownTone = real
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(EdgeInsets(top: 18, leading: 22, bottom: todos.isEmpty && notices.isEmpty ? 18 : 6, trailing: 22))

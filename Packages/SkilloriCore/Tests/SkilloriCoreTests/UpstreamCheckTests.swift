@@ -87,6 +87,11 @@ import Testing
         #expect(folder?.source == UpstreamSource(owner: "anthropics", repository: "skills", ref: "main"))
         #expect(folder?.subpath == "skills/pptx")
         #expect(UpstreamSource.parse("https://github.com/o/r/blob/main/a/SKILL.md")?.subpath == "a")
+        // The installer's own way of naming a folder: owner/repo/folder.
+        let short = UpstreamSource.parse("materic-inc/plugins/twombly/skills/twombly/SKILL.md")
+        #expect(short?.source == UpstreamSource(owner: "materic-inc", repository: "plugins"))
+        #expect(short?.subpath == "twombly/skills/twombly")
+        #expect(UpstreamSource.parse("o/r/two words") == nil)
         #expect(UpstreamSource.parse("https://gitlab.com/o/r") == nil)
         #expect(UpstreamSource.parse("https://github.com/o/r/issues/4") == nil)
         #expect(UpstreamSource.parse("not a source") == nil)

@@ -13,6 +13,10 @@ import SkilloriCore
 @Observable
 final class InventoryStore {
     private(set) var inventory: Inventory?
+    /// Skills whose folder the installer replaced, from the id they had to the one they have now.
+    /// An id is the folder's file identity, so an update gives a skill a new one; an open page
+    /// follows the skill through this instead of losing it.
+    private var replacedIDs: [Installation.ID: Installation.ID] = [:]
     private(set) var isScanning = false
     private(set) var projects: [URL]
 
@@ -20,8 +24,12 @@ final class InventoryStore {
     private(set) var readings: [String: UpstreamReading] = [:]
     /// Skills the reader keeps on their installed version, and since when.
     private(set) var held: [String: Date] = [:]
-    /// Sources the reader has pointed out for skills that came with no record, by `sourceKey`.
+    /// Sources the reader has pointed out for skills that came with no record, or whose recorded
+    /// source is gone, by `sourceKey`.
     private(set) var links: [String: SourceLink] = [:]
+    /// Skills the reader keeps as local copies, no longer checked against a source, and since
+    /// when. By folder, like links.
+    private(set) var keptLocal: [String: Date] = [:]
     /// What each Claude Code plugin's marketplace last said, by plugin id (`name@marketplace`).
     private(set) var pluginReadings: [String: UpstreamReading] = [:]
     /// Folder hashes at installed plugin commits. They never change, so each is asked for once.
@@ -30,6 +38,8 @@ final class InventoryStore {
     private(set) var codexPlugins: CodexPluginList?
     private(set) var isAskingCodex = false
     private(set) var isChecking = false
+    /// How many skills the check in progress asks about.
+    private(set) var checkingCount = 0
     /// Set when a forced check was asked for while another was running.
     private var checkAgain = false
     /// Set when a rescan was asked for while another was running.
@@ -46,6 +56,22 @@ final class InventoryStore {
     private(set) var lastAttempt: Date?
     /// Asks again once the wait is over, as the library says it will.
     @ObservationIgnored private var askAgain: Task<Void, Never>?
+    /// An update that just went well, shown for a moment as a receipt before its line folds away.
+    private(set) var receipt: Receipt?
+
+    struct Receipt {
+        /// The skills as they were when the update ran.
+        let installations: [Installation]
+        /// The source's name, as the line said it before the update.
+        let source: String
+        let at: Date
+        /// The installer's last lines stay in view for a moment, then fold away first.
+        var showsOutput = true
+
+        func contains(_ installation: Installation) -> Bool {
+            installations.contains { $0.directoryName == installation.directoryName }
+        }
+    }
     /// Runs the installer's update command when the reader asks for it.
     let updater = UpdateRunner()
     /// Runs Claude Code's update for its plugins when the reader asks for it.
@@ -141,8 +167,12 @@ final class InventoryStore {
 
     /// Identifies a tracked skill by where it comes from, so an answer survives a rescan.
     func sourceKey(for installation: Installation) -> String? {
+        if keptLocal[Self.linkKey(for: installation)] != nil { return nil }
         switch installation.provenance {
-        case .skillsLock(let source, _, let subpath, _, _): return "\(source)#\(subpath ?? "")"
+        case .skillsLock(let source, _, let subpath, _, _):
+            // Linked to a new home because the recorded one is gone: the link is asked instead.
+            let key = Self.linkKey(for: installation)
+            return links[key] == nil ? "\(source)#\(subpath ?? "")" : key
         case .unknown:
             let key = Self.linkKey(for: installation)
             return links[key] == nil ? nil : key
@@ -154,8 +184,54 @@ final class InventoryStore {
 
     /// The source the reader linked this skill to, if they did.
     func link(for installation: Installation) -> SourceLink? {
-        guard installation.provenance == .unknown else { return nil }
+        if case .managed = installation.provenance { return nil }
         return links[Self.linkKey(for: installation)]
+    }
+
+    /// Why the source the installer recorded for this skill can't be used any more: it no longer
+    /// answers, no longer has the folder, is of a kind Skillori can't ask, or left nothing to
+    /// compare with. Nil for every other skill, and once the reader has linked or kept it.
+    func lostSource(of installation: Installation) -> UpstreamState.Reason? {
+        guard case .skillsLock = installation.provenance, link(for: installation) == nil,
+              !isKeptLocal(installation) else { return nil }
+        guard upstreamSource(for: installation) != nil else { return .unsupported }
+        if case .cannotCheck(let reason)? = reading(for: installation)?.state, Self.lostReasons.contains(reason) { return reason }
+        return nil
+    }
+
+    /// The answers that say the recorded source is no use, as opposed to a check that didn't get through.
+    static let lostReasons: Set<UpstreamState.Reason> = [.notFound, .folderGone, .unsupported, .noBaseline]
+
+    /// The source the installer recorded, as it wrote it, for saying which one is gone.
+    func recordedSource(of installation: Installation) -> String? {
+        if case .skillsLock(let source, _, _, _, _) = installation.provenance { source } else { nil }
+    }
+
+    /// Whether the reader can link this skill to a source: it has none, or its recorded one is gone.
+    func canLink(_ installation: Installation) -> Bool {
+        guard link(for: installation) == nil else { return false }
+        return installation.provenance == .unknown || lostSource(of: installation) != nil
+    }
+
+    func isKeptLocal(_ installation: Installation) -> Bool {
+        keptLocal[Self.linkKey(for: installation)] != nil
+    }
+
+    /// Stops checking this skill against its source; it is the reader's local copy from now on.
+    func keepLocal(_ installation: Installation) {
+        keptLocal[Self.linkKey(for: installation)] = Date()
+        save()
+    }
+
+    /// Checks it against the installer's recorded source again.
+    func stopKeepingLocal(_ installation: Installation) {
+        keptLocal[Self.linkKey(for: installation)] = nil
+        save()
+    }
+
+    /// The reader's skills whose recorded source is gone, by name.
+    var lostSources: [Installation] {
+        own.filter { lostSource(of: $0) != nil }.sorted { $0.displayName.lowercased() < $1.displayName.lowercased() }
     }
 
     func upstreamSource(for installation: Installation) -> SkillSource? {
@@ -193,7 +269,9 @@ final class InventoryStore {
                     : .sourceAhead(owner: plugin.app, upstream: upstream)
             }
             return .managed
-        case .unknown:
+        case _ where isKeptLocal(installation):
+            return .keptLocal
+        case .unknown, .skillsLock where link(for: installation) != nil:
             guard link(for: installation) != nil else { return .noSource }
             // Linked by the reader: there is no installer baseline, so "differs" is all that can be said.
             let state = reading(for: installation)?.state
@@ -248,6 +326,14 @@ final class InventoryStore {
     /// The reasons behind the skills that cannot be checked right now.
     var cantCheckReasons: Set<UpstreamState.Reason> {
         Set(own.compactMap { if case .cantCheck(let reason) = status(for: $0) { reason } else { nil } })
+    }
+    /// The skills that can't be checked for a reason other than a lost source, and the reasons.
+    var unansweredCantCheck: (count: Int, reasons: Set<UpstreamState.Reason>) {
+        let reasons = own.compactMap { installation -> UpstreamState.Reason? in
+            guard lostSource(of: installation) == nil, case .cantCheck(let reason) = status(for: installation) else { return nil }
+            return reason
+        }
+        return (reasons.count, Set(reasons))
     }
     var updateCount: Int { updates.count }
     var upToDateCount: Int { own.filter { status(for: $0) == .upToDate }.count }
@@ -394,16 +480,21 @@ final class InventoryStore {
     func update(_ installations: [Installation]) async {
         let names = installations.map(\.directoryName)
         guard !names.isEmpty, !updater.isRunning else { return }
+        receipt = nil
+        let source = installations.first.flatMap { upstreamSource(for: $0)?.name } ?? "its source"
         let plan = updatePlan(for: installations)
         if plan.isEmpty {
             // Only a recorded skill with a name that can't be passed on gets here; the run says so.
-            guard installations.contains(where: { if case .skillsLock = $0.provenance { true } else { false } }) else { return }
-            _ = await updater.run(names: names)
+            // One linked in place of a gone source is not updated from the old one.
+            let recorded = installations.filter { if case .skillsLock = $0.provenance { link(for: $0) == nil } else { false } }
+            guard !recorded.isEmpty else { return }
+            _ = await updater.run(names: recorded.map(\.directoryName))
         } else {
             let finished = await updater.run(names: names, commands: plan.map(\.arguments))
             finishAdoptions(plan.prefix(finished).flatMap(\.adoptions))
         }
         Notifier.shared.runEnded(names: names, phase: updater.phase)
+        if case .succeeded = updater.phase { showReceipt(Receipt(installations: installations, source: source, at: Date())) }
         // Read this Mac, then ask only the sources of the skills that ran. Asking every source
         // after every update used up GitHub's hourly allowance, and the reader then saw a
         // line about all their skills when they had updated one.
@@ -415,7 +506,10 @@ final class InventoryStore {
     /// The installer commands an update of these skills runs, as they would be typed.
     func updateCommandText(for installations: [Installation]) -> String {
         let plan = updatePlan(for: installations)
-        guard !plan.isEmpty else { return UpdateRunner.commandText(for: installations.map(\.directoryName)) }
+        guard !plan.isEmpty else {
+            let recorded = installations.filter { if case .skillsLock = $0.provenance { link(for: $0) == nil } else { false } }
+            return recorded.isEmpty ? "" : UpdateRunner.commandText(for: recorded.map(\.directoryName))
+        }
         return plan.map { (["npx"] + $0.arguments.dropFirst()).joined(separator: " ") }.joined(separator: " && ")
     }
 
@@ -435,12 +529,13 @@ final class InventoryStore {
     /// `update` for the skills the installer recorded, then one `add` per source for linked ones.
     private func updatePlan(for installations: [Installation]) -> [UpdateStep] {
         var steps: [UpdateStep] = []
-        let recorded = installations.filter { if case .skillsLock = $0.provenance { true } else { false } }.map(\.directoryName)
+        // A recorded skill linked to a new home is moved there with `add`, not updated from the old one.
+        let recorded = installations.filter { if case .skillsLock = $0.provenance { link(for: $0) == nil } else { false } }.map(\.directoryName)
         if !recorded.isEmpty, recorded.allSatisfy(UpdateRunner.isSafeName) {
             steps.append(UpdateStep(arguments: UpdateRunner.arguments(for: recorded), adoptions: []))
         }
         var adoptions: [LinkedAdoption] = []
-        for installation in installations where installation.provenance == .unknown {
+        for installation in installations where link(for: installation) != nil {
             guard let adoption = adoption(for: installation),
                   !adoptions.contains(where: { $0.plan == adoption.plan }) else { continue }
             adoptions.append(adoption)
@@ -458,19 +553,28 @@ final class InventoryStore {
     func adoption(for installation: Installation) -> LinkedAdoption? {
         guard let link = link(for: installation), case .github(let source) = link.source else { return nil }
         let name = installation.displayName.lowercased()
-        let copies = own.filter { $0.provenance == .unknown && $0.displayName.lowercased() == name && self.link(for: $0)?.source == link.source }
-        return adoption(of: copies, from: source)
+        let copies = own.filter { $0.displayName.lowercased() == name && self.link(for: $0)?.source == link.source }
+        return adoption(of: copies, from: source, subpath: link.subpath)
     }
 
-    /// The same for copies that are about to be linked to this source.
-    func adoption(of copies: [Installation], from source: UpstreamSource) -> LinkedAdoption? {
+    /// The same for copies that are about to be linked to this source. With the skill's folder in
+    /// the source, the installer is told the folder rather than the name.
+    func adoption(of copies: [Installation], from source: UpstreamSource, subpath: String? = nil) -> LinkedAdoption? {
         guard let first = copies.first else { return nil }
         let ids = Set(copies.map(\.id))
-        let folders = copies.flatMap { $0.bindings.map(\.discoveredPath) + [$0.canonicalPath] }
+        // A link into a copy's own folder follows what the installer puts there, as long as that
+        // folder keeps its name; Antigravity's ~/.gemini/config/skills holds such links.
+        let name = Adoption.installName(first.displayName)
+        func follows(_ binding: AgentBinding, of copy: Installation) -> Bool {
+            binding.viaSymlink && binding.discoveredPath != copy.canonicalPath
+                && URL(fileURLWithPath: copy.canonicalPath).lastPathComponent == name
+        }
+        let folders = copies.flatMap { copy in copy.bindings.filter { !follows($0, of: copy) }.map(\.discoveredPath) + [copy.canonicalPath] }
+        let links = copies.flatMap { copy in copy.bindings.filter { follows($0, of: copy) }.map(\.discoveredPath) }
         let taken = Set((inventory?.installations ?? []).filter { !ids.contains($0.id) }
             .flatMap { $0.bindings.map(\.discoveredPath) + [$0.canonicalPath] })
         guard let plan = Adoption.plan(skill: first.displayName, source: source, folders: folders,
-                                       home: Self.home.path, taken: taken) else { return nil }
+                                       home: Self.home.path, taken: taken, subpath: subpath, links: links) else { return nil }
         return LinkedAdoption(plan: plan, linkKeys: copies.map(Self.linkKey))
     }
 
@@ -562,6 +666,7 @@ final class InventoryStore {
         let plugins = only == nil ? pluginRecords : []
         guard !tracked.isEmpty || !plugins.isEmpty else { return }
         isChecking = true
+        checkingCount = tracked.count
         defer { isChecking = false }
 
         #if DEBUG
@@ -662,6 +767,22 @@ final class InventoryStore {
             checkAgain = false
             isChecking = false
             await checkSources(force: true)
+        }
+    }
+
+    /// The receipt shows the installer's last lines for a second, then only the sentence, and
+    /// folds away after three more. By then this Mac has been read again, so the line it stood
+    /// in for is gone and doesn't come back for a moment.
+    private func showReceipt(_ new: Receipt) {
+        receipt = new
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, self.receipt?.at == new.at else { return }
+            self.receipt?.showsOutput = false
+            try? await Task.sleep(for: .seconds(2.2))
+            while self.isScanning { try? await Task.sleep(for: .milliseconds(100)) }
+            guard self.receipt?.at == new.at else { return }
+            self.receipt = nil
         }
     }
 
@@ -790,7 +911,7 @@ final class InventoryStore {
 
     /// Remembers that this skill comes from `candidate` in the searched source.
     func link(_ installation: Installation, to candidate: SourceCandidate, in search: LinkSearch) {
-        guard installation.provenance == .unknown else { return }
+        guard canLink(installation) else { return }
         let key = Self.linkKey(for: installation)
         let now = Date()
         links[key] = switch search.source {
@@ -809,8 +930,8 @@ final class InventoryStore {
 
     // MARK: Finding sources
 
-    /// Skills of yours with no installer record and no link, as one group per name and content:
-    /// identical copies in several folders are found and linked together.
+    /// Skills of yours with no source, or whose recorded source is gone, as one group per name and
+    /// content: identical copies in several folders are found and linked together.
     struct UnlinkedGroup: Identifiable {
         let name: String
         let installations: [Installation]
@@ -819,8 +940,13 @@ final class InventoryStore {
     }
 
     /// `includingLinked` also takes skills that are linked already, for pictures of the sheet.
-    func unlinkedGroups(includingLinked: Bool = false) async -> [UnlinkedGroup] {
-        let unlinked = own.filter { $0.provenance == .unknown && (includingLinked || link(for: $0) == nil) }
+    /// `only` keeps the search to these skills (by id) and their copies.
+    func unlinkedGroups(includingLinked: Bool = false, only: Set<String>? = nil) async -> [UnlinkedGroup] {
+        let names = only.map { ids in Set(own.filter { ids.contains($0.id) }.map { $0.displayName.lowercased() }) }
+        let unlinked = own.filter { installation in
+            if let names, !names.contains(installation.displayName.lowercased()) { return false }
+            return includingLinked ? installation.provenance == .unknown : canLink(installation)
+        }
         let read = await Task.detached(priority: .utility) {
             unlinked.map { installation in
                 (installation, try? LocalSkill(name: installation.directoryName, folder: URL(fileURLWithPath: installation.canonicalPath)))
@@ -870,7 +996,7 @@ final class InventoryStore {
         } else {
             .upToDate
         }
-        for installation in group.installations where installation.provenance == .unknown {
+        for installation in group.installations where canLink(installation) {
             let key = Self.linkKey(for: installation)
             links[key] = SourceLink(owner: proposal.source.owner, repository: proposal.source.repository, ref: nil,
                                     subpath: proposal.subpath, linkedAt: now, localHash: group.local?.treeID,
@@ -898,6 +1024,7 @@ final class InventoryStore {
         var pluginReadings: [String: UpstreamReading]?
         var pluginBaselines: [String: String]?
         var codexPlugins: CodexPluginList?
+        var keptLocal: [String: Date]?
     }
 
     private static var savedURL: URL? {
@@ -935,17 +1062,29 @@ final class InventoryStore {
         pluginReadings = saved.pluginReadings ?? [:]
         pluginBaselines = saved.pluginBaselines ?? [:]
         codexPlugins = saved.codexPlugins
+        keptLocal = saved.keptLocal ?? [:]
     }
 
     private func save() {
         guard !usesSampleReadings, let url = Self.savedURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
-                          pluginReadings: pluginReadings, pluginBaselines: pluginBaselines, codexPlugins: codexPlugins)
+                          pluginReadings: pluginReadings, pluginBaselines: pluginBaselines, codexPlugins: codexPlugins,
+                          keptLocal: keptLocal)
         try? JSONEncoder().encode(saved).write(to: url, options: .atomic)
     }
 
     #if DEBUG
+    /// Pictures of a skill whose recorded source is gone, once linked to its new home: the new
+    /// home has a newer version. Nil `subpath` takes the link away again.
+    func setSampleLink(_ installation: Installation, owner: String, repository: String, subpath: String?) {
+        let key = Self.linkKey(for: installation)
+        guard let subpath else { links[key] = nil; readings[key] = nil; return }
+        links[key] = SourceLink(owner: owner, repository: repository, ref: nil, subpath: subpath, linkedAt: Date(),
+                                localHash: installation.contentHash)
+        readings[key] = UpstreamReading(state: .updateAvailable(upstreamHash: "2f14c7791e51007344512e80d8634ad913660af2"), checkedAt: Date())
+    }
+
     /// Pictures of the library when sources gave no answer: every tracked skill unanswered, and
     /// a wait until `until` when the reason is that a source asked Skillori to wait.
     func setSampleTrouble(_ reason: UpstreamState.Reason?, until: Date? = nil) {
@@ -979,6 +1118,33 @@ final class InventoryStore {
         readings = next
         lastCheck = now
     }
+
+    /// Plays an update for pictures and probes, without the installer: its lines arrive one by
+    /// one, and then it fails, or it goes well and the skills read as current, as after a real one.
+    func playSampleUpdate(_ installations: [Installation], fails: Bool = false) async {
+        let names = installations.map(\.directoryName)
+        let source = installations.first.flatMap { upstreamSource(for: $0)?.name } ?? "its source"
+        receipt = nil
+        var output = ""
+        updater.setSample(names: names, phase: .running, output: output)
+        let lines = fails ? ["◇  Checking 1 skill for updates", "◇  Fetching \(source)", "✗  Could not reach github.com"]
+            : ["◇  Checking 1 skill for updates", "◇  Fetching \(source)", "◇  Updating \(names.joined(separator: ", "))", "✓  Updated 1 skill"]
+        for line in lines {
+            try? await Task.sleep(for: .milliseconds(800))
+            output += line + "\n"
+            updater.setSample(names: names, phase: .running, output: output)
+        }
+        try? await Task.sleep(for: .milliseconds(260))
+        guard !fails else {
+            updater.setSample(names: names, phase: .failed("The installer ended with code 1."), output: output)
+            return
+        }
+        updater.setSample(names: names, phase: .succeeded, output: output)
+        for installation in installations {
+            if let key = sourceKey(for: installation) { readings[key] = UpstreamReading(state: .upToDate, checkedAt: Date()) }
+        }
+        showReceipt(Receipt(installations: installations, source: source, at: Date()))
+    }
     #endif
 
     /// Skills with a source that can be asked: recorded by the installer, or linked by the reader.
@@ -996,6 +1162,26 @@ final class InventoryStore {
 
     private func count(where predicate: (Provenance) -> Bool) -> Int {
         inventory?.installations.filter { predicate($0.provenance) }.count ?? 0
+    }
+
+    /// The skill with this id, or the one in the same folder when the installer has replaced it since.
+    func installation(id: Installation.ID) -> Installation? {
+        let installations = inventory?.installations ?? []
+        if let found = installations.first(where: { $0.id == id }) { return found }
+        guard let now = replacedIDs[id] else { return nil }
+        return installations.first { $0.id == now }
+    }
+
+    private func noteReplacedFolders(from old: Inventory?, to new: Inventory) {
+        guard let old else { return }
+        let ids = Set(new.installations.map(\.id))
+        let byPath = Dictionary(new.installations.map { ($0.canonicalPath, $0.id) }, uniquingKeysWith: { first, _ in first })
+        for installation in old.installations where !ids.contains(installation.id) {
+            guard let now = byPath[installation.canonicalPath] else { continue }
+            replacedIDs[installation.id] = now
+            // Pages opened on an even older id follow along.
+            for (from, to) in replacedIDs where to == installation.id { replacedIDs[from] = now }
+        }
     }
 
     func rescan() async {
@@ -1021,6 +1207,7 @@ final class InventoryStore {
         }
         // Which agents are here decides which agent marks a skill shows.
         AgentPresence.refresh(among: Array(Set(result.installations.flatMap(\.agents))))
+        noteReplacedFolders(from: inventory, to: result)
         inventory = result
         watchFolders(of: result)
         Task {
@@ -1034,6 +1221,12 @@ final class InventoryStore {
             try? await Task.sleep(for: .seconds(Self.minimumScanDisplay - shown))
         }
         isScanning = false
+        // Asked for during that pause, for instance by an update that just ended: the read above
+        // may be from before it. Read again; a caller waiting for it sees the read start at once.
+        if scanAgain {
+            scanAgain = false
+            await rescan()
+        }
     }
 
     /// Asks the reader's login shell for the variables that move an agent's settings folder,

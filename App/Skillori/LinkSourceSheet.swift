@@ -23,7 +23,8 @@ struct LinkSourceSheet: View {
         case idle
         case searching
         case found(InventoryStore.LinkSearch)
-        case failed(String)
+        /// Why the search gave nothing, and the word on the chip before it.
+        case failed(String, chip: String)
     }
 
     @State private var text: String
@@ -39,7 +40,8 @@ struct LinkSourceSheet: View {
                 LabelText(installation.displayName)
             }
             .foregroundStyle(Palette.ink2)
-            Text("Where did this skill come from?")
+            // A skill whose recorded source is gone is asked about where it lives now.
+            Text(store.lostSource(of: installation) != nil ? "Where does this skill live now?" : "Where did this skill come from?")
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
@@ -106,9 +108,9 @@ struct LinkSourceSheet: View {
             EmptyView()
         case .searching:
             Text("Asking \(askedHost)…").font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
-        case .failed(let sentence):
+        case .failed(let sentence, let chip):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusChip("Not found", kind: .attention, mark: "✕")
+                StatusChip(chip, kind: .attention, mark: "✕")
                 Text(sentence).font(TypeRole.sans(12)).fixedSize(horizontal: false, vertical: true)
             }
         case .found(let search):
@@ -178,8 +180,15 @@ struct LinkSourceSheet: View {
         chosen = nil
         Task {
             switch await store.searchSource(text, for: installation) {
+            case .failure(.source(.rateLimited, _)):
+                // Nothing asks again from here, so say when the reader can.
+                let at = await GitHubBudget.shared.retryAt
+                phase = .failed("GitHub asked Skillori to wait. "
+                                + (at.map { "Try again after \(InventoryStore.stamp($0))." } ?? "Try again in a while."), chip: "Wait")
+            case .failure(.source(.offline, _)):
+                phase = .failed("No contact with the source. Check the connection and try again.", chip: "No contact")
             case .failure(let problem):
-                phase = .failed(problem.sentence)
+                phase = .failed(problem.sentence, chip: "Not found")
             case .success(let search):
                 // Pre-select only what the evidence supports: the folder the address named, or a real match.
                 if let suggested = search.suggested, search.candidates.contains(where: { $0.subpath == suggested }) {

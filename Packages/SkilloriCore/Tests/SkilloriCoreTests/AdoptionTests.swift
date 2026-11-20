@@ -56,6 +56,37 @@ import Testing
         #expect(commands[1].arguments == ["--yes", "skills@1.7.6", "add", "someone/awesome", "-s", "refactor", "-a", "claude-code", "-g", "-y"])
     }
 
+    @Test func aKnownFolderIsNamedInsteadOfTheSkill() throws {
+        // materic-inc/plugins has two skills called twombly; `-s twombly` installed the wrong one.
+        let plugins = UpstreamSource(owner: "materic-inc", repository: "plugins")
+        let folders = ["\(home)/.agents/skills/twombly", "\(home)/.claude/skills/twombly"]
+        let plan = try #require(Adoption.plan(skill: "twombly", source: plugins, folders: folders, home: home, taken: [],
+                                              subpath: "twombly/skills/twombly"))
+        let other = try #require(Adoption.plan(skill: "pptx", source: anthropic, folders: ["\(home)/.claude/skills/pptx"], home: home, taken: []))
+        let commands = Adoption.commands(for: [plan, other], package: "skills@1.7.6")
+        #expect(commands.count == 2)
+        #expect(commands[0].arguments == ["--yes", "skills@1.7.6", "add", "materic-inc/plugins/twombly/skills/twombly",
+                                          "-a", "claude-code", "codex", "-g", "-y"])
+        #expect(commands[1].arguments == ["--yes", "skills@1.7.6", "add", "anthropics/skills", "-s", "pptx", "-a", "claude-code", "-g", "-y"])
+        // A branch goes with the folder, as a tree address.
+        let main = UpstreamSource(owner: "materic-inc", repository: "plugins", ref: "main")
+        let pinned = try #require(Adoption.plan(skill: "twombly", source: main, folders: folders, home: home, taken: [],
+                                                subpath: "twombly/skills/twombly"))
+        #expect(Adoption.commands(for: [pinned], package: "skills@1.7.6")[0].arguments
+                == ["--yes", "skills@1.7.6", "add", "https://github.com/materic-inc/plugins/tree/main/twombly/skills/twombly",
+                    "-a", "claude-code", "codex", "-g", "-y"])
+        // A link elsewhere into the skill's own folder is left to follow it; one in a folder the
+        // installer writes adds its agent.
+        let linked = try #require(Adoption.plan(skill: "twombly", source: plugins, folders: ["\(home)/.agents/skills/twombly"],
+                                                home: home, taken: [], subpath: "twombly/skills/twombly",
+                                                links: ["\(home)/.gemini/config/skills/twombly", "\(home)/.claude/skills/twombly"]))
+        #expect(linked.agents == ["claude-code", "codex"])
+        // A folder that could not be an argument falls back to the name.
+        let odd = try #require(Adoption.plan(skill: "twombly", source: plugins, folders: folders, home: home, taken: [],
+                                             subpath: "a b/-rf"))
+        #expect(odd.subpath == nil)
+    }
+
     @Test func aHomeBehindASymlinkStillMatches() throws {
         // `/tmp` is a link to `/private/tmp`; Foundation hands out either spelling.
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("adoption-\(UUID().uuidString)")

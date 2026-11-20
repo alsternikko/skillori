@@ -46,7 +46,14 @@ public struct UpstreamSource: Hashable, Sendable {
         if input.hasSuffix("/") { input.removeLast() }
         guard !input.isEmpty else { return nil }
         if !input.contains("://"), !input.lowercased().hasPrefix("github.com/") {
-            return UpstreamSource(source: input, sourceURL: nil).map { ($0, nil) }
+            // `owner/repo/folder`, as the installer takes it, names a folder in the repository.
+            var parts = input.split(separator: "/").map(String.init)
+            if parts.last == "SKILL.md" { parts.removeLast() }
+            guard parts.count > 2, parts.dropFirst(2).allSatisfy(isName) else {
+                return UpstreamSource(source: parts.joined(separator: "/"), sourceURL: nil).map { ($0, nil) }
+            }
+            return UpstreamSource(source: "\(parts[0])/\(parts[1])", sourceURL: nil)
+                .map { ($0, parts.dropFirst(2).joined(separator: "/")) }
         }
         if !input.contains("://") { input = "https://" + input }
         guard let url = URL(string: input), url.scheme == "https", url.host?.lowercased() == "github.com" else { return nil }

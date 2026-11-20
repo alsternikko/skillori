@@ -64,6 +64,24 @@ public struct LabelText: View {
     }
 }
 
+/// A label whose words change now and then, such as when the sources were last asked: the
+/// old words leave with a slight blur as the new ones arrive.
+public struct SwappingLabel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let text: String
+    let alignment: Alignment
+    public init(_ text: String, alignment: Alignment = .leading) {
+        self.text = text
+        self.alignment = alignment
+    }
+    public var body: some View {
+        ZStack(alignment: alignment) {
+            LabelText(text).id(text).transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
+        }
+        .animation(Motion.swap, value: text)
+    }
+}
+
 /// Mono 10.5 pt. For technical and numeric data.
 public struct DataText: View {
     let text: String

@@ -14,6 +14,8 @@ private struct Advice {
     let text: String
     var todo: Todo?
     var extra: [(label: String, prominent: Bool, run: () -> Void)] = []
+    /// The installer's run for this skill, shown under the advice.
+    var command: [Installation]?
 }
 
 /// One skill, as a page.
@@ -24,6 +26,8 @@ struct SkillPage: View {
     var back: () -> Void
     var open: (LibraryPage) -> Void
     var onLink: () -> Void
+    /// Looks for this skill's source, with the copies that share its name.
+    var onFindSources: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 6) {
@@ -31,7 +35,7 @@ struct SkillPage: View {
             ScrollView {
                 VStack(spacing: 6) {
                     header
-                    if let advice { adviceBlock(advice) }
+                    if let advice { adviceBlock(advice).transition(.opacity) }
                     HStack(alignment: .top, spacing: 6) {
                         whereCard
                         readByCard
@@ -48,6 +52,9 @@ struct SkillPage: View {
                     }
                     .padding(.top, 6)
                 }
+                // The advice changing, or a run unfolding under it, moves the cards below with it.
+                .animation(Motion.fold, value: [advice?.title ?? "", advice?.command == nil ? "" : "+",
+                                                 String(store.updater.lastLines(3).count)])
             }
             .scrollIndicators(.never)
         }
@@ -113,6 +120,7 @@ struct SkillPage: View {
             return "Same as its source."
         case .managed: return "\(app) keeps it current. Nothing for you to do."
         case .noSource: return "Nothing to do. Skillori doesn’t know where it came from, which is fine."
+        case .keptLocal: return "Nothing to do. You keep it as a local copy, so Skillori doesn’t check it against a source."
         case .cantCheck(let reason): return "Nothing to do. " + reason.sentence
         case .notChecked: return "Its source hasn’t been asked yet."
         default: return status.sentence
@@ -141,19 +149,59 @@ struct SkillPage: View {
                           text: text, todo: todo,
                           extra: [("Show in Finder", false, { NSWorkspace.shared.activateFileViewerSelecting(urls) })])
         }
+        // Just updated: say so for a moment, with where it came from, before the page settles.
+        if let receipt = store.receipt, receipt.contains(installation) {
+            return Advice(tone: .new, title: "Updated from \(receipt.source)",
+                          text: "At \(InventoryStore.stamp(receipt.at)). Start a new agent session to load it.",
+                          command: receipt.showsOutput ? receipt.installations : nil)
+        }
+        // The source the installer recorded is gone: say what probably happened, and the ways on.
+        if isMine, let reason = store.lostSource(of: installation) {
+            let recorded = store.recordedSource(of: installation) ?? "Its source"
+            let (title, text): (String, String) = switch reason {
+            case .notFound:
+                ("The source is gone", "\(recorded) no longer answers. It may be private or removed, or have moved. Your copy works as it is.")
+            case .folderGone:
+                ("The skill is gone from its source", "\(recorded) no longer has this skill’s folder. It may have moved. Your copy works as it is.")
+            case .unsupported:
+                ("Skillori can’t ask this source", "The installer recorded \(recorded), which isn’t a GitHub repository. Link the skill to one to hear when it changes.")
+            default:
+                ("Nothing to compare with", "The installer left no record of what it installed. Link the skill to its source to compare with it.")
+            }
+            return Advice(tone: .quiet, title: title, text: text,
+                          extra: [("Find sources", true, onFindSources),
+                                  ("Link…", false, onLink),
+                                  ("Keep as local", false, { store.keepLocal(installation) })])
+        }
+        // The source the reader linked is gone in turn: unlinking leaves the way on open again.
+        if isMine, store.link(for: installation) != nil, case .cantCheck(let reason) = status,
+           InventoryStore.lostReasons.contains(reason), let source = store.upstreamSource(for: installation) {
+            let back = store.recordedSource(of: installation).map { " Unlinking goes back to \($0), the source the installer recorded." }
+                ?? " Unlink it to link it again or look for where it went."
+            return Advice(tone: .quiet, title: "The linked source is gone",
+                          text: "\(source.name) no longer answers. Your copy works as it is." + back,
+                          extra: [("Unlink", true, { store.unlink(installation) })])
+        }
         let history = store.upstreamSource(for: installation)?.historyURL(subpath: store.sourceSubpath(for: installation))
         let web = store.upstreamSource(for: installation)?.webURL(subpath: store.sourceSubpath(for: installation))
         switch status {
         case .updateAvailable:
-            let running = store.updater.isRunning
+            let runner = store.updater
+            let running = runner.isRunning
+            let mine = runner.names.contains(installation.directoryName)
+            let failure: String? = if case .failed(let why) = runner.phase, mine, let ended = runner.endedAt,
+                                      Date().timeIntervalSince(ended) < 30 * 60 { why } else { nil }
             var extra: [(String, Bool, () -> Void)] = []
             if let history { extra.append(("See what changed", false, { NSWorkspace.shared.open(history) })) }
             extra.append(("Keep this version", false, { store.hold(installation) }))
-            return Advice(tone: .new, title: "A newer version is at \(store.upstreamSource(for: installation)?.name ?? "its source")",
-                          text: "Updating replaces this copy with the source’s.",
-                          todo: Todo(id: "update", app: nil, title: "", detail: "", button: running ? "Updating…" : "▶ Update",
+            return Advice(tone: .new,
+                          title: failure != nil ? "Could not update" : "A newer version is at \(store.upstreamSource(for: installation)?.name ?? "its source")",
+                          text: failure.map { _ in "The installer didn’t finish. What it printed is below." } ?? "Updating replaces this copy with the source’s.",
+                          todo: Todo(id: "update", app: nil, title: "", detail: "",
+                                     button: running && mine ? "Updating…" : failure != nil ? "▶ Try again" : "▶ Update",
                                      act: .updateSkills([installation]), busy: running, prominent: true),
-                          extra: extra)
+                          extra: extra,
+                          command: (running && mine) || failure != nil ? [installation] : nil)
         case .differs:
             var extra: [(String, Bool, () -> Void)] = []
             if case .installer(let script)? = store.upstreamSource(for: installation) {
@@ -211,19 +259,25 @@ struct SkillPage: View {
     }
 
     private func adviceBlock(_ advice: Advice) -> some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(advice.title).font(TypeRole.sans(16, .medium))
-                Text(advice.text).font(TypeRole.sans(12.5)).foregroundStyle(advice.tone.blockSecondary).lineLimit(3)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    SwappingText(advice.title, alignment: .leading).font(TypeRole.sans(16, .medium))
+                    SwappingText(advice.text, alignment: .leading).font(TypeRole.sans(12.5)).foregroundStyle(advice.tone.blockSecondary).lineLimit(3)
+                }
+                Spacer(minLength: 12)
+                if let todo = advice.todo {
+                    TodoButton(todo: todo, style: advice.tone.litButton(prominent: true), open: open)
+                }
+                ForEach(Array(advice.extra.enumerated()), id: \.offset) { _, button in
+                    Button(button.label, action: button.run).buttonStyle(advice.tone.litButton(prominent: button.prominent && advice.todo == nil))
+                }
             }
-            Spacer(minLength: 12)
-            if let todo = advice.todo {
-                TodoButton(todo: todo, style: advice.tone.litButton(prominent: true), open: open)
-            }
-            ForEach(Array(advice.extra.enumerated()), id: \.offset) { _, button in
-                Button(button.label, action: button.run).buttonStyle(advice.tone.litButton(prominent: button.prominent && advice.todo == nil))
+            if let command = advice.command {
+                CommandFrame(installations: command, compact: true, showsRun: false).transition(.opacity)
             }
         }
+        .animation(Motion.fold, value: advice.command != nil)
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 18))
         .foregroundStyle(advice.tone.blockForeground)
         .background { advice.tone.blockBackground(phase: 41) }
@@ -295,12 +349,37 @@ struct SkillPage: View {
                 }
             } else if !isMine {
                 FactRow { Text("Kept current by \(app)") } value: { EmptyView() }
+            } else if store.isKeptLocal(installation) {
+                FactRow { Text("Local copy") } value: { Text("kept by you") }
+                Text(store.recordedSource(of: installation).map { "Skillori no longer checks it against \($0)." }
+                     ?? "Skillori no longer checks it against a source.")
+                    .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                Button("Check again") { store.stopKeepingLocal(installation); Task { await store.refresh() } }
+                    .buttonStyle(PillButtonStyle()).padding(.top, 8)
+            } else if let reason = store.lostSource(of: installation), let recorded = store.recordedSource(of: installation) {
+                // The installer's record names a source that is no use: show it struck out, and the way on.
+                FactRow { Text(recorded).strikethrough(reason == .notFound) } value: {
+                    Text(reason == .notFound ? "gone" : reason == .folderGone ? "folder gone" : reason == .unsupported ? "can’t ask" : "no record")
+                }
+                HStack(spacing: 6) {
+                    Button("Link…", action: onLink).buttonStyle(PillButtonStyle())
+                    // A source that answers no longer has nothing to show; the repository may, when only the folder went.
+                    if reason == .folderGone, let url = store.upstreamSource(for: installation)?.webURL(subpath: nil) {
+                        Button("Open repository") { NSWorkspace.shared.open(url) }.buttonStyle(PillButtonStyle())
+                    }
+                }
+                .padding(.top, 8)
             } else if let source = store.upstreamSource(for: installation) {
                 FactRow { Text(source.name) } value: {
                     if let reading = store.reading(for: installation) { Text("checked " + InventoryStore.stamp(reading.checkedAt)) }
                 }
                 if case .cantCheck(let reason) = status {
                     Text(reason.sentence).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                }
+                if store.link(for: installation) != nil, let recorded = store.recordedSource(of: installation) {
+                    // Linked to a new home because the installer's recorded one was gone.
+                    Text("Linked in place of \(recorded). Unlink to go back to it.")
+                        .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 }
                 HStack(spacing: 6) {
                     if let url = source.webURL(subpath: store.sourceSubpath(for: installation)) {

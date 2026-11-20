@@ -26,7 +26,14 @@ struct FindSourcesSheet: View {
     /// Why the update after linking did not go through.
     @State private var failure: String?
 
+    /// Set when the sheet looks for one skill, from its page: its id.
+    private var only: Set<String>?
+
     init() {}
+
+    init(only installation: Installation) {
+        only = [installation.id]
+    }
 
     /// Already answered, for pictures: no questions are asked.
     init(preview: [(InventoryStore.UnlinkedGroup, SourceFinder.Search)]) {
@@ -46,7 +53,7 @@ struct FindSourcesSheet: View {
                 LabelText(groups.isEmpty ? "" : groups.count == 1 ? "1 skill" : "\(groups.count) skills")
             }
             .foregroundStyle(Palette.ink2)
-            Text("Where did these skills come from?")
+            Text(only != nil && groups.count == 1 ? "Where does \(groups[0].name) live now?" : "Where did these skills come from?")
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
@@ -152,7 +159,7 @@ struct FindSourcesSheet: View {
         groups.compactMap { group in
             guard let proposal = chosenProposal(for: group), !proposal.folderGone,
                   let upstream = proposal.upstreamHash, upstream != group.local?.treeID,
-                  let adoption = store.adoption(of: group.installations, from: proposal.source) else { return nil }
+                  let adoption = store.adoption(of: group.installations, from: proposal.source, subpath: proposal.subpath) else { return nil }
             return (group, adoption)
         }
     }
@@ -268,7 +275,7 @@ struct FindSourcesSheet: View {
 
     private func find() async {
         guard !started else { return }
-        let found = await store.unlinkedGroups()
+        let found = await store.unlinkedGroups(only: only)
         groups = found
         started = true
         for group in found { findings[group.id] = .asking }

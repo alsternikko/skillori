@@ -6,6 +6,8 @@ import SwiftUI
 /// these instead of SwiftUI's scene actions.
 struct PanelActions {
     var openLibrary: () -> Void = {}
+    /// Opens the library at one skill's page, by installation id.
+    var openSkill: (String) -> Void = { _ in }
     var openSettings: () -> Void = {}
     var addFolder: () -> Void = {}
     var rescan: () -> Void = {}
@@ -34,7 +36,7 @@ struct PanelModel {
         }
     }
 
-    enum Command { case library, settings, addFolder, rescan, privacySettings, enableChecks, installAppUpdate }
+    enum Command { case library, skill(String), settings, addFolder, rescan, privacySettings, enableChecks, installAppUpdate }
 
     /// The skills of one source that differ from it: one row with the command that updates them
     /// all under it. Open, it also lists the skills, each with its own run button.
@@ -258,6 +260,7 @@ struct MenuPanel: View {
     private func run(_ command: PanelModel.Command) {
         switch command {
         case .library: actions.openLibrary()
+        case .skill(let id): actions.openSkill(id)
         case .settings: actions.openSettings()
         case .addFolder: actions.addFolder()
         case .rescan: actions.rescan()
@@ -359,11 +362,24 @@ extension PanelModel {
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
         }
-        if store.cantCheckCount > 0 {
+        // A recorded source that is gone has a way on, from the skill's page: link a new one,
+        // look for it, or keep the copy as local.
+        let lost = store.lostSources
+        if let first = lost.first {
+            let one: String = switch store.lostSource(of: first) {
+            case .folderGone: "\(first.displayName) is gone from its source"
+            case .unsupported: "\(first.displayName)’s source can’t be asked"
+            case .noBaseline: "\(first.displayName) has nothing to compare with"
+            default: "\(first.displayName)’s source is gone"
+            }
+            let text = lost.count > 1 ? "\(lost.count) skills’ sources are gone" : one
+            tail.append(.link(text: text, label: "Show", command: lost.count == 1 ? .skill(first.id) : .library))
+        }
+        let (unchecked, reasons) = store.unansweredCantCheck
+        if unchecked > 0 {
             // Say why when there is one reason; the library has the rest.
-            let reasons = store.cantCheckReasons
             let why = reasons.count == 1 ? reasons.first!.short.uppercased() : "SEE LIBRARY"
-            tail.append(.line(text: "\(store.cantCheckCount) can't be checked", data: why, muted: true))
+            tail.append(.line(text: "\(unchecked) can't be checked", data: why, muted: true))
         }
         let versions = store.differingCopyNames
         if !versions.isEmpty {

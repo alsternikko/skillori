@@ -29,6 +29,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         host.rootView = AnyView(
             MenuPanel(actions: PanelActions(
                 openLibrary: { [weak self] in self?.close(animated: false); self?.windows.showLibrary() },
+                openSkill: { [weak self] id in self?.close(animated: false); self?.windows.showLibrary(at: .skill(id)) },
                 openSettings: { [weak self] in self?.close(animated: false); self?.windows.showSettings() },
                 addFolder: { [weak self] in self?.close(animated: false); self?.store.addProject() },
                 rescan: { [weak self] in Task { await self?.store.refresh() } },

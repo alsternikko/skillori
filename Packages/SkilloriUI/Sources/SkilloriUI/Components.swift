@@ -361,18 +361,27 @@ public enum Motion {
     public static let swap = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
     public static let hover = Animation.easeOut(duration: 0.12)
     public static let press = Animation.easeOut(duration: 0.12)
+    /// Something opens or closes, and the space around it follows.
+    public static let fold = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.3)
 }
 
 /// Text that cross-fades with a slight blur when it changes.
 public struct SwappingText: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let text: String
-    public init(_ text: String) { self.text = text }
+    let alignment: Alignment
+    let delay: Double
+    /// `delay` holds the change back, so it can follow another one instead of coinciding.
+    public init(_ text: String, alignment: Alignment = .trailing, delay: Double = 0) {
+        self.text = text
+        self.alignment = alignment
+        self.delay = delay
+    }
     public var body: some View {
-        ZStack(alignment: .trailing) {
+        ZStack(alignment: alignment) {
             Text(text).id(text).transition(reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
         }
-        .animation(Motion.swap, value: text)
+        .animation(Motion.swap.delay(delay), value: text)
     }
 }
 

@@ -49,6 +49,11 @@ struct Todo: Identifiable {
     var page: LibraryPage?
     var busy = false
     var prominent = false
+    /// A receipt, not a thing to do: the button is a label saying what was done.
+    var done = false
+    /// The installer's run for these skills is shown under the line: while it runs, when it
+    /// went wrong, and for a moment after it went well.
+    var command: [Installation]?
 }
 
 @MainActor
@@ -79,17 +84,42 @@ enum Assist {
         // Skills of yours the installer can update, one line per source. A skill linked by hand
         // can have a copy in several folders; it is still one skill.
         let bySource = Dictionary(grouping: store.updatable) { store.upstreamSource(for: $0)?.name ?? "" }
+        let firstUpdate = list.count
+        let receipt = store.receipt
+        let received = Set(receipt?.installations.map(\.directoryName) ?? [])
+        var receiptShown = false
+        let runner = store.updater
+        let ran = Set(runner.names)
         for source in bySource.keys.sorted() {
             let skills = bySource[source]!.sorted { $0.displayName < $1.displayName }
+            let folders = Set(skills.map(\.directoryName))
+            // The skills that were just updated: the receipt takes the line's place, and its name,
+            // so the line turns into the receipt instead of one going and another coming.
+            if let receipt, receipt.source == source, folders.isSubset(of: received) {
+                list.append(receiptTodo(receipt, id: "skills:" + source, store: store))
+                receiptShown = true
+                continue
+            }
             var titles: [String] = []
             for skill in skills where !titles.contains(skill.displayName) { titles.append(skill.displayName) }
-            let running = store.updater.isRunning && Set(store.updater.names) == Set(skills.map(\.directoryName))
+            let mine = !ran.isEmpty && ran.isSubset(of: folders)
+            let running = runner.isRunning && mine
+            let failure: String? = if case .failed(let why) = runner.phase, mine, let ended = runner.endedAt,
+                                      Date().timeIntervalSince(ended) < 30 * 60 { why } else { nil }
+            let what = titles.count == 1 ? titles[0] : "\(titles.count) skills from \(source)"
             list.append(Todo(id: "skills:" + source, app: nil,
-                             title: titles.count == 1 ? "Update \(titles[0])" : "Update \(titles.count) skills from \(source)",
-                             detail: (titles.count == 1 ? "A newer version is at \(source). " : names(titles) + ". ")
+                             title: failure != nil ? "Could not update \(what)" : "Update \(what)",
+                             detail: failure.map { _ in "The installer didn’t finish. What it printed is below." }
+                                 ?? (titles.count == 1 ? "A newer version is at \(source). " : names(titles) + ". ")
                                  + (titles.count == 1 ? "Updating replaces it with the source’s version." : "Updating replaces them with the source’s version."),
-                             button: running ? "Updating…" : "▶ Update", act: .updateSkills(skills),
-                             page: titles.count == 1 ? .skill(skills[0].id) : nil, busy: store.updater.isRunning, prominent: true))
+                             button: running ? "Updating…" : failure != nil ? "▶ Try again" : "▶ Update", act: .updateSkills(skills),
+                             page: titles.count == 1 ? .skill(skills[0].id) : nil, busy: runner.isRunning, prominent: true,
+                             command: running || failure != nil ? skills : nil))
+        }
+        // The source's line is already gone, or still has other skills to update.
+        if let receipt, !receiptShown {
+            let id = bySource[receipt.source] == nil ? "skills:" + receipt.source : "receipt:" + receipt.source
+            list.insert(receiptTodo(receipt, id: id, store: store), at: firstUpdate)
         }
         // Skills linked to an install script whose files have changed. Skillori reads the script
         // but never runs it, so getting the new files is the reader's step, in Terminal.
@@ -153,6 +183,20 @@ enum Assist {
                              button: "Try again", act: .refresh, page: .mine))
         }
         return list
+    }
+
+    /// The line for an update that just went well: what was updated, from where and when, and
+    /// what the reader may want to do about it. A click leads to the skill.
+    private static func receiptTodo(_ receipt: InventoryStore.Receipt, id: String, store: InventoryStore) -> Todo {
+        var titles: [String] = []
+        for skill in receipt.installations where !titles.contains(skill.displayName) { titles.append(skill.displayName) }
+        let one = titles.count == 1
+        return Todo(id: id, app: nil,
+                    title: one ? "Updated \(titles[0])" : "Updated \(titles.count) skills",
+                    detail: "From \(receipt.source) at \(InventoryStore.stamp(receipt.at)). Start a new agent session to load \(one ? "it" : "them").",
+                    button: "✓ Updated", act: .open(.mine),
+                    page: one ? receipt.installations.first.map { .skill($0.id) } : .mine,
+                    done: true, command: receipt.showsOutput ? receipt.installations : nil)
     }
 
     /// What the reader should know but has nothing to do about, under the things to do.
@@ -234,6 +278,9 @@ enum Assist {
         case .changedHere: return ("Changed here", .attention)
         case .heldBack: return ("Kept as is", .neutral)
         case .noSource: return ("No source", .outline)
+        case .keptLocal: return ("Local copy", .outline)
+        case .cantCheck(.notFound) where store.lostSource(of: skill.primary) != nil: return ("Source gone", .outline)
+        case .cantCheck(.folderGone) where store.lostSource(of: skill.primary) != nil: return ("Gone from source", .outline)
         case .cantCheck: return ("Can’t check", .outline)
         default: return nil
         }
@@ -493,7 +540,19 @@ struct TodoButton: View {
     @State private var problem: String?
 
     var body: some View {
-        Button(todo.button) { run() }
+        if todo.done {
+            // Says what was done; there is nothing to press.
+            Button {} label: { SwappingText(todo.button) }
+                .buttonStyle(style)
+                .allowsHitTesting(false)
+                .accessibilityRemoveTraits(.isButton)
+        } else {
+            button
+        }
+    }
+
+    private var button: some View {
+        Button { run() } label: { SwappingText(todo.button) }
             .buttonStyle(style)
             .disabled(todo.busy)
             .alert(confirmTitle, isPresented: $confirming) {
@@ -547,16 +606,26 @@ struct TodoLine: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 14) {
-            AppMark(app: todo.app)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(todo.title).font(TypeRole.sans(14, .medium)).lineLimit(1)
-                Text(todo.detail).font(TypeRole.sans(12)).foregroundStyle(secondary).lineLimit(2)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 14) {
+                AppMark(app: todo.app)
+                VStack(alignment: .leading, spacing: 2) {
+                    SwappingText(todo.title, alignment: .leading).font(TypeRole.sans(14, .medium)).lineLimit(1)
+                    SwappingText(todo.detail, alignment: .leading).font(TypeRole.sans(12)).foregroundStyle(secondary).lineLimit(2)
+                }
+                Spacer(minLength: 12)
+                // A notice has no button: there is nothing to do but know it.
+                if !leadsHere, !todo.button.isEmpty { TodoButton(todo: todo, style: style, open: open) }
             }
-            Spacer(minLength: 12)
-            // A notice has no button: there is nothing to do but know it.
-            if !leadsHere, !todo.button.isEmpty { TodoButton(todo: todo, style: style, open: open) }
+            // The run itself, as the command it is, under the line it belongs to.
+            if let command = todo.command {
+                CommandFrame(installations: command, compact: true, showsRun: false)
+                    .padding(.leading, 40)
+                    .padding(.top, 10)
+                    .transition(.opacity)
+            }
         }
+        .animation(Motion.fold, value: todo.command != nil)
         .padding(.vertical, 12)
         .padding(.horizontal, tone == nil ? 12 : 0)
         .background((tone == nil ? Palette.ink : (tone?.blockForeground ?? Palette.ink)).opacity(hovering && page != nil ? 0.05 : 0),
@@ -784,7 +853,7 @@ struct LibraryTopBar: View {
             .frame(maxWidth: 360)
             .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
             Spacer(minLength: 8)
-            LabelText(stamp).foregroundStyle(Palette.ink2)
+            SwappingLabel(stamp, alignment: .trailing).foregroundStyle(Palette.ink2)
             Button("Folders", action: onFolders).buttonStyle(PillButtonStyle())
             Button { Task { await store.refresh() } } label: {
                 SwappingText(store.isScanning ? "Reading…" : store.isChecking ? "Checking…" : store.checksEnabled ? "Check now" : "Read again")
@@ -829,7 +898,7 @@ enum LibraryPaging {
         case .home: "Library"
         case .mine: "Your skills"
         case .apps: "From your apps"
-        case .skill(let id), .details(let id): store.inventory?.installations.first { $0.id == id }?.displayName ?? "Skill"
+        case .skill(let id), .details(let id): store.installation(id: id)?.displayName ?? "Skill"
         case .app(let name): name
         case .folders: "Folders"
         }
@@ -844,13 +913,14 @@ struct LibraryPageView: View {
     var back: () -> Void
     var open: (LibraryPage) -> Void
     var onLink: (Installation) -> Void
+    var onFindSources: (Installation) -> Void = { _ in }
 
     var body: some View {
         switch page {
         case .skill(let id):
             if let installation = find(id) {
                 SkillPage(installation: installation, backTitle: backTitle, back: back, open: open,
-                          onLink: { onLink(installation) })
+                          onLink: { onLink(installation) }, onFindSources: { onFindSources(installation) })
                     .id(id)
             } else {
                 gone
@@ -876,7 +946,7 @@ struct LibraryPageView: View {
     }
 
     private func find(_ id: Installation.ID) -> Installation? {
-        store.inventory?.installations.first { $0.id == id }
+        store.installation(id: id)
     }
 
     /// A skill that was removed or replaced while its page was open.
