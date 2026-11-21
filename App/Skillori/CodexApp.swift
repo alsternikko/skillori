@@ -76,9 +76,16 @@ final class CodexPluginRunner {
     func stop() { control?.stop() }
 
     /// How the latest run for exactly these plugins went, for a line still listed after it.
+    /// After a run that went through, the line is still listed only when Codex, asked again,
+    /// does not count the plugins as installed: that is said, rather than the line looking
+    /// as if nothing ran.
     func note(for ids: [String]) -> String? {
-        guard !isRunning, Set(self.ids) == Set(ids), case .failed(let why) = phase else { return nil }
-        return "Codex couldn’t add them. " + why
+        guard !isRunning, Set(self.ids) == Set(ids) else { return nil }
+        switch phase {
+        case .failed(let why): return "Codex couldn’t add them. " + why
+        case .succeeded: return "Codex said it added them, but asked again it still doesn’t count them as installed. Skillori asks Codex again at the next check."
+        default: return nil
+        }
     }
 
     /// Adds these plugins, one after the other. True when every one was added.

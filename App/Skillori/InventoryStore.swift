@@ -492,8 +492,10 @@ final class InventoryStore {
         guard !keys.isEmpty else { return }
         let codexFolder = environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
             ?? Self.home.appendingPathComponent(".codex")
-        let folders = await Task.detached(priority: .utility) { AppPlugins.cacheFolders(in: codexFolder) }.value
-        if !force, let known = codexPlugins, known.asked == keys, known.folders == folders,
+        let (folders, remote) = await Task.detached(priority: .utility) {
+            (AppPlugins.cacheFolders(in: codexFolder), AppPlugins.remoteFolders(in: codexFolder))
+        }.value
+        if !force, let known = codexPlugins, known.asked == keys, known.folders == folders, known.remoteFolders == remote,
            Date().timeIntervalSince(known.askedAt) < Self.checkInterval { return }
         isAskingCodex = true
         defer { isAskingCodex = false }
@@ -510,7 +512,8 @@ final class InventoryStore {
                 offered = full.offered
             }
         }
-        codexPlugins = CodexPluginList(installed: installed, offered: offered, asked: keys, askedAt: Date(), folders: folders)
+        codexPlugins = CodexPluginList(installed: installed, offered: offered, asked: keys, askedAt: Date(), folders: folders,
+                                       remoteFolders: remote)
         save()
     }
 

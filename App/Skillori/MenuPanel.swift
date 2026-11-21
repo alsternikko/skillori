@@ -356,7 +356,7 @@ extension PanelModel {
         let moved = store.codexMoved
         if !moved.isEmpty {
             // Codex plugins Codex no longer reads; the library opens each one's page in Codex.
-            let text = moved.count == 1 ? "Codex no longer reads \(moved[0].plugin.title)" : "Codex no longer reads \(moved.count) plugins"
+            let text = moved.count == 1 ? "Codex no longer loads \(moved[0].plugin.title)" : "Codex no longer loads \(moved.count) plugins"
             tail.append(.link(text: text, label: "Show", command: .library))
         }
         if store.heldCount > 0 {

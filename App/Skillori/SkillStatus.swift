@@ -58,7 +58,7 @@ enum SkillStatus: Equatable {
         case .managed: "Managed"
         case .ownerUpdate: "Plugin update"
         case .sourceAhead: "Newer at source"
-        case .leftBehind: "Not read"
+        case .leftBehind: "Not loaded"
         }
     }
 
@@ -116,7 +116,7 @@ enum SkillStatus: Equatable {
         case .managed: "The app that owns it keeps it up to date."
         case .ownerUpdate(let owner, _): "The plugin's marketplace has a newer version. Skillori can run \(owner)’s update."
         case .sourceAhead(let owner, _): "The plugin's source has a newer version. \(owner) brings it once its catalog has it."
-        case .leftBehind(let owner, _): "\(owner) no longer reads this plugin, so its skills are not loaded."
+        case .leftBehind(let owner, _): "\(owner) does not load this plugin, so its skills are not available in \(owner)."
         }
     }
 

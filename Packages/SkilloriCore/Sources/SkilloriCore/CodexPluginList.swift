@@ -18,14 +18,20 @@ public struct CodexPluginList: Sendable, Codable, Equatable {
     /// Every plugin folder in Codex's cache when Codex was asked, skills or not. A plugin from
     /// the remote catalog may bring no skill files, so only this shows that one was added.
     public var folders: Set<String>?
+    /// The plugin folders Codex installed from its remote catalog, by the file it leaves next to
+    /// them. Codex does not always reach that catalog: then it lists only its older one, and the
+    /// remote plugins look uninstalled although Codex reads them whenever the catalog answers.
+    /// Nil in an answer saved before Skillori kept this; such an answer is asked again.
+    public var remoteFolders: Set<String>?
 
     public init(installed: Set<String>, offered: [String: [String]], asked: Set<String>, askedAt: Date,
-                folders: Set<String>? = nil) {
+                folders: Set<String>? = nil, remoteFolders: Set<String>? = nil) {
         self.installed = installed
         self.offered = offered
         self.asked = asked
         self.askedAt = askedAt
         self.folders = folders
+        self.remoteFolders = remoteFolders
     }
 
     /// The id Codex has this left-behind plugin installed under now, if it has added it again.
@@ -34,23 +40,28 @@ public struct CodexPluginList: Sendable, Codable, Equatable {
         return (offered[name] ?? []).first { $0 != key && installed.contains($0) }
     }
 
-    /// Codex was asked about this plugin and does not count it as installed.
+    /// Codex was asked about this plugin and does not count it as installed. Never one Codex
+    /// installed from its remote catalog: missing from the answer, it only means Codex did not
+    /// reach that catalog when asked.
     public func isLeftBehind(_ key: String) -> Bool {
-        asked.contains(key) && !installed.contains(key)
+        asked.contains(key) && !installed.contains(key) && !(remoteFolders?.contains(key) ?? false)
     }
 
     /// The id Codex offers a left-behind plugin under now, when Codex has not installed that
-    /// one either. Nil when Codex offers no such plugin, already has it, or offers several and
-    /// none is plainly the same plugin's new home: that is not guessed.
+    /// one either. Only the catalog that took over from this one counts, as
+    /// `openai-curated-remote` took over from `openai-curated`: going back to an older catalog
+    /// would add the very copy Codex moved away from. Nil when Codex offers no such plugin,
+    /// already has it, or offers it in several such catalogs: that is not guessed.
     public func replacement(for key: String) -> String? {
         let parts = key.split(separator: "@", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         let (name, marketplace) = (parts[0], parts[1])
         let candidates = (offered[name] ?? []).filter { $0 != key }
         if candidates.contains(where: installed.contains) { return nil }
-        if candidates.count == 1 { return candidates[0] }
-        // `openai-curated` → `openai-curated-remote`: the catalog that took over from the old one.
-        let successors = candidates.filter { $0.split(separator: "@").last.map { $0.hasPrefix(marketplace) } ?? false }
+        let successors = candidates.filter { id in
+            guard let other = id.split(separator: "@", maxSplits: 1).last.map(String.init) else { return false }
+            return other.hasPrefix(marketplace + "-")
+        }
         return successors.count == 1 ? successors[0] : nil
     }
 

@@ -292,7 +292,7 @@ struct SkillPage: View {
                 return Advice(tone: .rest, title: "\(owner) has \(plugin.title) from its new catalog",
                               text: "This copy is left over from the old catalog, and \(owner) does not load it. Nothing needs doing.")
             }
-            return Advice(tone: .rest, title: "\(owner) no longer reads this copy",
+            return Advice(tone: .rest, title: "\(owner) does not load this copy",
                           text: "It is from a catalog \(owner) no longer uses, so its skills are not loaded. \(owner) reads its plugins from where it installs them now.")
         case .changedHere:
             let url = URL(fileURLWithPath: installation.canonicalPath)
@@ -547,11 +547,55 @@ struct AppPage: View {
                     }
                     .padding(6)
                     .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+                    legend(summary)
                 }
             }
             .scrollIndicators(.never)
         }
         .onKeyPress(.escape) { back(); return .handled }
+    }
+
+    /// What the plugin chips on this page mean, for the chips the list shows. A chip alone did
+    /// not say why a plugin had it or whether anything was to be done.
+    @ViewBuilder
+    private func legend(_ summary: Assist.AppSummary?) -> some View {
+        let chips = Set((summary?.plugins ?? []).compactMap { chip(for: $0)?.text })
+        if !chips.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                if chips.contains(Self.notLoaded) {
+                    legendLine(StatusChip(Self.notLoaded, kind: .attention),
+                               "\(app) does not load these plugins, so their skills are not available in \(app). They come from a catalog \(app) no longer uses."
+                               + (Assist.todos(store).contains { $0.id == "plugins:" + app } ? " The line above adds them from the catalog \(app) uses now." : ""))
+                }
+                if chips.contains(Self.oldCopy) {
+                    legendLine(StatusChip(Self.oldCopy, kind: .neutral),
+                               "Left over from \(app)’s old catalog. \(app) has the same plugin from its new catalog and uses that one. Nothing needs doing.")
+                }
+            }
+            .padding(EdgeInsets(top: 8, leading: 20, bottom: 12, trailing: 20))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func legendLine(_ chip: StatusChip, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            chip.frame(width: 96, alignment: .leading)
+            Text(text).font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    static let notLoaded = "Not loaded"
+    static let oldCopy = "Old copy"
+
+    /// The chip a plugin row shows when the app does not load it, and what it means.
+    private func chip(for plugin: PluginRecord) -> (text: String, kind: StatusChip.Kind, help: String)? {
+        guard let item = store.inventory?.installations.first(where: { $0.plugin?.id == plugin.id }),
+              case .leftBehind = store.status(for: item) else { return nil }
+        if store.codexReplacement(of: plugin) != nil {
+            return (Self.oldCopy, .neutral, "Left over from \(app)’s old catalog. \(app) uses the same plugin from its new catalog.")
+        }
+        return (Self.notLoaded, .attention, "\(app) does not load this plugin, so its skills are not available in \(app).")
     }
 
     private func header(_ summary: Assist.AppSummary?) -> some View {
@@ -582,8 +626,8 @@ struct AppPage: View {
         if plugins.count > 1 { text += " They come in \(plugins.count) plugins." }
         if ahead.count == 1 { text += " One has a newer version at its source; \(app) brings it once its catalog has it." }
         if ahead.count > 1 { text += " \(ahead.count) have newer versions at their source; \(app) brings them once its catalog has them." }
-        if behind.count == 1 { text += " It no longer reads \(behind[0].title)." }
-        if behind.count > 1 { text += " It no longer reads \(behind.count) other plugins." }
+        if behind.count == 1 { text += " It does not load \(behind[0].title)." }
+        if behind.count > 1 { text += " It does not load \(behind.count) other plugins." }
         return text
     }
 
@@ -658,12 +702,11 @@ struct AppPage: View {
             Group {
                 switch status {
                 case .ownerUpdate?: StatusChip("Update", kind: .new)
-                // The line above the list adds them again; each row says what is wrong.
+                // The line above the list adds them again; each row says what is wrong, and the
+                // lines under the list say what each chip means.
                 case .leftBehind?:
-                    if let plugin = branch.plugin, store.codexReplacement(of: plugin) != nil {
-                        StatusChip("Left over", kind: .neutral)
-                    } else {
-                        StatusChip("Not read", kind: .attention)
+                    if let plugin = branch.plugin, let chip = chip(for: plugin) {
+                        StatusChip(chip.text, kind: chip.kind).help(chip.help)
                     }
                 default: Color.clear.frame(height: 1)
                 }

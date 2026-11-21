@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         DebugSnapshots.runIfRequested(store: store, statusPanel: statusPanel)
         DebugLibraryProbe.runIfRequested(store: store, windows: windows)
+        DebugPagePicture.runIfRequested(store: store, windows: windows)
         DebugLibraryRunProbe.runIfRequested(store: store, windows: windows)
         DebugAdoptProbe.runIfRequested(store: store)
         DebugLostSourceProbe.runIfRequested(store: store, windows: windows)

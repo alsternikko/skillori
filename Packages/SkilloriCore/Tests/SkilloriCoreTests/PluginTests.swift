@@ -353,6 +353,30 @@ private actor Gauge {
         #expect(!list.isLeftBehind("notion@openai-curated-remote"))
     }
 
+    /// Codex does not always reach its remote catalog. Then it lists only the older catalog:
+    /// the remote plugins look uninstalled, and the old catalog offers the same names. That must
+    /// not read as the remote plugins being left behind, nor send the reader back to the old copy.
+    @Test func codexWithoutItsRemoteCatalogSendsNobodyBack() {
+        let list = CodexPluginList(installed: ["google-calendar@openai-curated"],
+                                   offered: ["figma": ["figma@openai-curated"], "google-drive": ["google-drive@openai-curated"]],
+                                   asked: ["figma@openai-curated-remote", "google-drive@openai-curated-remote",
+                                           "google-calendar@openai-curated", "figma@openai-curated"],
+                                   askedAt: Date(),
+                                   remoteFolders: ["figma@openai-curated-remote", "google-drive@openai-curated-remote"])
+        // A folder Codex installed from its remote catalog is never called left behind.
+        #expect(!list.isLeftBehind("figma@openai-curated-remote"))
+        #expect(!list.isLeftBehind("google-drive@openai-curated-remote"))
+        // An older catalog is never offered as the new home, even as the only one.
+        let older = CodexPluginList(installed: [], offered: ["figma": ["figma@openai-curated"]],
+                                    asked: ["figma@openai-curated-remote"], askedAt: Date())
+        #expect(older.isLeftBehind("figma@openai-curated-remote"))
+        #expect(older.replacement(for: "figma@openai-curated-remote") == nil)
+        // The old copy left behind still finds the catalog that took over.
+        let newer = CodexPluginList(installed: [], offered: ["figma": ["figma@openai-curated-remote"]],
+                                    asked: ["figma@openai-curated"], askedAt: Date())
+        #expect(newer.replacement(for: "figma@openai-curated") == "figma@openai-curated-remote")
+    }
+
     @Test func skillsInsideAPluginGetItsRecord() throws {
         let home = try makeHome()
         defer { home.remove() }

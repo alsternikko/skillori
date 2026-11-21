@@ -74,6 +74,16 @@ public enum AppPlugins {
         })
     }
 
+    /// `plugin@marketplace` for every plugin folder Codex installed from its remote catalog.
+    public static func remoteFolders(in appFolder: URL) -> Set<String> {
+        let cache = appFolder.appendingPathComponent("plugins/cache")
+        return Set(folders(in: cache).flatMap { marketplace in
+            folders(in: marketplace)
+                .filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent(remoteInstallMarker).path) }
+                .map { "\($0.lastPathComponent)@\(marketplace.lastPathComponent)" }
+        })
+    }
+
     /// `owner/repo` from a GitHub address, with or without `.git`. Nil for anything else.
     static func repositoryName(_ text: String) -> String? {
         UpstreamSource(source: "", sourceURL: text).map(\.name)

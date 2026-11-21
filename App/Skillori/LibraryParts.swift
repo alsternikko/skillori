@@ -233,14 +233,15 @@ enum Assist {
         let runner = store.codexRunner
         let ids = moved.map(\.replacement)
         let titles = moved.map(\.plugin.title)
-        let failed: Bool = { if case .failed = runner.phase, Set(runner.ids) == Set(ids) { true } else { false } }()
+        // A run that went through and left the line listed is tried again just the same.
+        let ranBefore = !runner.isRunning && runner.phase != .idle && Set(runner.ids) == Set(ids)
         let running = runner.isRunning && Set(runner.ids) == Set(ids)
-        let why = moved.count == 1 ? "Codex moved it to a new catalog and no longer reads this copy. "
-            : names(titles) + ". Codex moved them to a new catalog and no longer reads these copies. "
+        let why = moved.count == 1 ? "Codex moved it to a new catalog and no longer loads this copy. "
+            : names(titles) + ". Codex moved them to a new catalog and no longer loads these copies. "
         return Todo(id: "plugins:Codex", app: "Codex",
-                    title: moved.count == 1 ? "Codex no longer reads \(titles[0])" : "Codex no longer reads \(moved.count) plugins",
+                    title: moved.count == 1 ? "Codex no longer loads \(titles[0])" : "Codex no longer loads \(moved.count) plugins",
                     detail: runner.note(for: ids) ?? why + "Codex may ask you to sign in to the service the first time you use \(moved.count == 1 ? "it" : "them").",
-                    button: running ? "Adding…" : failed ? "▶ Try again" : "▶ Add again",
+                    button: running ? "Adding…" : ranBefore ? "▶ Try again" : "▶ Add again",
                     act: .addCodexPlugins(ids), page: .app("Codex"), busy: runner.isRunning, prominent: true)
     }
 

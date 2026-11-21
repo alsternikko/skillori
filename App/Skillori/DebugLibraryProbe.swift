@@ -119,4 +119,25 @@ enum DebugLibraryProbe {
         }
     }
 }
+/// Debug builds only: `SKILLORI_PAGE_PICTURE=/some/file.png` with `SKILLORI_PAGE=app:<name>` opens
+/// the library on that app's page once Skillori has read this Mac and asked the apps, and saves a
+/// picture of the window. Nothing is clicked; the app keeps running.
+@MainActor
+enum DebugPagePicture {
+    static func runIfRequested(store: InventoryStore, windows: WindowRouter) {
+        let env = ProcessInfo.processInfo.environment
+        guard let file = env["SKILLORI_PAGE_PICTURE"], let page = env["SKILLORI_PAGE"], page.hasPrefix("app:") else { return }
+        Task { @MainActor in
+            while store.inventory == nil || store.isScanning { try? await Task.sleep(for: .milliseconds(100)) }
+            try? await Task.sleep(for: .milliseconds(400))
+            while store.isChecking || store.isAskingCodex { try? await Task.sleep(for: .milliseconds(100)) }
+            windows.showLibrary(at: .app(String(page.dropFirst(4))))
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let frameView = windows.library?.contentView?.superview,
+                  let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { return }
+            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: file))
+        }
+    }
+}
 #endif
