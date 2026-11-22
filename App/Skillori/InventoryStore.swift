@@ -313,7 +313,9 @@ final class InventoryStore {
         case _ where isKeptLocal(installation):
             return .keptLocal
         case .unknown, .skillsLock where link(for: installation) != nil:
-            guard link(for: installation) != nil else { return .noSource }
+            guard let link = link(for: installation) else { return .noSource }
+            // An installer run with the reader's own key: there is nothing Skillori can ask.
+            if case .package(let installer) = link.source { return .byInstaller(source: installer.name) }
             // Linked by the reader: there is no installer baseline, so "differs" is all that can be said.
             let state = reading(for: installation)?.state
             if isHeld(installation) {
@@ -736,6 +738,8 @@ final class InventoryStore {
         }.value
         let questions = tracked.compactMap { installation -> UpstreamQuestion? in
             guard let key = sourceKey(for: installation) else { return nil }
+            // Behind the reader's own key: never asked, so never counted as unanswered.
+            if case .package? = link(for: installation)?.source { return nil }
             if link(for: installation) != nil {
                 let local = localHashes[installation.id] ?? nil
                 links[key]?.localHash = local
@@ -867,7 +871,7 @@ final class InventoryStore {
             switch upstreamSource(for: installation) {
             case .github?: "GitHub"
             case .installer(let script)?: script.name
-            case nil: nil
+            case .package?, nil: nil
             }
         })
         // Plugins are asked at GitHub too, and have no keys of their own here.
@@ -909,6 +913,7 @@ final class InventoryStore {
         switch source {
         case .github(let repository): await GitHubTrees(budget: .shared).tree(of: repository)
         case .installer(let script): await InstallerScripts().tree(of: script)
+        case .package: .failure(.unsupported)
         }
     }
 
@@ -973,12 +978,44 @@ final class InventoryStore {
         case .installer(let script):
             SourceLink(owner: "", repository: "", ref: nil, installer: script.url.absoluteString,
                        subpath: candidate.subpath, linkedAt: now, localHash: search.localHash)
+        case .package(let installer):
+            SourceLink(owner: "", repository: "", ref: nil, package: installer.package, site: installer.site?.absoluteString,
+                       subpath: "", linkedAt: now, localHash: search.localHash)
         }
         // The search already has the answer a check would give.
         let state: UpstreamState = candidate.hash == search.localHash ? .upToDate : .updateAvailable(upstreamHash: candidate.hash)
         readings[key] = UpstreamReading(state: state, checkedAt: now)
         pastSources[key] = nil
         save()
+    }
+
+    /// Asks npm whether the installer the reader pasted exists, and which site it names. Only
+    /// the package's name is sent; the key on the pasted line was dropped when it was read.
+    func lookUpPackage(_ installer: PackageInstaller) async -> Result<PackageInfo, UpstreamState.Reason> {
+        await NpmRegistry().info(for: installer.package)
+    }
+
+    /// Remembers that this skill comes from an installer run with the reader's own key. There is
+    /// nothing to compare, so it is never asked; its page says how to get a new version.
+    func link(_ installation: Installation, toPackage info: PackageInfo) {
+        guard canLink(installation) else { return }
+        let key = Self.linkKey(for: installation)
+        let path = installation.canonicalPath
+        links[key] = SourceLink(owner: "", repository: "", ref: nil, package: info.package, site: info.site?.absoluteString,
+                                subpath: "", linkedAt: Date(), localHash: nil)
+        readings[key] = nil
+        held[key] = nil
+        pastSources[key] = nil
+        save()
+        // The files' hash, for the type plate: read off the main thread, kept once it is there.
+        Task { [weak self] in
+            let hash = await Task.detached(priority: .utility) {
+                try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).treeID
+            }.value
+            guard let self, self.links[key]?.package == info.package else { return }
+            self.links[key]?.localHash = hash
+            self.save()
+        }
     }
 
     // MARK: Finding sources

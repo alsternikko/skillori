@@ -124,11 +124,22 @@ if CommandLine.arguments.contains("--find-sources") {
 if let findSource {
     print("\nLooking for \(findSource.skill) in \(findSource.repository)")
     guard let (source, _) = SkillSource.parse(findSource.repository) else { print("  not a GitHub repository or script address"); exit(1) }
+    // An installer run with your own key: nothing to compare, only npm to ask whether it exists.
+    if case .package(let installer) = source {
+        switch await NpmRegistry().info(for: installer.package) {
+        case .failure(let reason): print("  npm: \(reason.rawValue)")
+        case .success(let info):
+            print("  \(info.package) \(info.version ?? "?") · site \(info.site?.absoluteString ?? "none") · \(info.summary ?? "")")
+            print("  Link it in the app; it is never asked, and updates by running the installer again.")
+        }
+        exit(0)
+    }
     let matches = inventory.installations.filter { $0.directoryName == findSource.skill && $0.provenance == .unknown }
     guard !matches.isEmpty else { print("  no skill with that folder name and no known source"); exit(1) }
     let answer: Result<SourceTree, UpstreamState.Reason> = switch source {
     case .github(let repository): await GitHubTrees().tree(of: repository)
     case .installer(let script): await InstallerScripts().tree(of: script)
+    case .package: .failure(.unsupported)
     }
     switch answer {
     case .failure(let reason): print("  can't ask the source: \(reason.rawValue)")

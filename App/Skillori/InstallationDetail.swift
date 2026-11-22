@@ -131,6 +131,12 @@ struct InstallationDetail: View {
                                 .buttonStyle(PillButtonStyle(prominent: !isInstallerSource, on: tone))
                         }
                         Button("Hold back") { store.hold(installation) }.buttonStyle(PillButtonStyle(on: tone))
+                    case .byInstaller:
+                        // The author's site is where the reader's own install command is.
+                        if case .package(let installer)? = store.upstreamSource(for: installation), let link = sourceLink {
+                            Button(installer.site == nil ? "Open on npm" : "Open \(installer.name)") { NSWorkspace.shared.open(link) }
+                                .buttonStyle(PillButtonStyle(prominent: true, on: tone))
+                        }
                     case .noSource:
                         Button("Link source…", action: onLink).buttonStyle(PillButtonStyle(prominent: true, on: tone))
                     default:
@@ -264,7 +270,11 @@ struct InstallationDetail: View {
                         Button(link.source.name) { if let url = sourceLink { NSWorkspace.shared.open(url) } }
                             .buttonStyle(ValueLinkStyle())
                     }
-                    PlateRow("Path in source") { value(link.subpath.isEmpty ? "top level" : link.subpath) }
+                    if case .package(let installer) = link.source {
+                        PlateRow("Installer") { value(installer.command, faint: "+ your key") }
+                    } else {
+                        PlateRow("Path in source") { value(link.subpath.isEmpty ? "top level" : link.subpath) }
+                    }
                     PlateRow("Linked") { value(InventoryStore.stamp(link.linkedAt), faint: "by you") }
                     if let note = link.note {
                         PlateRow("Found by") {
@@ -275,6 +285,9 @@ struct InstallationDetail: View {
                     PlateRow("Local copy") {
                         value(link.localHash.map { String($0.prefix(8)) } ?? "could not be read", faint: "tree hash")
                     }
+                    if case .package = link.source {
+                        PlateRow("Source now", isLast: true) { value("behind your key", muted: true) }
+                    } else {
                     PlateRow("Source now") {
                         switch store.reading(for: installation)?.state {
                         case .upToDate: value("same content")
@@ -289,6 +302,7 @@ struct InstallationDetail: View {
                         } else {
                             value("never", muted: true)
                         }
+                    }
                     }
                 } else {
                 PlateRow("Source") { value("not linked", muted: true) }

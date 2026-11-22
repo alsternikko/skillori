@@ -189,6 +189,22 @@ enum DebugSnapshots {
                 render(FindSourcesSheet(preview: alone.map { ($0, SourceFinder.Search(proposals: [], problem: nil)) }).environment(store),
                        size: CGSize(width: 600, height: 420), to: out.appendingPathComponent("find-sources-past.png"))
                 store.forgetSamplePastSource(unknown)
+                // The same skill linked to an installer run with the reader's own key: the sheet
+                // with npm's answer, and the skill's page, which says how to update.
+                let info = PackageInfo(package: "@example/install", version: "0.1.0",
+                                       summary: "Installs the Example members' agent skills for the coding agents on your machine.",
+                                       site: URL(string: "https://www.example.com"))
+                render(LinkSourceSheet(installation: unknown, package: info, text: "npx @example/install@latest --token=…").environment(store),
+                       size: CGSize(width: 520, height: 400), to: out.appendingPathComponent("link-source-package.png"))
+                store.link(unknown, toPackage: info)
+                try? await Task.sleep(for: .milliseconds(600))
+                try? "package: \(store.status(for: unknown)) · asked: \(store.sourceKey(for: unknown).map { store.readings[$0] != nil } ?? false)\n"
+                    .write(to: out.appendingPathComponent("package.txt"), atomically: true, encoding: .utf8)
+                render(page(), size: lib, to: out.appendingPathComponent("library-source-package.png"))
+                render(page().environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("library-source-package-dark.png"))
+                render(LibraryView(path: [.mine]).environment(store), size: lib, to: out.appendingPathComponent("library-mine-package.png"))
+                store.unlink(unknown)
+                store.forgetSamplePastSource(unknown)
             }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale

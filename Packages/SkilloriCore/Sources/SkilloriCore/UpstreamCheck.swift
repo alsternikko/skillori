@@ -543,6 +543,8 @@ public enum UpstreamChecker {
             switch source {
             case .github(let repository): (await trees.tree(of: repository), nil)
             case .installer(let script): await installers.read(script)
+            // Never asked: what it installs is behind the reader's own key.
+            case .package: (.failure(.unsupported), nil)
             }
         }
         await withTaskGroup(of: (SkillSource, (tree: Result<SourceTree, UpstreamState.Reason>, notice: SourceNotice?)).self) { group in

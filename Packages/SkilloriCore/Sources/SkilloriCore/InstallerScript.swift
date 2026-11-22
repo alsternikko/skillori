@@ -51,11 +51,15 @@ public struct InstallerSource: Hashable, Sendable {
 public enum SkillSource: Hashable, Sendable {
     case github(UpstreamSource)
     case installer(InstallerSource)
+    /// An installer published as an npm package that fetches the skill with the reader's own
+    /// key. Nobody else can read what it installs, so it is never asked.
+    case package(PackageInstaller)
 
     public var name: String {
         switch self {
         case .github(let source): source.name
         case .installer(let source): source.name
+        case .package(let source): source.name
         }
     }
 
@@ -64,6 +68,7 @@ public enum SkillSource: Hashable, Sendable {
         switch self {
         case .github(let source): source.webURL(subpath: subpath)
         case .installer(let source): source.siteURL
+        case .package(let source): source.site ?? source.packageURL
         }
     }
 
@@ -71,12 +76,14 @@ public enum SkillSource: Hashable, Sendable {
     public func historyURL(subpath: String?) -> URL? {
         switch self {
         case .github(let source): source.historyURL(subpath: subpath)
-        case .installer: nil
+        case .installer, .package: nil
         }
     }
 
-    /// Reads what a person types or pastes: a GitHub repository first, then a script address.
+    /// Reads what a person types or pastes: an installer package's command first, as its key may
+    /// look like anything, then a GitHub repository, then a script address.
     public static func parse(_ text: String) -> (source: SkillSource, subpath: String?)? {
+        if let package = PackageInstaller(text) { return (.package(package), nil) }
         if let (source, subpath) = UpstreamSource.parse(text) { return (.github(source), subpath) }
         if let source = InstallerSource(text) { return (.installer(source), nil) }
         return nil

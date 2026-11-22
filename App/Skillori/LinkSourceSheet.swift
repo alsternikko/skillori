@@ -12,10 +12,10 @@ struct LinkSourceSheet: View {
     @Environment(\.dismiss) private var dismiss
     let installation: Installation
 
-    init(installation: Installation, preview: InventoryStore.LinkSearch? = nil, text: String = "") {
+    init(installation: Installation, preview: InventoryStore.LinkSearch? = nil, package: PackageInfo? = nil, text: String = "") {
         self.installation = installation
         _text = State(initialValue: text)
-        _phase = State(initialValue: preview.map(Phase.found) ?? .idle)
+        _phase = State(initialValue: package.map(Phase.package) ?? preview.map(Phase.found) ?? .idle)
         _chosen = State(initialValue: preview?.candidates.first.flatMap { $0.match == .other ? nil : $0.subpath })
     }
 
@@ -23,6 +23,8 @@ struct LinkSourceSheet: View {
         case idle
         case searching
         case found(InventoryStore.LinkSearch)
+        /// An installer run with the reader's own key, as npm describes it.
+        case package(PackageInfo)
         /// Why the search gave nothing, and the word on the chip before it.
         case failed(String, chip: String)
     }
@@ -45,7 +47,7 @@ struct LinkSourceSheet: View {
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
-            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
+            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. If it comes with an npx command and your own key, paste that: Skillori keeps only the installer's name. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
                 .font(TypeRole.sans(12))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.ink2)
@@ -53,7 +55,7 @@ struct LinkSourceSheet: View {
                 .padding(.top, 6)
 
             HStack(spacing: 6) {
-                TextField("owner/repository, https://github.com/… or a script address", text: $text)
+                TextField("owner/repository, https://github.com/…, a script address or an npx command", text: $text)
                     .textFieldStyle(.plain)
                     .font(TypeRole.mono(11.5))
                     .focused($fieldFocused)
@@ -74,10 +76,13 @@ struct LinkSourceSheet: View {
                     if case .found(let search) = phase, let candidate = search.candidates.first(where: { $0.subpath == chosen }) {
                         store.link(installation, to: candidate, in: search)
                         dismiss()
+                    } else if case .package(let info) = phase {
+                        store.link(installation, toPackage: info)
+                        dismiss()
                     }
                 }
                 .buttonStyle(PillButtonStyle(prominent: hasResult))
-                .disabled(chosen == nil || !hasResult)
+                .disabled(!canLink)
                 .keyboardShortcut(.defaultAction)
                 Button("Cancel") { dismiss() }
                     .buttonStyle(PillButtonStyle())
@@ -95,12 +100,27 @@ struct LinkSourceSheet: View {
 
     /// The host being asked, for the line shown while waiting.
     private var askedHost: String {
-        if case .installer(let script)? = SkillSource.parse(text)?.source { return script.url.host ?? "the site" }
-        return "github.com"
+        switch SkillSource.parse(text)?.source {
+        case .installer(let script)?: return script.url.host ?? "the site"
+        case .package?: return "npm"
+        default: return "github.com"
+        }
     }
 
     private var isSearching: Bool { if case .searching = phase { true } else { false } }
-    private var hasResult: Bool { if case .found = phase { true } else { false } }
+    private var hasResult: Bool {
+        switch phase {
+        case .found, .package: true
+        default: false
+        }
+    }
+    private var canLink: Bool {
+        switch phase {
+        case .found: chosen != nil
+        case .package: true
+        default: false
+        }
+    }
 
     @ViewBuilder private var result: some View {
         switch phase {
@@ -112,6 +132,24 @@ struct LinkSourceSheet: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 StatusChip(chip, kind: .attention, mark: "✕")
                 Text(sentence).font(TypeRole.sans(12)).fixedSize(horizontal: false, vertical: true)
+            }
+        case .package(let info):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(info.site.map { "\(info.package) installs skills from \($0.host.map(Self.bare) ?? $0.absoluteString) with your own key." }
+                     ?? "\(info.package) installs skills with your own key.")
+                    .font(TypeRole.sans(13, .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let summary = info.summary, !summary.isEmpty {
+                    Text("npm: “\(summary)”")
+                        .font(TypeRole.sans(12))
+                        .foregroundStyle(Palette.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Skillori keeps only the installer’s name. Your key isn’t kept or sent anywhere, so Skillori can’t see new versions. The skill’s page will say how to update.")
+                    .font(TypeRole.sans(12))
+                    .lineSpacing(2)
+                    .foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         case .found(let search):
             VStack(alignment: .leading, spacing: 8) {
@@ -174,10 +212,28 @@ struct LinkSourceSheet: View {
         }
     }
 
+    private static func bare(_ host: String) -> String { host.hasPrefix("www.") ? String(host.dropFirst(4)) : host }
+
     private func find() {
         guard !isSearching else { return }
         phase = .searching
         chosen = nil
+        if case .package(let installer)? = SkillSource.parse(text)?.source {
+            Task {
+                switch await store.lookUpPackage(installer) {
+                case .success(let info): phase = .package(info)
+                case .failure(.notFound):
+                    phase = .failed("npm has no package called \(installer.package). Check the command and try again.", chip: "Not found")
+                case .failure(.offline):
+                    phase = .failed("No contact with npm. Check the connection and try again.", chip: "No contact")
+                case .failure(.rateLimited):
+                    phase = .failed("npm asked Skillori to wait. Try again in a while.", chip: "Wait")
+                case .failure:
+                    phase = .failed("npm gave an answer Skillori couldn’t read. Try again in a while.", chip: "No answer")
+                }
+            }
+            return
+        }
         Task {
             switch await store.searchSource(text, for: installation) {
             case .failure(.source(.rateLimited, _)):

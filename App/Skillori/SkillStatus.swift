@@ -20,6 +20,9 @@ enum SkillStatus: Equatable {
     case cantCheck(UpstreamState.Reason)
     /// There is a source, but it has not been asked: checks are off or have not run yet.
     case notChecked
+    /// Linked to an installer that fetches the skill with the reader's own key. Nobody else can
+    /// read the source, so there is nothing to ask; running the installer again brings the latest.
+    case byInstaller(source: String)
     /// The files on this Mac could not be hashed.
     case checkFailed
     case noSource
@@ -52,6 +55,7 @@ enum SkillStatus: Equatable {
         case .upToDate: "Up to date"
         case .cantCheck: "Can't check"
         case .notChecked: "Not checked"
+        case .byInstaller: "Updates by its installer"
         case .checkFailed: "Check failed"
         case .noSource: "No source"
         case .keptLocal: "Local copy"
@@ -72,6 +76,7 @@ enum SkillStatus: Equatable {
         case .upToDate: "●"
         case .cantCheck, .checkFailed: "✕"
         case .notChecked: "○"
+        case .byInstaller: "↻"
         case .noSource: "◌"
         case .keptLocal: "◇"
         case .managed, .sourceAhead: "■"
@@ -85,7 +90,7 @@ enum SkillStatus: Equatable {
         case .updateAvailable, .differs, .ownerUpdate: .new
         case .changedHere, .checkFailed, .leftBehind: .attention
         case .cantCheck, .notChecked, .noSource, .keptLocal: .outline
-        case .heldBack, .upToDate, .managed, .sourceAhead: .neutral
+        case .heldBack, .upToDate, .managed, .sourceAhead, .byInstaller: .neutral
         }
     }
 
@@ -94,7 +99,7 @@ enum SkillStatus: Equatable {
         switch self {
         case .updateAvailable, .differs, .ownerUpdate: .new
         case .changedHere, .checkFailed, .leftBehind: .attention
-        case .upToDate, .heldBack: .rest
+        case .upToDate, .heldBack, .byInstaller: .rest
         case .cantCheck, .notChecked, .noSource, .keptLocal, .managed, .sourceAhead: .quiet
         }
     }
@@ -110,6 +115,8 @@ enum SkillStatus: Equatable {
         case .upToDate: "Same content as the source."
         case .cantCheck(let reason): reason.sentence
         case .notChecked: "The source has not been asked yet."
+        case .byInstaller(let source):
+            "Its installer fetches it from \(source) with your own key, so Skillori can’t see new versions. Run your install command again to get the latest."
         case .checkFailed: "The files on this Mac could not be read for comparison."
         case .noSource: "Nothing on this Mac says where this came from."
         case .keptLocal: "Kept as a local copy. Skillori no longer checks it against a source."
@@ -137,6 +144,11 @@ struct SourceLink: Codable, Equatable {
     var ref: String?
     /// The address of the install script, when the source is one rather than a repository.
     var installer: String?
+    /// The npm package of an installer run with the reader's own key, when the source is one.
+    /// Only the name: the key on the line the reader pasted is never kept.
+    var package: String? = nil
+    /// The site that package names, if it names one.
+    var site: String? = nil
     /// The folder inside the source; empty for the top of it.
     var subpath: String
     var linkedAt: Date
@@ -146,6 +158,9 @@ struct SourceLink: Codable, Equatable {
     var note: String?
 
     var source: SkillSource {
+        if let package {
+            return .package(PackageInstaller(package: package, site: site.flatMap(URL.init(string:))))
+        }
         if let installer, let script = InstallerSource(installer) { return .installer(script) }
         return .github(UpstreamSource(owner: owner, repository: repository, ref: ref))
     }

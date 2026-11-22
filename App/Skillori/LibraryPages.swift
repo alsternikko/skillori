@@ -382,6 +382,12 @@ struct SkillPage: View {
         }
     }
 
+    /// An installer's site holds the reader's own install command, so it is named as a site.
+    private static func openLabel(for source: SkillSource) -> String {
+        if case .package(let installer) = source { return installer.site == nil ? "Open on npm" : "Open \(installer.name)" }
+        return "Open source"
+    }
+
     @ViewBuilder private var sourceCard: some View {
         PageCard(label: "Source") {
             if let plugin = installation.plugin {
@@ -423,6 +429,10 @@ struct SkillPage: View {
                 FactRow { Text(source.name) } value: {
                     if let reading = store.reading(for: installation) { Text("checked " + InventoryStore.stamp(reading.checkedAt)) }
                 }
+                if case .package(let installer) = source {
+                    // The reader's own command is on the author's site; this names which installer it is.
+                    FactRow { Text(installer.command).font(TypeRole.mono(11.5)) } value: { Text("+ your key") }
+                }
                 if case .cantCheck(let reason) = status {
                     let note = store.notice(for: installation)
                     Text(note == nil ? reason.sentence
@@ -444,7 +454,7 @@ struct SkillPage: View {
                     if let moved = store.notice(for: installation)?.url {
                         Button(Self.openLabel(for: moved)) { NSWorkspace.shared.open(moved) }.buttonStyle(PillButtonStyle())
                     } else if let url = source.webURL(subpath: store.sourceSubpath(for: installation)) {
-                        Button("Open source") { NSWorkspace.shared.open(url) }.buttonStyle(PillButtonStyle())
+                        Button(Self.openLabel(for: source)) { NSWorkspace.shared.open(url) }.buttonStyle(PillButtonStyle())
                     }
                     if store.link(for: installation) != nil {
                         Button("Unlink") { store.unlink(installation) }.buttonStyle(PillButtonStyle())
