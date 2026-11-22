@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.21</title>
-      <pubDate>Sun, 22 Nov 2026 19:45:01 +0000</pubDate>
-      <sparkle:version>26</sparkle:version>
-      <sparkle:shortVersionString>0.2.21</sparkle:shortVersionString>
+      <title>Skillori 0.2.22</title>
+      <pubDate>Sun, 22 Nov 2026 20:10:38 +0000</pubDate>
+      <sparkle:version>27</sparkle:version>
+      <sparkle:shortVersionString>0.2.22</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.21</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Linking a skill now happens in view: the sheet closes first, and the skill's page says what it was linked to and what that means for it.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.22</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>A source you unlink is remembered, so Find sources can offer it again. The menu bar panel counts skills that update by their own installer.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="iw/UhYHuN76WQXsi2EqFBvncY0Zt75JpJTuIa6usMv9W03sgiG8qCrsZoeGthlQc/9Hwsmx3VIY0dxqOuuUoCA==" length="5565038"/>
+                 sparkle:edSignature="zV0e17LA+cY+FLiBMZVTJertGg/RxcS6uzxJfNt+6bwlplG+74rwG5orv9wnpoZSAUtmF0NWNFrj97I+bnzJBA==" length="5568781"/>
     </item>
   </channel>
 </rss>
