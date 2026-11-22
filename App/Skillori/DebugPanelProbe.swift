@@ -8,9 +8,11 @@ import SwiftUI
 /// done, then a fresh reading) without starting the installer. Every frame of the panel window
 /// is written down with the time, followed by one PASS/FAIL line per check.
 ///
-/// `SKILLORI_PANEL_PROBE_ROW` is where the source's row is, in points from the panel's top
-/// (265 by default, right under the hero). `SKILLORI_PANEL_PROBE_SKILL` names a skill of that
-/// source, so the played run reports in its command frame.
+/// The first source with updates sits right under the hero, 265 pt from the panel's top
+/// (`SKILLORI_PANEL_PROBE_ROW` moves the click). When no source has updates, the panel only has
+/// lines that don't open, so the probe shows a played source instead: the live panel with one
+/// source that has three of this Mac's skills to update (`SKILLORI_PANEL_PROBE_SKILL` picks the
+/// first). The played run reports in that source's command frame.
 ///
 /// Found with it (2026-11-19): the hosting view also sized the window through Auto Layout, so
 /// each printed line pushed the content 16–33 pt up before the window caught up, and the
@@ -62,6 +64,27 @@ enum DebugPanelProbe {
                            "window \(window.frame.height), content \(panel.contentHeight)")
             }
 
+            // The skill whose run is played: in the first source with updates, or in a played source.
+            var runName = ProcessInfo.processInfo.environment["SKILLORI_PANEL_PROBE_SKILL"]
+            var live = PanelModel.live(from: store)
+            if let group = live.groups.first {
+                runName = runName ?? group.updatable.first?.directoryName
+                book.log("-- the first source with updates: \(group.title)")
+            } else {
+                let all = store.inventory?.installations ?? []
+                let first = all.first { $0.directoryName == runName } ?? all.first
+                let picked = ([first].compactMap { $0 } + all.filter { $0.id != first?.id }).prefix(3)
+                guard let lead = picked.first else { book.log("no skills to play a source with"); NSApp.terminate(nil); return }
+                runName = lead.directoryName
+                live.groups = [PanelModel.UpdateGroup(
+                    title: "probe/played-source",
+                    items: picked.map { .init(title: $0.displayName, data: "→ 0000000", installation: $0, key: $0.id) },
+                    updatable: Array(picked), count: "\(picked.count) UPDATES")]
+                panel.showFixedModel(live)
+                await pause(300)
+                book.log("-- no source with updates: a played one with \(picked.map(\.directoryName).joined(separator: ", "))")
+            }
+
             book.log("-- open panel")
             panel.open()
             await pause(600)
@@ -89,7 +112,7 @@ enum DebugPanelProbe {
             book.check("list closes: back to the first height", window.frame.height == closedHeight, "\(window.frame.height)")
             book.check("list closes: the shrink is eased", book.distinctHeightsSinceMark() >= 4, "\(book.distinctHeightsSinceMark()) heights")
 
-            if let name = ProcessInfo.processInfo.environment["SKILLORI_PANEL_PROBE_SKILL"] ?? store.inventory?.installations.first?.directoryName {
+            if let name = runName {
                 book.log("-- run starts (played, \(name))")
                 store.updater.setSample(names: [name], phase: .running, output: "")
                 await pause(120)

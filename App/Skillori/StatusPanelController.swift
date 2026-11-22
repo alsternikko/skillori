@@ -26,24 +26,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         host = NSHostingView(rootView: AnyView(EmptyView()))
         super.init()
 
-        host.rootView = AnyView(
-            MenuPanel(actions: PanelActions(
-                openLibrary: { [weak self] in self?.close(animated: false); self?.windows.showLibrary() },
-                openPage: { [weak self] page in self?.close(animated: false); self?.windows.showLibrary(at: page) },
-                openSettings: { [weak self] in self?.close(animated: false); self?.windows.showSettings() },
-                addFolder: { [weak self] in self?.close(animated: false); self?.store.addProject() },
-                rescan: { [weak self] in Task { await self?.store.refresh() } },
-                openPrivacySettings: { [weak self] in
-                    self?.close(animated: false)
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders") {
-                        NSWorkspace.shared.open(url)
-                    }
-                },
-                contentHeightChanged: { [weak self] height in self?.contentHeightChanged(height) }
-            ))
-            .environment(store)
-            .frame(width: Self.panelWidth)
-        )
+        host.rootView = rootView(fixedModel: nil)
         // The window's height is ours alone. Left to the hosting view as well, Auto Layout
         // pushed the window to the content's new height at once, mid-animation, and the content
         // jumped up and slid back down for every line an update printed.
@@ -136,6 +119,33 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private var closeGeneration = 0
     var panelWindow: NSWindow { panel }
     var statusButton: NSStatusBarButton? { statusItem.button }
+
+    /// What the panel window shows: the panel, wired to the app's windows.
+    private func rootView(fixedModel: PanelModel?) -> AnyView {
+        AnyView(
+            MenuPanel(actions: PanelActions(
+                openLibrary: { [weak self] in self?.close(animated: false); self?.windows.showLibrary() },
+                openPage: { [weak self] page in self?.close(animated: false); self?.windows.showLibrary(at: page) },
+                openSettings: { [weak self] in self?.close(animated: false); self?.windows.showSettings() },
+                addFolder: { [weak self] in self?.close(animated: false); self?.store.addProject() },
+                rescan: { [weak self] in Task { await self?.store.refresh() } },
+                openPrivacySettings: { [weak self] in
+                    self?.close(animated: false)
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders") {
+                        NSWorkspace.shared.open(url)
+                    }
+                },
+                contentHeightChanged: { [weak self] height in self?.contentHeightChanged(height) }
+            ), fixedModel: fixedModel)
+            .environment(store)
+            .frame(width: Self.panelWidth)
+        )
+    }
+
+    #if DEBUG
+    /// Debug builds only: shows `model` instead of the inventory, for a probe that needs a state this Mac isn't in.
+    func showFixedModel(_ model: PanelModel) { host.rootView = rootView(fixedModel: model) }
+    #endif
 
     /// Opens with a short fade and a slight growth out of the menu bar item.
     func open() {
@@ -275,10 +285,24 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     private var resize: Resize?
     private var resizeLink: CADisplayLink?
+    #if DEBUG
+    private var quietResizeTimer: Timer?
+    #endif
 
     private func startResizing(to frame: NSRect) {
         // A new height while one is on its way: carry on from where the window is now.
         resize = Resize(from: panel.frame, to: frame, start: CACurrentMediaTime())
+        #if DEBUG
+        // A quiet test run keeps the panel off screen, where a view's display link never ticks.
+        if DebugQuiet.isOn {
+            if quietResizeTimer == nil {
+                let timer = Timer(timeInterval: 1.0 / 120, target: self, selector: #selector(resizeStep), userInfo: nil, repeats: true)
+                RunLoop.main.add(timer, forMode: .common)
+                quietResizeTimer = timer
+            }
+            return
+        }
+        #endif
         if resizeLink == nil {
             let link = host.displayLink(target: self, selector: #selector(resizeStep))
             link.add(to: .main, forMode: .common)
@@ -289,6 +313,10 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private func stopResizing() {
         resizeLink?.invalidate()
         resizeLink = nil
+        #if DEBUG
+        quietResizeTimer?.invalidate()
+        quietResizeTimer = nil
+        #endif
         resize = nil
     }
 
