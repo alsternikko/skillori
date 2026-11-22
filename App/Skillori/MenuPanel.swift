@@ -362,11 +362,12 @@ extension PanelModel {
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
         }
-        // Linked to an installer run with the reader's key: never asked, so neither up to date nor a problem.
+        // Linked to an installer run with the reader's key, kept nowhere: it can't be checked until it is.
         let byInstaller = store.byInstallerCount
         if byInstaller > 0 {
-            tail.append(.line(text: byInstaller == 1 ? "1 updates by its installer" : "\(byInstaller) update by their installers",
-                              data: "YOUR KEY", muted: true))
+            let first = (store.inventory?.installations ?? []).first { if case .byInstaller = store.status(for: $0) { true } else { false } }
+            tail.append(.link(text: byInstaller == 1 ? "1 needs your key to be checked" : "\(byInstaller) need your key to be checked",
+                              label: "Show", command: .page(byInstaller == 1 ? first.map { .skill($0.id) } ?? .mine : .mine)))
         }
         // A recorded source that is gone has a way on, from the skill's page: link a new one,
         // look for it, or keep the copy as local.

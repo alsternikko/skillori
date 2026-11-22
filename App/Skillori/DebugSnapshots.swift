@@ -33,6 +33,41 @@ enum DebugPluginUpdate {
     }
 }
 
+/// Debug builds only: `SKILLORI_TRIAL=<package>` with `SKILLORI_TRIAL_ARGS` (space-separated)
+/// and `SKILLORI_TRIAL_LOG=<file>` runs the installer check once, writes what it found, and quits.
+@MainActor
+enum DebugInstallerTrial {
+    static func runIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        if let log = env["SKILLORI_KEYCHAIN_TEST"] {
+            // Saves, reads and removes a key for a package no one uses.
+            let package = "@skillori-test/install"
+            let saved = InstallerKeys.save(["--token=test-value", "--agent", "x"], for: package)
+            let has = InstallerKeys.has(package)
+            let read = InstallerKeys.arguments(for: package) ?? []
+            InstallerKeys.remove(for: package)
+            let gone = !InstallerKeys.has(package) && InstallerKeys.arguments(for: package) == nil
+            try? "saved \(saved) has \(has) read \(read == ["--token=test-value", "--agent", "x"]) removed \(gone)\n"
+                .write(toFile: log, atomically: true, encoding: .utf8)
+            NSApp.terminate(nil)
+            return
+        }
+        guard let package = env["SKILLORI_TRIAL"], let log = env["SKILLORI_TRIAL_LOG"] else { return }
+        let arguments = (env["SKILLORI_TRIAL_ARGS"] ?? "").split(separator: " ").map(String.init)
+        Task { @MainActor in
+            let started = Date()
+            let result = await InstallerTrial.run(PackageInstaller(package: package), arguments: arguments)
+            let text = switch result {
+            case .success(let trial): "success: \(trial.skills.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value.prefix(7))" })"
+            case .failure(.noNode): "failure: no node"
+            case .failure(.failed(let line)): "failure: \(line ?? "(no line)")"
+            }
+            try? (text + "\nseconds: \(Int(Date().timeIntervalSince(started)))\n").write(toFile: log, atomically: true, encoding: .utf8)
+            NSApp.terminate(nil)
+        }
+    }
+}
+
 @MainActor
 enum DebugSnapshots {
     static func runIfRequested(store: InventoryStore, statusPanel: StatusPanelController?) {

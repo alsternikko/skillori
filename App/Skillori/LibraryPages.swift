@@ -28,6 +28,8 @@ struct SkillPage: View {
     var onLink: () -> Void
     /// Looks for this skill's source, with the copies that share its name.
     var onFindSources: () -> Void = {}
+    /// Asks for the reader's key to the installer this skill is linked to.
+    var onAddKey: () -> Void = {}
     /// The last update of this skill, kept while the page is open. The store's receipt folds
     /// away after a few seconds, as its line in the library's list does; here the reader came
     /// for this skill, so the result stays until they leave.
@@ -185,9 +187,18 @@ struct SkillPage: View {
         case .updateAvailable, .differs, .checkFailed, .changedHere: return nil
         default: break
         }
+        if case .package(let installer) = source {
+            if store.hasKey(for: installation) {
+                return Advice(tone: .new, title: "Linked to \(installer.package)",
+                              text: "From \(installer.name). Skillori checks it with your key, which stays in your Keychain.")
+            }
+            return Advice(tone: .new, title: "Linked to \(installer.package)",
+                          text: "From \(installer.name), which gives new versions only with your key. Add it, and Skillori checks for them.",
+                          extra: [("Add key…", true, onAddKey)])
+        }
         let text: String = switch source {
-        case .package(let installer):
-            "From \(installer.name). Skillori won’t check it for new versions. Run your install command again to update."
+        case .package:
+            status.sentence
         case .installer:
             status == .upToDate ? "The script writes the same files as this copy. Skillori reads it for changes and never runs it."
                 : status.sentence
@@ -459,7 +470,14 @@ struct SkillPage: View {
                 }
                 if case .package(let installer) = source {
                     // The reader's own command is on the author's site; this names which installer it is.
-                    FactRow { Text(installer.command).font(TypeRole.mono(11.5)) } value: { Text("+ your key") }
+                    let keyed = store.hasKey(for: installation)
+                    FactRow { Text(installer.command).font(TypeRole.mono(11.5)) } value: { Text(keyed ? "key in Keychain" : "+ your key") }
+                    if let problem = store.installerProblems[installer.package], keyed {
+                        Text("The installer said: “\(problem)”").font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                    } else if !keyed {
+                        Text("Add your key, and Skillori checks for new versions by running the installer into a folder of its own, then comparing.")
+                            .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                    }
                 }
                 if case .cantCheck(let reason) = status {
                     let note = store.notice(for: installation)
@@ -476,6 +494,16 @@ struct SkillPage: View {
                     // Linked to a new home because the installer's recorded one was gone.
                     Text("Linked in place of \(recorded). Unlink to go back to it.")
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
+                }
+                if case .package = source {
+                    // The key is the reader's: added for checks, removed in one press.
+                    if store.hasKey(for: installation) {
+                        Button("Remove key") { store.removeKey(for: installation) }
+                            .buttonStyle(PillButtonStyle()).padding(.top, 8)
+                            .help("Removes your key from the Keychain. Skillori then stops checking this skill.")
+                    } else {
+                        Button("Add key…", action: onAddKey).buttonStyle(PillButtonStyle()).padding(.top, 8)
+                    }
                 }
                 HStack(spacing: 6) {
                     // A gone source that names its new address: that is the one worth opening.

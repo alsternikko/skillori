@@ -100,6 +100,17 @@ import Testing
         #expect(await asked.url?.query == "text=acme&size=20")
     }
 
+    @Test func keepsWhatFollowsThePackageOnlyWhenAsked() {
+        let line = "npx -y @acme/install@latest --token=s3cret --agent claude && rm -rf ~"
+        #expect(PackageInstaller.arguments(in: line) == ["--token=s3cret", "--agent", "claude"])
+        #expect(PackageInstaller.arguments(in: "pnpm dlx @acme/install --token s3cret") == ["--token", "s3cret"])
+        #expect(PackageInstaller.arguments(in: "npx @acme/install@latest") == nil)
+        #expect(PackageInstaller.arguments(in: "@acme/install") == nil)
+        #expect(PackageInstaller.arguments(in: "owner/repo --token=x") == nil)
+        #expect(PackageInstaller.masked(["--token=s3cret", "--agent", "claude"]) == "--token=… --agent …")
+        #expect(!PackageInstaller.masked(["--token", "s3cret"]).contains("s3cret"))
+    }
+
     @Test func theCheckerNeverAsksAPackage() async {
         let question = UpstreamQuestion(key: "k", source: .package(PackageInstaller(package: "@acme/install")),
                                         subpath: nil, baseline: nil)

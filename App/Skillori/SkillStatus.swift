@@ -116,7 +116,7 @@ enum SkillStatus: Equatable {
         case .cantCheck(let reason): reason.sentence
         case .notChecked: "The source has not been asked yet."
         case .byInstaller(let source):
-            "Its installer fetches it from \(source) with your own key, so Skillori can’t see new versions. Run your install command again to get the latest."
+            "\(source) gives new versions only to those with a key. Add yours, and Skillori checks for them like for your other skills. Until then, run your install command again to get the latest."
         case .checkFailed: "The files on this Mac could not be read for comparison."
         case .noSource: "Nothing on this Mac says where this came from."
         case .keptLocal: "Kept as a local copy. Skillori no longer checks it against a source."

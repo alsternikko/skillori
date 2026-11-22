@@ -42,6 +42,38 @@ public struct PackageInstaller: Hashable, Sendable {
         self.init(package: name)
     }
 
+    /// What follows the package on a pasted command, such as `--token=…`: the reader's own key
+    /// and whatever else the installer needs. Nil when nothing follows, or the text is no such
+    /// command. Stops at anything that would start another command. Kept only in the Keychain,
+    /// and only when the reader asks for it.
+    public static func arguments(in text: String) -> [String]? {
+        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard PackageInstaller(text) != nil, var index = words.firstIndex(where: { $0 == "npx" || $0 == "bunx" || $0 == "dlx" }) else {
+            return nil
+        }
+        index += 1
+        while index < words.count, words[index].hasPrefix("-") { index += 1 }
+        index += 1
+        var arguments: [String] = []
+        for word in words.dropFirst(index) {
+            if ["&&", "||", ";", "|", "&"].contains(word) || word.hasPrefix(";") { break }
+            arguments.append(word)
+        }
+        return arguments.isEmpty ? nil : arguments
+    }
+
+    /// The arguments with their values left out, for showing which ones are kept:
+    /// `--token=abc` → `--token=…`, a value on its own → `…`.
+    public static func masked(_ arguments: [String]) -> String {
+        arguments.map { argument in
+            if argument.hasPrefix("-") {
+                if let equals = argument.firstIndex(of: "=") { return String(argument[...equals]) + "…" }
+                return argument
+            }
+            return "…"
+        }.joined(separator: " ")
+    }
+
     /// Packages that install from repositories, which Skillori reads as repositories instead.
     static let notInstallers: Set<String> = ["skills", "add-skill"]
 

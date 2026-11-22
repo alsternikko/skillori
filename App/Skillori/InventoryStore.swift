@@ -86,6 +86,12 @@ final class InventoryStore {
     @ObservationIgnored private var askAgain: Task<Void, Never>?
     /// An update that just went well, shown for a moment as a receipt before its line folds away.
     private(set) var receipt: Receipt?
+    /// Installer packages whose arguments (the reader's key) are kept in the Keychain, so their
+    /// skills can be checked by running the installer into a folder of its own.
+    private(set) var keyedPackages: Set<String> = []
+    /// What an installer printed last when a check with the reader's key went wrong, by package.
+    private(set) var installerProblems: [String: String] = [:]
+
     /// What the reader just linked, said on the page they are on until they leave it.
     private(set) var linkReceipt: LinkReceipt?
 
@@ -99,6 +105,89 @@ final class InventoryStore {
         let at: Date
 
         func contains(_ installation: Installation) -> Bool { keys.contains(InventoryStore.linkKey(for: installation)) }
+    }
+
+    // MARK: Installers run with the reader's key
+
+    /// The installer this skill is linked to, when it is one run with the reader's key.
+    func packageInstaller(of installation: Installation) -> PackageInstaller? {
+        if case .package(let installer)? = link(for: installation)?.source { installer } else { nil }
+    }
+
+    func hasKey(for installation: Installation) -> Bool {
+        packageInstaller(of: installation).map { keyedPackages.contains($0.package) } ?? false
+    }
+
+    /// Keeps the reader's arguments for this skill's installer in the Keychain and checks it now.
+    @discardableResult
+    func keepKey(_ arguments: [String], for installation: Installation) -> Bool {
+        guard let installer = packageInstaller(of: installation), InstallerKeys.save(arguments, for: installer.package) else { return false }
+        keyedPackages.insert(installer.package)
+        installerProblems[installer.package] = nil
+        Task { await checkSources(force: true, only: Set(keysLinked(to: installer.package))) }
+        return true
+    }
+
+    /// Removes the key from the Keychain; the skills it fetched are no longer checked.
+    func removeKey(for installation: Installation) {
+        guard let installer = packageInstaller(of: installation) else { return }
+        InstallerKeys.remove(for: installer.package)
+        keyedPackages.remove(installer.package)
+        installerProblems[installer.package] = nil
+        for key in keysLinked(to: installer.package) { readings[key] = nil; held[key] = nil }
+        save()
+    }
+
+    private func keysLinked(to package: String) -> [String] {
+        links.filter { $0.value.package == package }.map(\.key)
+    }
+
+    /// Runs each installer with a kept key once, into a folder of its own, and compares what it
+    /// wrote with each skill linked to it here. One run answers for every skill it installs.
+    private func installerReadings(for installations: [Installation]) async -> [String: UpstreamReading] {
+        var byPackage: [String: [Installation]] = [:]
+        for installation in installations {
+            guard let installer = packageInstaller(of: installation), keyedPackages.contains(installer.package) else { continue }
+            byPackage[installer.package, default: []].append(installation)
+        }
+        var found: [String: UpstreamReading] = [:]
+        for (package, members) in byPackage.sorted(by: { $0.key < $1.key }) {
+            guard let arguments = InstallerKeys.arguments(for: package) else {
+                keyedPackages.remove(package)
+                continue
+            }
+            let result = await InstallerTrial.run(PackageInstaller(package: package), arguments: arguments)
+            let now = Date()
+            switch result {
+            case .failure(let failure):
+                installerProblems[package] = switch failure {
+                case .noNode: "npx was not found. Checking needs Node."
+                case .failed(let line): line ?? "The installer ended without saying why."
+                }
+                for installation in members {
+                    found[Self.linkKey(for: installation)] = UpstreamReading(state: .cannotCheck(.failed), checkedAt: now)
+                }
+            case .success(let trial):
+                installerProblems[package] = nil
+                let paths = members.map(\.canonicalPath)
+                let local = await Task.detached(priority: .utility) {
+                    Dictionary(uniqueKeysWithValues: paths.map { ($0, try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: $0)).treeID) })
+                }.value
+                for installation in members {
+                    let key = Self.linkKey(for: installation)
+                    let here = local[installation.canonicalPath] ?? nil
+                    links[key]?.localHash = here
+                    let state: UpstreamState = switch trial.skills[installation.directoryName.lowercased()]
+                        ?? trial.skills[installation.displayName.lowercased()] {
+                    case nil: .cannotCheck(.folderGone)
+                    case let id? where id == here: .upToDate
+                    case let id?: .updateAvailable(upstreamHash: id)
+                    }
+                    found[key] = UpstreamReading(state: state, checkedAt: now)
+                }
+            }
+        }
+        return found
     }
 
     /// Notes a link for the receipt. Links made together, as Find sources makes them, are one receipt.
@@ -353,8 +442,10 @@ final class InventoryStore {
             return .keptLocal
         case .unknown, .skillsLock where link(for: installation) != nil:
             guard let link = link(for: installation) else { return .noSource }
-            // An installer run with the reader's own key: there is nothing Skillori can ask.
-            if case .package(let installer) = link.source { return .byInstaller(source: installer.name) }
+            // An installer run with the reader's own key: checked only when the reader keeps their key here.
+            if case .package(let installer) = link.source, !keyedPackages.contains(installer.package) {
+                return .byInstaller(source: installer.name)
+            }
             // Linked by the reader: there is no installer baseline, so "differs" is all that can be said.
             let state = reading(for: installation)?.state
             if isHeld(installation) {
@@ -364,7 +455,9 @@ final class InventoryStore {
             switch state {
             // From GitHub the installer can take it over and bring the source's version; from
             // anywhere else, or in a folder it doesn't write, all Skillori can say is that it differs.
+            // An installer run with the reader's key brings the new version itself.
             case .updateAvailable(let upstream):
+                if case .package = link.source { return .updateAvailable(upstream: upstream) }
                 return adoption(for: installation) == nil ? .differs(upstream: upstream) : .updateAvailable(upstream: upstream)
             case .upToDate: return .upToDate
             case .cannotCheck(let reason): return .cantCheck(reason)
@@ -569,7 +662,7 @@ final class InventoryStore {
         guard !names.isEmpty, !updater.isRunning else { return }
         receipt = nil
         let source = installations.first.flatMap { upstreamSource(for: $0)?.name } ?? "its source"
-        let plan = updatePlan(for: installations)
+        let plan = updatePlan(for: installations, withKeys: true)
         if plan.isEmpty {
             // Only a recorded skill with a name that can't be passed on gets here; the run says so.
             // One linked in place of a gone source is not updated from the old one.
@@ -597,7 +690,7 @@ final class InventoryStore {
             let recorded = installations.filter { if case .skillsLock = $0.provenance { link(for: $0) == nil } else { false } }
             return recorded.isEmpty ? "" : UpdateRunner.commandText(for: recorded.map(\.directoryName))
         }
-        return plan.map { (["npx"] + $0.arguments.dropFirst()).joined(separator: " ") }.joined(separator: " && ")
+        return plan.map { $0.shown ?? (["npx"] + $0.arguments.dropFirst()).joined(separator: " ") }.joined(separator: " && ")
     }
 
     // MARK: Handing linked skills to the installer
@@ -613,11 +706,27 @@ final class InventoryStore {
     private struct UpdateStep {
         let arguments: [String]
         let adoptions: [LinkedAdoption]
+        /// How the step is shown, when its arguments hold the reader's key.
+        var shown: String? = nil
     }
 
     /// `update` for the skills the installer recorded, then one `add` per source for linked ones.
-    private func updatePlan(for installations: [Installation]) -> [UpdateStep] {
+    /// `withKeys` reads the reader's kept keys into installer steps, for running; without, the
+    /// steps only say which installer runs, for showing.
+    private func updatePlan(for installations: [Installation], withKeys: Bool = false) -> [UpdateStep] {
         var steps: [UpdateStep] = []
+        // Installers run with the reader's key: run once each, as the reader would in Terminal.
+        var packages: [PackageInstaller] = []
+        for installation in installations {
+            if let installer = packageInstaller(of: installation), keyedPackages.contains(installer.package),
+               !packages.contains(where: { $0.package == installer.package }) { packages.append(installer) }
+        }
+        for installer in packages {
+            let arguments = withKeys ? InstallerKeys.arguments(for: installer.package) : []
+            guard let arguments else { continue }
+            steps.append(UpdateStep(arguments: ["--yes", installer.package + "@latest"] + arguments, adoptions: [],
+                                    shown: installer.command + " + your key"))
+        }
         // A recorded skill linked to a new home is moved there with `add`, not updated from the old one.
         let recorded = installations.filter { if case .skillsLock = $0.provenance { link(for: $0) == nil } else { false } }.map(\.directoryName)
         if !recorded.isEmpty, recorded.allSatisfy(UpdateRunner.isSafeName) {
@@ -834,6 +943,11 @@ final class InventoryStore {
                 heard.insert(question.key)
                 next[question.key] = UpstreamReading(state: state, checkedAt: now, notice: answer.notice)
             }
+        }
+        // Installers run with the reader's key answer for their skills by being run.
+        for (key, reading) in await installerReadings(for: tracked) {
+            if case .cannotCheck = reading.state { failed.insert(key) } else { answered = true; heard.insert(key) }
+            next[key] = reading
         }
         // Forget answers only for skills that this scan read and that no longer have a source.
         // A hold is the reader's own choice and is only dropped when they release it or unlink.
@@ -1055,6 +1169,7 @@ final class InventoryStore {
         held[key] = nil
         pastSources[key] = nil
         save()
+        if InstallerKeys.has(info.package) { keyedPackages.insert(info.package) }
         noteLinked([installation], to: info.package)
         // The files' hash, for the type plate: read off the main thread, kept once it is there.
         Task { [weak self] in
@@ -1232,9 +1347,16 @@ final class InventoryStore {
             pastSources[key] = PastSource(name: link.source.name, until: Date(), notice: lost ? readings[key]?.notice : nil,
                                           byYou: lost ? nil : true, package: link.package, repository: repository)
         }
+        let package = links[key]?.package
         links[key] = nil
         readings[key] = nil
         held[key] = nil
+        // A key no linked skill uses any more is not kept.
+        if let package, !links.values.contains(where: { $0.package == package }) {
+            InstallerKeys.remove(for: package)
+            keyedPackages.remove(package)
+            installerProblems[package] = nil
+        }
         save()
     }
 
@@ -1291,6 +1413,8 @@ final class InventoryStore {
         keptLocal = saved.keptLocal ?? [:]
         moves = saved.moves ?? [:]
         pastSources = saved.pastSources ?? [:]
+        // Which installers have a key kept; the keys themselves stay in the Keychain until a check runs.
+        keyedPackages = Set(links.values.compactMap(\.package).filter(InstallerKeys.has))
     }
 
     private func save() {

@@ -40,6 +40,8 @@ struct LinkSourceSheet: View {
     @State private var chosen: String?
     /// The page and line a search followed, said above its result.
     @State private var via: String?
+    /// Keep the key on a pasted installer command in the Keychain, for checks.
+    @State private var keepKey = true
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -55,7 +57,7 @@ struct LinkSourceSheet: View {
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
-            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. If it comes with an npx command and your own key, paste that: Skillori keeps only the installer's name. Or paste the address of the page you installed it from, and Skillori reads the page for how it says to install. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
+            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. If it comes with an npx command and your own key, paste that; you choose whether Skillori keeps the key, to check for new versions. Or paste the address of the page you installed it from, and Skillori reads the page for how it says to install. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
                 .font(TypeRole.sans(12))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.ink2)
@@ -86,8 +88,12 @@ struct LinkSourceSheet: View {
                         dismiss()
                         AfterSheet.run { store.link(installation, to: candidate, in: search) }
                     } else if case .package(let info) = phase {
+                        let arguments = keepKey ? PackageInstaller.arguments(in: text) : nil
                         dismiss()
-                        AfterSheet.run { store.link(installation, toPackage: info) }
+                        AfterSheet.run {
+                            store.link(installation, toPackage: info)
+                            if let arguments { store.keepKey(arguments, for: installation) }
+                        }
                     }
                 }
                 .buttonStyle(PillButtonStyle(prominent: hasResult))
@@ -174,7 +180,15 @@ struct LinkSourceSheet: View {
                         .foregroundStyle(Palette.ink2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Skillori keeps only the installer’s name. Your key isn’t kept or sent anywhere, so Skillori can’t see new versions. The skill’s page will say how to update.")
+                if PackageInstaller.arguments(in: text) != nil {
+                    Toggle("Keep my key in the Keychain, so Skillori can check for new versions", isOn: $keepKey)
+                        .toggleStyle(.checkbox)
+                        .font(TypeRole.sans(12.5))
+                        .padding(.top, 4)
+                }
+                Text(PackageInstaller.arguments(in: text) != nil && keepKey
+                     ? "To check, Skillori runs the installer now and then into a folder of its own, compares what it gets with this copy, and removes the folder. Your key stays in your Keychain and goes only where the installer sends it."
+                     : "Skillori keeps only the installer’s name. Without your key it can’t see new versions; you can add it later from the skill’s page.")
                     .font(TypeRole.sans(12))
                     .lineSpacing(2)
                     .foregroundStyle(Palette.ink2)

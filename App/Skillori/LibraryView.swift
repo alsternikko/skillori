@@ -15,6 +15,8 @@ struct LibraryView: View {
     @State private var findingSources = false
     /// A skill whose source is being looked for from its own page.
     @State private var findingFor: Installation?
+    /// The skill whose installer key the reader is adding.
+    @State private var keyFor: Installation?
     /// The tone the block of things to do shows. It follows the real one a moment later, so the
     /// light turns after the line that changed it has folded away.
     @State private var shownTone: Tone?
@@ -66,6 +68,9 @@ struct LibraryView: View {
         .sheet(isPresented: $findingSources) {
             FindSourcesSheet().environment(store)
         }
+        .sheet(item: $keyFor) { installation in
+            InstallerKeySheet(installation: installation).environment(store)
+        }
         .sheet(item: $findingFor) { installation in
             FindSourcesSheet(only: installation).environment(store)
         }
@@ -99,7 +104,7 @@ struct LibraryView: View {
             }
         default:
             LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 },
-                            onFindSources: { findingFor = $0 })
+                            onFindSources: { findingFor = $0 }, onAddKey: { keyFor = $0 })
         }
     }
 
