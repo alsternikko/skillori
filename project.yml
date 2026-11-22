@@ -18,8 +18,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.2.17"
-    CURRENT_PROJECT_VERSION: "22"
+    MARKETING_VERSION: "0.2.18"
+    CURRENT_PROJECT_VERSION: "23"
 targets:
   Skillori:
     type: application

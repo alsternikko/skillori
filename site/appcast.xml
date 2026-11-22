@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.17</title>
-      <pubDate>Sat, 21 Nov 2026 18:57:14 +0000</pubDate>
-      <sparkle:version>22</sparkle:version>
-      <sparkle:shortVersionString>0.2.17</sparkle:shortVersionString>
+      <title>Skillori 0.2.18</title>
+      <pubDate>Sun, 22 Nov 2026 16:17:17 +0000</pubDate>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>0.2.18</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.17</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Add again for Codex plugins now only adds from the catalog Codex moved to, and plugins from that catalog are no longer marked as not loaded when Codex can't reach it. The chips on an app's page say what they mean.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.18</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skills handed out by an installer you run with your own key, like npx @interfacecraft/install, can be linked to that installer. Skillori keeps only the installer's name, never your key, and the skill's page says how to update it.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="32xmqGwjEi3ktwPQ6rrpp4lqLcdZaGrFDPM/tQX/bGKxUqQX4nTgN6/wMAR0Z0y8XqZaBBlNdRLeR9id/8cUBA==" length="5457236"/>
+                 sparkle:edSignature="x1s4ON4D4NGPJ2AALT77D3t+Sg5J+fED6ETCVXKcbc88gfc7ygxr+QfSpACaaQOSeHlxUysJPqalIYS/13nRCQ==" length="5490969"/>
     </item>
   </channel>
 </rss>
