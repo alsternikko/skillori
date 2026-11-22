@@ -9,6 +9,33 @@ let checkSources = CommandLine.arguments.contains("--check-sources")
 // With --find-source <repository or script address> <skill> it asks one repository which of its folders that skill
 // on this Mac matches, the way "Link source" does.
 var arguments = Array(CommandLine.arguments.dropFirst())
+// `--read-page <address>`: what Link source finds on a page.
+if let index = arguments.firstIndex(of: "--read-page"), arguments.count > index + 1,
+   let url = URL(string: arguments[index + 1]) {
+    switch await PageReader().leads(at: url) {
+    case .success(let leads):
+        if leads.isEmpty { print("Nothing on that page Skillori can follow.") }
+        for lead in leads { print("\(lead.line)  →  \(lead.text)\(lead.skill.map { " (skill \($0))" } ?? "")") }
+        exit(0)
+    case .failure(let reason):
+        print("Could not read the page: \(reason)")
+        exit(1)
+    }
+}
+// `--find-installer <site>`: the installers on npm whose homepage is that site, as Find sources offers them.
+if let index = arguments.firstIndex(of: "--find-installer"), arguments.count > index + 1 {
+    switch await NpmRegistry().installers(from: arguments[index + 1]) {
+    case .success(let found):
+        if found.isEmpty { print("No installer from \(arguments[index + 1]) on npm.") }
+        for info in found {
+            print("\(info.package) \(info.version ?? "?") · \(info.site?.absoluteString ?? "no site") · \(info.summary ?? "")")
+        }
+        exit(0)
+    case .failure(let reason):
+        print("No answer from npm: \(reason)")
+        exit(1)
+    }
+}
 var findSource: (repository: String, skill: String)?
 if let index = arguments.firstIndex(of: "--find-source"), arguments.count > index + 2 {
     findSource = (arguments[index + 1], arguments[index + 2])

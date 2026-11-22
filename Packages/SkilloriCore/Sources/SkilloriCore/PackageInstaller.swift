@@ -43,7 +43,7 @@ public struct PackageInstaller: Hashable, Sendable {
     }
 
     /// Packages that install from repositories, which Skillori reads as repositories instead.
-    private static let notInstallers: Set<String> = ["skills", "add-skill"]
+    static let notInstallers: Set<String> = ["skills", "add-skill"]
 
     /// `@scope/name@1.2.3` → `@scope/name`, after checking it is a valid npm name.
     static func packageName(from spec: String) -> String? {
@@ -152,5 +152,83 @@ public struct NpmRegistry: Sendable {
             return components?.url
         }
         return .success(PackageInfo(package: latest.name, version: latest.version, summary: latest.description, site: site))
+    }
+}
+
+extension NpmRegistry {
+    /// A site's host as people name it: lowercased, without `www.`.
+    public static func siteHost(_ host: String) -> String {
+        let host = host.lowercased()
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    /// The search for a site's packages: `interfacecraft.dev` is searched as `interfacecraft`.
+    /// Nil when nothing is left to search for.
+    public static func searchRequest(for host: String) -> URLRequest? {
+        let words = siteHost(host).split(separator: ".").dropLast().joined(separator: " ")
+        guard !words.isEmpty, var components = URLComponents(string: "https://registry.npmjs.org/-/v1/search") else { return nil }
+        components.queryItems = [URLQueryItem(name: "text", value: words), URLQueryItem(name: "size", value: "20")]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Skillori", forHTTPHeaderField: "User-Agent")
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        return request
+    }
+
+    /// Installers published by a site a skill came from: packages whose own homepage is that site
+    /// and that say they install something. Only the site's name is sent. A package that merely
+    /// shares a word with the site is never offered, since its homepage is elsewhere.
+    public func installers(from host: String) async -> Result<[PackageInfo], UpstreamState.Reason> {
+        guard let request = Self.searchRequest(for: host) else { return .success([]) }
+        let data: Data
+        let response: HTTPURLResponse
+        do {
+            (data, response) = try await transport(request)
+        } catch is CancellationError {
+            return .failure(.cancelled)
+        } catch let error as URLError where error.code == .cancelled {
+            return .failure(.cancelled)
+        } catch {
+            return .failure(.offline)
+        }
+        switch response.statusCode {
+        case 200: break
+        case 429: return .failure(.rateLimited)
+        default: return .failure(.failed)
+        }
+        return .success(Self.readInstallers(data, site: Self.siteHost(host)))
+    }
+
+    static func readInstallers(_ data: Data, site: String) -> [PackageInfo] {
+        struct Answer: Decodable {
+            struct Object: Decodable {
+                struct Package: Decodable {
+                    struct Links: Decodable { let homepage: String? }
+                    let name: String
+                    let version: String?
+                    let description: String?
+                    let links: Links?
+                }
+                let package: Package
+            }
+            let objects: [Object]
+        }
+        guard let answer = try? JSONDecoder().decode(Answer.self, from: data) else { return [] }
+        let found = answer.objects.map(\.package).compactMap { package -> PackageInfo? in
+            guard PackageInstaller.packageName(from: package.name) == package.name,
+                  !PackageInstaller.notInstallers.contains(package.name),
+                  let homepage = package.links?.homepage.flatMap(URL.init(string:)),
+                  homepage.scheme?.lowercased() == "https", homepage.user == nil,
+                  let host = homepage.host, siteHost(host) == site else { return nil }
+            let words = (package.name + " " + (package.description ?? "")).lowercased()
+            guard words.contains("install"), words.contains("skill") || package.name.contains("install") else { return nil }
+            var components = URLComponents(url: homepage, resolvingAgainstBaseURL: false)
+            components?.fragment = nil
+            return PackageInfo(package: package.name, version: package.version, summary: package.description, site: components?.url)
+        }
+        // A package named for installing first, and never more than a few.
+        return Array(found.sorted { ($0.package.contains("install") ? 0 : 1, $0.package) < ($1.package.contains("install") ? 0 : 1, $1.package) }
+            .prefix(3))
     }
 }

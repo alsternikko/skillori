@@ -238,8 +238,10 @@ public struct SourceFinder: Sendable {
     }
 
     /// Sources for one skill, strongest first. `yourSources` are repositories other skills on
-    /// this Mac come from. Asking stops at the first confirmed match, to keep requests few.
-    public func search(for skill: LocalSkill, yourSources: [UpstreamSource] = []) async -> Search {
+    /// this Mac come from; `pageSources` are repositories a page the skill came from names, asked
+    /// first and said to be found `pageVia`. Asking stops at the first confirmed match, to keep requests few.
+    public func search(for skill: LocalSkill, yourSources: [UpstreamSource] = [], pageSources: [UpstreamSource] = [],
+                       pageVia: String = "its site") async -> Search {
         var problem: UpstreamState.Reason?
         func note(_ reason: UpstreamState.Reason) {
             if reason == .rateLimited || reason == .offline || reason == .failed { problem = problem ?? reason }
@@ -252,7 +254,7 @@ public struct SourceFinder: Sendable {
         }
         let wanted = Self.nameVariants(skill.name)
         var seenRepositories = Set(candidates.map(\.source.name))
-        for (repositories, via) in [(yourSources, "your sources"), (KnownCollections.repositories, "known collection")] {
+        for (repositories, via) in [(pageSources, pageVia), (yourSources, "your sources"), (KnownCollections.repositories, "known collection")] {
             for repository in repositories where !seenRepositories.contains(repository.name) {
                 seenRepositories.insert(repository.name)
                 let tree: SourceTree

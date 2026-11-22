@@ -72,6 +72,34 @@ import Testing
         #expect(try await plain.info(for: "acme").get().site == nil)
     }
 
+    @Test func searchesBySiteNameOnly() throws {
+        let request = try #require(NpmRegistry.searchRequest(for: "www.InterfaceCraft.dev"))
+        #expect(request.url?.absoluteString == "https://registry.npmjs.org/-/v1/search?text=interfacecraft&size=20")
+        #expect(NpmRegistry.searchRequest(for: "localhost") == nil)
+    }
+
+    @Test func offersOnlyInstallersWhoseHomepageIsTheSite() async throws {
+        let body = #"""
+        {"objects":[
+          {"package":{"name":"@banjerluke/dialkit","description":"Real-time parameter tweaking","links":{"homepage":"https://github.com/joshpuckett/dialkit#readme"}}},
+          {"package":{"name":"@acme/install","version":"0.1.0","description":"Installs the Acme members' agent skills.","links":{"homepage":"https://www.acme.dev#top"}}},
+          {"package":{"name":"acme-ui","description":"Buttons and cards.","links":{"homepage":"https://acme.dev"}}},
+          {"package":{"name":"skills","description":"Install agent skills","links":{"homepage":"https://acme.dev"}}},
+          {"package":{"name":"@acme/plain","description":"Installs skills","links":{"homepage":"http://acme.dev"}}}
+        ]}
+        """#
+        let asked = Asked()
+        let registry = NpmRegistry { request in
+            await asked.set(request.url)
+            return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        let found = try await registry.installers(from: "acme.dev").get()
+        #expect(found.map(\.package) == ["@acme/install"])
+        #expect(found.first?.site == URL(string: "https://www.acme.dev"))
+        #expect(found.first?.installer.name == "acme.dev")
+        #expect(await asked.url?.query == "text=acme&size=20")
+    }
+
     @Test func theCheckerNeverAsksAPackage() async {
         let question = UpstreamQuestion(key: "k", source: .package(PackageInstaller(package: "@acme/install")),
                                         subpath: nil, baseline: nil)

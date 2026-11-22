@@ -194,6 +194,16 @@ enum DebugSnapshots {
                 let alone = await store.unlinkedGroups(only: [unknown.id])
                 render(FindSourcesSheet(preview: alone.map { ($0, SourceFinder.Search(proposals: [], problem: nil)) }).environment(store),
                        size: CGSize(width: 600, height: 420), to: out.appendingPathComponent("find-sources-past.png"))
+                // The site it came from has an installer on npm: offered, not ticked.
+                let sited = PackageInfo(package: "@example/install", version: "0.1.0",
+                                        summary: "Installs the Example members' agent skills.", site: URL(string: "https://www.example.com"))
+                render(FindSourcesSheet(preview: alone.map { ($0, SourceFinder.Search(proposals: [], problem: nil)) }, installers: [sited])
+                    .environment(store), size: CGSize(width: 600, height: 460), to: out.appendingPathComponent("find-sources-installer.png"))
+                render(FindSourcesSheet(preview: alone.map { ($0, SourceFinder.Search(proposals: [], problem: nil)) }, installers: [sited])
+                    .environment(store).environment(\.colorScheme, .dark),
+                       size: CGSize(width: 600, height: 460), to: out.appendingPathComponent("find-sources-installer-dark.png"))
+                try? "sites: \(alone.map { store.knownSites(of: $0) })\n"
+                    .write(to: out.appendingPathComponent("sites.txt"), atomically: true, encoding: .utf8)
                 store.forgetSamplePastSource(unknown)
                 // The same skill linked to an installer run with the reader's own key: the sheet
                 // with npm's answer, and the skill's page, which says how to update.
@@ -202,6 +212,20 @@ enum DebugSnapshots {
                                        site: URL(string: "https://www.example.com"))
                 render(LinkSourceSheet(installation: unknown, package: info, text: "npx @example/install@latest --token=…").environment(store),
                        size: CGSize(width: 520, height: 400), to: out.appendingPathComponent("link-source-package.png"))
+                // The page it was installed from, read for what it names.
+                let html = """
+                <pre>npx skills add example/agent-skills --skill \(unknown.directoryName)</pre>
+                <pre>curl -fsSL https://www.example.com/install-skills | bash</pre>
+                <pre>npx @example/install@latest --token=YOUR_KEY</pre>
+                """
+                let leads = SourcePage.leads(in: html)
+                render(LinkSourceSheet(installation: unknown, text: "https://www.example.com/skills", page: ("example.com", leads)).environment(store),
+                       size: CGSize(width: 520, height: 600), to: out.appendingPathComponent("link-source-page.png"))
+                render(LinkSourceSheet(installation: unknown, package: info, text: leads[2].text, via: "example.com: " + leads[2].line)
+                    .environment(store).environment(\.colorScheme, .dark),
+                       size: CGSize(width: 520, height: 440), to: out.appendingPathComponent("link-source-page-followed-dark.png"))
+                try? (leads.map { "\($0.line) → \($0.text)" }.joined(separator: "\n") + "\n")
+                    .write(to: out.appendingPathComponent("page-leads.txt"), atomically: true, encoding: .utf8)
                 store.link(unknown, toPackage: info)
                 try? await Task.sleep(for: .milliseconds(600))
                 try? "package: \(store.status(for: unknown)) · asked: \(store.sourceKey(for: unknown).map { store.readings[$0] != nil } ?? false)\n"

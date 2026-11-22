@@ -84,6 +84,12 @@ public enum SkillSource: Hashable, Sendable {
     /// look like anything, then a GitHub repository, then a script address.
     public static func parse(_ text: String) -> (source: SkillSource, subpath: String?)? {
         if let package = PackageInstaller(text) { return (.package(package), nil) }
+        // `site.dev/page` typed without its scheme is an address: GitHub owners have no dots.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.contains("://"), !trimmed.contains(" "), let first = trimmed.split(separator: "/").first,
+           first.contains("."), first.lowercased() != "github.com", first.lowercased() != "www.github.com" {
+            return InstallerSource("https://" + trimmed).map { (.installer($0), nil) }
+        }
         if let (source, subpath) = UpstreamSource.parse(text) { return (.github(source), subpath) }
         if let source = InstallerSource(text) { return (.installer(source), nil) }
         return nil

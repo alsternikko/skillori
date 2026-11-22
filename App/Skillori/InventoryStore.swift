@@ -989,6 +989,12 @@ final class InventoryStore {
         save()
     }
 
+    /// Reads a page the reader named for the ways it gives to install skills. Only the request
+    /// for the page is sent; nothing on it is run.
+    func readPage(_ url: URL) async -> Result<[PageLead], UpstreamState.Reason> {
+        await PageReader().leads(at: url)
+    }
+
     /// Asks npm whether the installer the reader pasted exists, and which site it names. Only
     /// the package's name is sent; the key on the pasted line was dropped when it was read.
     func lookUpPackage(_ installer: PackageInstaller) async -> Result<PackageInfo, UpstreamState.Reason> {
@@ -1071,9 +1077,74 @@ final class InventoryStore {
     /// Looks for one group's source. A direct action by the reader, so it runs whether or not
     /// regular checks are on. Sends skill and repository names, nothing else.
     /// Pass the same finder for every group of one search: it asks each repository once.
-    func proposals(for group: UnlinkedGroup, using finder: SourceFinder) async -> SourceFinder.Search {
+    func proposals(for group: UnlinkedGroup, using finder: SourceFinder, pages: [PageLead] = []) async -> SourceFinder.Search {
         guard let local = group.local else { return SourceFinder.Search(proposals: [], problem: nil) }
-        return await finder.search(for: local, yourSources: yourSources)
+        var repositories: [UpstreamSource] = []
+        for lead in pages {
+            if case .github(let source) = lead.source, !repositories.contains(where: { $0.name == source.name }) {
+                repositories.append(UpstreamSource(owner: source.owner, repository: source.repository))
+            }
+        }
+        let via = knownSites(of: group).first.map { "\($0)’s page" } ?? "its site"
+        return await finder.search(for: local, yourSources: yourSources, pageSources: repositories, pageVia: via)
+    }
+
+    /// What the pages of the sites a group came from name for installing: the page the old
+    /// source pointed to, and the site's front page. Only the requests for the pages are sent.
+    func pageLeads(for group: UnlinkedGroup) async -> [PageLead] {
+        var pages: [URL] = []
+        for installation in group.installations {
+            if let url = pastSource(of: installation)?.notice?.url, !pages.contains(url) { pages.append(url) }
+        }
+        for site in knownSites(of: group) {
+            if let url = URL(string: "https://\(site)/"), !pages.contains(where: { $0.host.map(NpmRegistry.siteHost) == site && $0.path == "/" }) {
+                pages.append(url)
+            }
+        }
+        var leads: [PageLead] = []
+        for page in pages.prefix(3) {
+            if case .success(let found) = await PageReader().leads(at: page) {
+                leads += found.filter { lead in !leads.contains { $0.id == lead.id } }
+            }
+        }
+        return leads
+    }
+
+    /// The sites a group's skills are known to have come from: a source Skillori had for them
+    /// before it stopped answering, and the page that source pointed to.
+    func knownSites(of group: UnlinkedGroup) -> [String] {
+        var sites: [String] = []
+        for installation in group.installations {
+            guard let past = pastSource(of: installation) else { continue }
+            let hosts = [URL(string: past.name.contains("://") ? past.name : "https://" + past.name)?.host, past.notice?.url?.host]
+            for host in hosts.compactMap({ $0 }) where host.contains(".") {
+                let site = NpmRegistry.siteHost(host)
+                if !sites.contains(site) { sites.append(site) }
+            }
+        }
+        return sites
+    }
+
+    /// Installers on npm from the sites a group came from, and those the sites' pages name.
+    /// Sends only the sites' and packages' names.
+    func installers(for group: UnlinkedGroup, pages: [PageLead] = []) async -> Result<[PackageInfo], UpstreamState.Reason> {
+        var found: [PackageInfo] = []
+        for lead in pages {
+            guard case .package(let installer) = lead.source, !found.contains(where: { $0.package == installer.package }) else { continue }
+            if case .success(let info) = await NpmRegistry().info(for: installer.package) { found.append(info) }
+        }
+        for site in knownSites(of: group) {
+            switch await NpmRegistry().installers(from: site) {
+            case .success(let list): found += list.filter { info in !found.contains { $0.package == info.package } }
+            case .failure(let reason): return .failure(reason)
+            }
+        }
+        return .success(found)
+    }
+
+    /// Links every copy in the group to an installer run with the reader's own key.
+    func link(_ group: UnlinkedGroup, toPackage info: PackageInfo) {
+        for installation in group.installations { link(installation, toPackage: info) }
     }
 
     /// Links every copy in the group to the proposed folder, with how it was found.

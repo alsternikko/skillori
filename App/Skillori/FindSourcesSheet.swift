@@ -4,7 +4,8 @@ import SkilloriUI
 import SwiftUI
 
 /// Looks for the source of every skill of yours that has none, and links the ones the reader
-/// ticks. Proven matches are ticked from the start; a name alone never is. Identical copies in
+/// ticks. Proven matches are ticked from the start, and so is the only installer from the site a
+/// skill came from; a name alone never is. Identical copies in
 /// several folders are one row and are linked together. Where the source has a newer version,
 /// Link and update also has the installer put it in place; Link only changes nothing on disk.
 struct FindSourcesSheet: View {
@@ -18,6 +19,8 @@ struct FindSourcesSheet: View {
 
     @State private var groups: [InventoryStore.UnlinkedGroup] = []
     @State private var findings: [String: Finding] = [:]
+    /// Group id → installers on npm from the site the skill came from.
+    @State private var installers: [String: [PackageInfo]] = [:]
     /// Group id → the proposal to link.
     @State private var chosen: [String: String] = [:]
     @State private var started = false
@@ -36,11 +39,13 @@ struct FindSourcesSheet: View {
     }
 
     /// Already answered, for pictures: no questions are asked.
-    init(preview: [(InventoryStore.UnlinkedGroup, SourceFinder.Search)]) {
+    init(preview: [(InventoryStore.UnlinkedGroup, SourceFinder.Search)], installers: [PackageInfo] = []) {
         _groups = State(initialValue: preview.map(\.0))
+        _installers = State(initialValue: Dictionary(uniqueKeysWithValues: preview.map { ($0.0.id, installers) }))
         _findings = State(initialValue: Dictionary(uniqueKeysWithValues: preview.map { ($0.0.id, Finding.found($0.1)) }))
         _chosen = State(initialValue: Dictionary(uniqueKeysWithValues: preview.compactMap { group, list in
-            list.proposals.first.flatMap { $0.evidence.isConfirmed && !$0.folderGone ? (group.id, $0.id) : nil }
+            if list.proposals.isEmpty, installers.count == 1 { return (group.id, Self.choiceID(installers[0])) }
+            return list.proposals.first.flatMap { $0.evidence.isConfirmed && !$0.folderGone ? (group.id, $0.id) : nil }
         }))
         _started = State(initialValue: true)
     }
@@ -57,7 +62,7 @@ struct FindSourcesSheet: View {
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
-            Text("Skillori asks the mdskills.ai registry where each skill lives, and looks in the repositories your other skills come from and a few large collections on GitHub. It compares what it finds with the files on this Mac, earlier versions included. Only skill and repository names are sent. Nothing is changed until you choose.")
+            Text("Skillori asks the mdskills.ai registry where each skill lives, and looks in the repositories your other skills come from and a few large collections on GitHub. It compares what it finds with the files on this Mac, earlier versions included. For a skill that came from a site, it also reads the site’s pages and asks npm for its installer. Only skill, repository and site names are sent. Nothing is changed until you choose.")
                 .font(TypeRole.sans(12))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.ink2)
@@ -148,9 +153,20 @@ struct FindSourcesSheet: View {
         chosen[group.id].flatMap { id in proposals(for: group).first { $0.id == id } }
     }
 
+    /// The installer chosen for a group, when the reader picked one over a repository.
+    private func chosenInstaller(for group: InventoryStore.UnlinkedGroup) -> PackageInfo? {
+        chosen[group.id].flatMap { id in installers[group.id]?.first { Self.choiceID($0) == id } }
+    }
+
+    private static func choiceID(_ info: PackageInfo) -> String { "npm:" + info.package }
+
     private func linkChosen() {
         for group in groups {
-            if let proposal = chosenProposal(for: group) { store.link(group, to: proposal) }
+            if let proposal = chosenProposal(for: group) {
+                store.link(group, to: proposal)
+            } else if let info = chosenInstaller(for: group) {
+                store.link(group, toPackage: info)
+            }
         }
     }
 
@@ -223,6 +239,9 @@ struct FindSourcesSheet: View {
                 ForEach(search.proposals) { proposal in
                     choice(proposal, in: group)
                 }
+                ForEach(installers[group.id] ?? [], id: \.package) { info in
+                    installerChoice(info, in: group)
+                }
                 if let problem = search.problem {
                     // Not "nothing found": some places could not be asked, so the search is unfinished.
                     Text((problem == .rateLimited
@@ -230,7 +249,7 @@ struct FindSourcesSheet: View {
                           : problem == .offline ? "Some places could not be reached, so not every place was asked. Try again later."
                           : "Some places gave answers Skillori could not read, so not every place was asked."))
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
-                } else if search.proposals.isEmpty {
+                } else if search.proposals.isEmpty, (installers[group.id] ?? []).isEmpty {
                     let past = group.installations.lazy.compactMap { store.pastSource(of: $0) }.first
                     Text(group.local == nil ? "The files on this Mac could not be read."
                          : past.map { "Nothing found. It was linked to \($0.name) until \(Assist.day($0.until)). "
@@ -281,6 +300,40 @@ struct FindSourcesSheet: View {
         .accessibilityAddTraits(isChosen ? [.isButton, .isSelected] : .isButton)
     }
 
+    /// An installer from the site the skill came from. It is run with the reader's own key, so
+    /// there is nothing to compare: what speaks for it is the site. Ticked only when it is the one thing found.
+    private func installerChoice(_ info: PackageInfo, in group: InventoryStore.UnlinkedGroup) -> some View {
+        let id = Self.choiceID(info)
+        let isChosen = chosen[group.id] == id
+        let site = info.installer.name
+        return HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(isChosen ? "●" : "○").font(TypeRole.mono(11.5))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(info.package)
+                        .font(TypeRole.mono(11.5))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    StatusChip("Same site", kind: .neutral, mark: "↻")
+                }
+                Text("\(group.name) came from \(site), and this is \(site)’s installer. It fetches the skills with your own key, "
+                     + "so Skillori can’t see new versions. You run it again to update. Found via npm.")
+                    .font(TypeRole.sans(12))
+                    .foregroundStyle(Palette.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8)
+        .background(Palette.ink.opacity(isChosen ? 0.06 : 0), in: RoundedRectangle(cornerRadius: Radius.control, style: .circular))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            chosen[group.id] = isChosen ? nil : id
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isChosen ? [.isButton, .isSelected] : .isButton)
+    }
+
     private func find() async {
         guard !started else { return }
         let found = await store.unlinkedGroups(only: only)
@@ -290,7 +343,21 @@ struct FindSourcesSheet: View {
         let finder = SourceFinder()
         // One skill at a time: each asks a few sources, and GitHub counts requests per hour.
         for group in found {
-            let search = await store.proposals(for: group, using: finder)
+            // The pages of the site the skill came from may say how it is installed now.
+            let pages = await store.pageLeads(for: group)
+            var search = await store.proposals(for: group, using: finder, pages: pages)
+            // The site may hand it out through an installer on npm.
+            switch await store.installers(for: group, pages: pages) {
+            case .success(let found):
+                installers[group.id] = found
+                // The site's only installer, with nothing else found: the site it came from speaks for it.
+                if search.proposals.isEmpty, found.count == 1 { chosen[group.id] = Self.choiceID(found[0]) }
+            case .failure(let reason) where reason != .cancelled && search.problem == nil
+                && !search.proposals.contains(where: { $0.evidence.isConfirmed }):
+                search = SourceFinder.Search(proposals: search.proposals, problem: reason == .failed ? .failed : .offline)
+            case .failure:
+                break
+            }
             findings[group.id] = .found(search)
             // Tick only what is proven and can be followed: not a name alone, not a folder that is gone.
             if let best = search.proposals.first, best.evidence.isConfirmed, !best.folderGone {

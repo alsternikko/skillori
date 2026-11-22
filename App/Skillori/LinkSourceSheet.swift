@@ -5,17 +5,21 @@ import SwiftUI
 
 /// Lets the reader say where a skill with no installer record came from. Skillori asks the
 /// named repository for its skill folders, or reads which files a named install script writes,
-/// compares them with the files on this Mac, and remembers the folder the reader picks.
-/// Nothing on disk is changed, and a script is never run.
+/// compares them with the files on this Mac, and remembers the folder the reader picks. Given
+/// the page the skill was installed from, it reads the page for the commands and repositories it
+/// names and follows the one the reader picks. Nothing on disk is changed, and nothing is run.
 struct LinkSourceSheet: View {
     @Environment(InventoryStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let installation: Installation
 
-    init(installation: Installation, preview: InventoryStore.LinkSearch? = nil, package: PackageInfo? = nil, text: String = "") {
+    init(installation: Installation, preview: InventoryStore.LinkSearch? = nil, package: PackageInfo? = nil, text: String = "",
+         page: (host: String, leads: [PageLead])? = nil, via: String? = nil) {
         self.installation = installation
         _text = State(initialValue: text)
-        _phase = State(initialValue: package.map(Phase.package) ?? preview.map(Phase.found) ?? .idle)
+        _via = State(initialValue: via)
+        _phase = State(initialValue: page.map { Phase.page(host: $0.host, leads: $0.leads) }
+            ?? package.map(Phase.package) ?? preview.map(Phase.found) ?? .idle)
         _chosen = State(initialValue: preview?.candidates.first.flatMap { $0.match == .other ? nil : $0.subpath })
     }
 
@@ -27,11 +31,15 @@ struct LinkSourceSheet: View {
         case package(PackageInfo)
         /// Why the search gave nothing, and the word on the chip before it.
         case failed(String, chip: String)
+        /// A page the reader named, and the ways to install it names, to choose from.
+        case page(host: String, leads: [PageLead])
     }
 
     @State private var text: String
     @State private var phase: Phase
     @State private var chosen: String?
+    /// The page and line a search followed, said above its result.
+    @State private var via: String?
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
@@ -47,7 +55,7 @@ struct LinkSourceSheet: View {
                 .font(TypeRole.sans(20, .medium))
                 .tracking(-0.4)
                 .padding(.top, 14)
-            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. If it comes with an npx command and your own key, paste that: Skillori keeps only the installer's name. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
+            Text("Paste the GitHub repository or the address of the skill's folder in it. If the author shares the skill as an install script on their own site, paste the script's address or the whole curl command. If it comes with an npx command and your own key, paste that: Skillori keeps only the installer's name. Or paste the address of the page you installed it from, and Skillori reads the page for how it says to install. Skillori compares the source with the files on this Mac. It reads a script without running it, and nothing is changed.")
                 .font(TypeRole.sans(12))
                 .lineSpacing(2)
                 .foregroundStyle(Palette.ink2)
@@ -55,7 +63,7 @@ struct LinkSourceSheet: View {
                 .padding(.top, 6)
 
             HStack(spacing: 6) {
-                TextField("owner/repository, https://github.com/…, a script address or an npx command", text: $text)
+                TextField("owner/repository, a GitHub or page address, a curl or npx command", text: $text)
                     .textFieldStyle(.plain)
                     .font(TypeRole.mono(11.5))
                     .focused($fieldFocused)
@@ -129,12 +137,32 @@ struct LinkSourceSheet: View {
         case .searching:
             Text("Asking \(askedHost)…").font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
         case .failed(let sentence, let chip):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusChip(chip, kind: .attention, mark: "✕")
-                Text(sentence).font(TypeRole.sans(12)).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                viaLine
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    StatusChip(chip, kind: .attention, mark: "✕")
+                    Text(sentence).font(TypeRole.sans(12)).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        case .page(let host, let leads):
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(host) names \(leads.count == 1 ? "one way" : "\(leads.count) ways") to install skills. Choose the one you used, and Skillori compares it with this skill.")
+                    .font(TypeRole.sans(13, .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(leads) { lead in
+                            leadRow(lead, host: host, isLast: lead.id == leads.last?.id)
+                        }
+                    }
+                }
+                .frame(maxHeight: 216)
+                .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.block, style: .circular))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
             }
         case .package(let info):
             VStack(alignment: .leading, spacing: 6) {
+                viaLine
                 Text(info.site.map { "\(info.package) installs skills from \($0.host.map(Self.bare) ?? $0.absoluteString) with your own key." }
                      ?? "\(info.package) installs skills with your own key.")
                     .font(TypeRole.sans(13, .medium))
@@ -153,6 +181,7 @@ struct LinkSourceSheet: View {
             }
         case .found(let search):
             VStack(alignment: .leading, spacing: 8) {
+                viaLine
                 Text(summary(of: search))
                     .font(TypeRole.sans(13, .medium))
                     .fixedSize(horizontal: false, vertical: true)
@@ -168,6 +197,42 @@ struct LinkSourceSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.block, style: .circular))
             }
         }
+    }
+
+    /// Where the result came from, when it was followed from a page.
+    @ViewBuilder private var viaLine: some View {
+        if let via {
+            Text("From \(via)")
+                .font(TypeRole.mono(10.5))
+                .foregroundStyle(Palette.ink2)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    /// One way to install that a page names. Choosing it follows it.
+    private func leadRow(_ lead: PageLead, host: String, isLast: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text("→").font(TypeRole.mono(11.5)).foregroundStyle(Palette.ink2)
+            Text(lead.line)
+                .font(TypeRole.mono(11.5))
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            switch lead.source {
+            case .github: StatusChip("Repository", kind: .outline)
+            case .installer: StatusChip("Script", kind: .outline)
+            case .package: StatusChip("Installer", kind: .outline)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) { if !isLast { Palette.line.frame(height: 1) } }
+        .contentShape(Rectangle())
+        .onTapGesture { follow(lead, from: host) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
     private func row(_ candidate: SourceCandidate, isLast: Bool) -> some View {
@@ -215,6 +280,38 @@ struct LinkSourceSheet: View {
     private static func bare(_ host: String) -> String { host.hasPrefix("www.") ? String(host.dropFirst(4)) : host }
 
     private func find() {
+        via = nil
+        search(followingPage: false)
+    }
+
+    /// Puts what the page names in the field and looks there, saying where it came from.
+    private func follow(_ lead: PageLead, from host: String) {
+        text = lead.text
+        via = host + ": " + lead.line
+        search(followingPage: true)
+    }
+
+    /// The page behind an address that turned out not to be a script, read for what it names.
+    /// One way to install is followed at once; several are offered.
+    private func readPage(_ url: URL) async {
+        let host = url.host.map(Self.bare) ?? url.absoluteString
+        switch await store.readPage(url) {
+        case .success(let leads) where leads.count == 1:
+            follow(leads[0], from: host)
+        case .success(let leads) where !leads.isEmpty:
+            phase = .page(host: host, leads: leads)
+        case .success:
+            phase = .failed("\(host) shows no install command or GitHub repository that anyone can see. If you have to sign in to see it, copy the install command from the page and paste it here.", chip: "Nothing found")
+        case .failure(.notFound):
+            phase = .failed("\(host) has no page at that address.", chip: "Not found")
+        case .failure(.offline):
+            phase = .failed("No contact with \(host). Check the connection and try again.", chip: "No contact")
+        case .failure:
+            phase = .failed("\(host) gave an answer Skillori couldn’t read. Try again in a while.", chip: "No answer")
+        }
+    }
+
+    private func search(followingPage: Bool) {
         guard !isSearching else { return }
         phase = .searching
         chosen = nil
@@ -243,6 +340,13 @@ struct LinkSourceSheet: View {
                                 + (at.map { "Try again after \(InventoryStore.stamp($0))." } ?? "Try again in a while."), chip: "Wait")
             case .failure(.source(.offline, _)):
                 phase = .failed("No contact with the source. Check the connection and try again.", chip: "No contact")
+            case .failure(.source(.failed, installer: true)) where !followingPage:
+                // Not a script: most likely the page the skill was installed from.
+                if case .installer(let address)? = SkillSource.parse(text)?.source {
+                    await readPage(address.url)
+                } else {
+                    phase = .failed(InventoryStore.LinkProblem.source(.failed, installer: true).sentence, chip: "Not found")
+                }
             case .failure(let problem):
                 phase = .failed(problem.sentence, chip: "Not found")
             case .success(let search):
