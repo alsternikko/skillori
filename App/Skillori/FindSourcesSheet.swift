@@ -269,7 +269,9 @@ struct FindSourcesSheet: View {
                     let past = group.installations.lazy.compactMap { store.pastSource(of: $0) }.first
                     Text(group.local == nil ? "The files on this Mac could not be read."
                          : past.map { "Nothing found. It was linked to \($0.name) until \(Assist.day($0.until)). "
-                             + SkillPage.pastSentence($0) + " Link it by hand from its page once you know where it went." }
+                             + SkillPage.pastSentence($0)
+                             + ($0.byYou == true ? " Link it by hand from its page to have it checked again."
+                                : " Link it by hand from its page once you know where it went.") }
                          ?? "Nothing found. Link it by hand from its page if you know where it came from.")
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2)
                         .fixedSize(horizontal: false, vertical: true)

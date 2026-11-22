@@ -138,8 +138,9 @@ struct SkillPage: View {
             return "Same as its source."
         case .managed: return "\(app) keeps it current. Nothing for you to do."
         case .noSource:
-            if store.pastSource(of: installation) != nil {
-                return "Nothing to do. Its old source stopped answering, so Skillori doesn’t know where it lives now."
+            if let past = store.pastSource(of: installation) {
+                return past.byYou == true ? "Nothing to do. You unlinked its source, so Skillori doesn’t check it."
+                    : "Nothing to do. Its old source stopped answering, so Skillori doesn’t know where it lives now."
             }
             return "Nothing to do. Skillori doesn’t know where it came from, which is fine."
         case .keptLocal: return "Nothing to do. You keep it as a local copy, so Skillori doesn’t check it against a source."
@@ -165,6 +166,7 @@ struct SkillPage: View {
 
     /// What became of a source the reader unlinked after it stopped answering, in a sentence or two.
     static func pastSentence(_ past: InventoryStore.PastSource) -> String {
+        if past.byYou == true { return "You unlinked it." }
         let said = past.notice.map(\.message).flatMap { $0.isEmpty ? nil : $0 }
         return "It stopped answering and you unlinked it." + (said.map { " It said: “\($0)”" } ?? "")
     }
@@ -497,6 +499,7 @@ struct SkillPage: View {
                         .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 }
                 Text(past == nil ? "Find or link where it came from, and Skillori tells you when it changes. Optional."
+                     : past?.byYou == true ? "Find sources can offer it again, or link another. Optional."
                      : "Find or link where it lives now, and Skillori tells you when it changes. Optional.")
                     .font(TypeRole.sans(12)).foregroundStyle(Palette.ink2).padding(.top, 8)
                 HStack(spacing: 6) {

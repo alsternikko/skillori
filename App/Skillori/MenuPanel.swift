@@ -362,6 +362,12 @@ extension PanelModel {
         if store.heldCount > 0 {
             tail.append(.line(text: "\(store.heldCount) held back", data: "BY YOU", muted: false))
         }
+        // Linked to an installer run with the reader's key: never asked, so neither up to date nor a problem.
+        let byInstaller = store.byInstallerCount
+        if byInstaller > 0 {
+            tail.append(.line(text: byInstaller == 1 ? "1 updates by its installer" : "\(byInstaller) update by their installers",
+                              data: "YOUR KEY", muted: true))
+        }
         // A recorded source that is gone has a way on, from the skill's page: link a new one,
         // look for it, or keep the copy as local.
         let lost = store.lostSources

@@ -39,8 +39,9 @@ final class InventoryStore {
         let to: String
         let at: Date
     }
-    /// Sources the reader unlinked after they stopped answering, by folder. Kept, so the trail to
-    /// where the skill went isn't lost with the link: its page and Find sources can still say it.
+    /// Sources the reader unlinked, by folder: after they stopped answering, or while they still
+    /// answered. Kept, so the trail isn't lost with the link: its page and Find sources can still
+    /// say it, and Find sources can offer it again.
     private(set) var pastSources: [String: PastSource] = [:]
 
     struct PastSource: Codable, Equatable {
@@ -50,6 +51,12 @@ final class InventoryStore {
         let until: Date
         /// What the source said when it stopped answering, if anything.
         let notice: SourceNotice?
+        /// The reader unlinked it while it still answered. Nil in records from before this was kept.
+        var byYou: Bool? = nil
+        /// The installer package it was linked to, so Find sources can offer it again.
+        var package: String? = nil
+        /// The GitHub repository it was linked to (`owner/repo`), so Find sources can look there again.
+        var repository: String? = nil
     }
     /// What each Claude Code plugin's marketplace last said, by plugin id (`name@marketplace`).
     private(set) var pluginReadings: [String: UpstreamReading] = [:]
@@ -412,6 +419,8 @@ final class InventoryStore {
     }
     var updateCount: Int { updates.count }
     var upToDateCount: Int { own.filter { status(for: $0) == .upToDate }.count }
+    /// Skills linked to an installer run with the reader's own key, which Skillori never asks.
+    var byInstallerCount: Int { own.filter { if case .byInstaller = status(for: $0) { true } else { false } }.count }
     var heldCount: Int { own.filter { if case .heldBack = status(for: $0) { true } else { false } }.count }
     var cantCheckCount: Int { own.filter { if case .cantCheck = status(for: $0) { true } else { false } }.count }
     var unverifiedCount: Int { own.filter { status(for: $0).isUnverified }.count }
@@ -1113,6 +1122,14 @@ final class InventoryStore {
     /// Pass the same finder for every group of one search: it asks each repository once.
     func proposals(for group: UnlinkedGroup, using finder: SourceFinder, pages: [PageLead] = []) async -> SourceFinder.Search {
         guard let local = group.local else { return SourceFinder.Search(proposals: [], problem: nil) }
+        // A repository the reader unlinked it from is looked in again, with their other sources.
+        var yours = yourSources
+        for installation in group.installations {
+            if let name = pastSource(of: installation)?.repository, let source = UpstreamSource(source: name, sourceURL: nil),
+               !yours.contains(where: { $0.name == source.name }) {
+                yours.insert(source, at: 0)
+            }
+        }
         var repositories: [UpstreamSource] = []
         for lead in pages {
             if case .github(let source) = lead.source, !repositories.contains(where: { $0.name == source.name }) {
@@ -1120,7 +1137,7 @@ final class InventoryStore {
             }
         }
         let via = knownSites(of: group).first.map { "\($0)’s page" } ?? "its site"
-        return await finder.search(for: local, yourSources: yourSources, pageSources: repositories, pageVia: via)
+        return await finder.search(for: local, yourSources: yours, pageSources: repositories, pageVia: via)
     }
 
     /// What the pages of the sites a group came from name for installing: the page the old
@@ -1144,8 +1161,8 @@ final class InventoryStore {
         return leads
     }
 
-    /// The sites a group's skills are known to have come from: a source Skillori had for them
-    /// before it stopped answering, and the page that source pointed to.
+    /// The sites a group's skills are known to have come from: a source they were linked to
+    /// before, and the page that source pointed to.
     func knownSites(of group: UnlinkedGroup) -> [String] {
         var sites: [String] = []
         for installation in group.installations {
@@ -1163,8 +1180,10 @@ final class InventoryStore {
     /// Sends only the sites' and packages' names.
     func installers(for group: UnlinkedGroup, pages: [PageLead] = []) async -> Result<[PackageInfo], UpstreamState.Reason> {
         var found: [PackageInfo] = []
-        for lead in pages {
-            guard case .package(let installer) = lead.source, !found.contains(where: { $0.package == installer.package }) else { continue }
+        // The installer it was linked to before, then those the site's pages name.
+        let unlinked = group.installations.compactMap { pastSource(of: $0)?.package }.map { PackageInstaller(package: $0) }
+        let named = pages.compactMap { lead -> PackageInstaller? in if case .package(let installer) = lead.source { installer } else { nil } }
+        for installer in unlinked + named where !found.contains(where: { $0.package == installer.package }) {
             if case .success(let info) = await NpmRegistry().info(for: installer.package) { found.append(info) }
         }
         for site in knownSites(of: group) {
@@ -1206,9 +1225,12 @@ final class InventoryStore {
     func unlink(_ installation: Installation) {
         let key = Self.linkKey(for: installation)
         if linkReceipt?.keys.contains(key) == true { linkReceipt = nil }
-        // A link whose source stopped answering: remember it, and what it said, so the trail stays.
-        if let link = links[key], case .cannotCheck(let reason)? = readings[key]?.state, Self.lostReasons.contains(reason) {
-            pastSources[key] = PastSource(name: link.source.name, until: Date(), notice: readings[key]?.notice)
+        // Remember the source, and what it said if it stopped answering, so the trail stays.
+        if let link = links[key] {
+            let lost = if case .cannotCheck(let reason)? = readings[key]?.state { Self.lostReasons.contains(reason) } else { false }
+            let repository: String? = if case .github(let source) = link.source { source.name } else { nil }
+            pastSources[key] = PastSource(name: link.source.name, until: Date(), notice: lost ? readings[key]?.notice : nil,
+                                          byYou: lost ? nil : true, package: link.package, repository: repository)
         }
         links[key] = nil
         readings[key] = nil

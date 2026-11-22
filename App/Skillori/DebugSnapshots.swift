@@ -233,7 +233,16 @@ enum DebugSnapshots {
                 render(page(), size: lib, to: out.appendingPathComponent("library-source-package.png"))
                 render(page().environment(\.colorScheme, .dark), size: lib, to: out.appendingPathComponent("library-source-package-dark.png"))
                 render(LibraryView(path: [.mine]).environment(store), size: lib, to: out.appendingPathComponent("library-mine-package.png"))
+                picture(PanelBackdrop { MenuPanel().frame(width: StatusPanelController.panelWidth) }.environment(store),
+                        size: CGSize(width: 420, height: 640), to: out.appendingPathComponent("panel-package.png"))
+                let lines = PanelModel.skills(from: store).rows.compactMap { row -> String? in
+                    if case let .line(text, data, _) = row { "\(text) · \(data)" } else { nil }
+                }
                 store.unlink(unknown)
+                try? (lines.joined(separator: "\n") + "\nafter unlink: \(String(describing: store.pastSource(of: unknown)))\n")
+                    .write(to: out.appendingPathComponent("package-unlinked.txt"), atomically: true, encoding: .utf8)
+                render(LibraryView(path: [.skill(unknown.id)]).environment(store), size: lib,
+                       to: out.appendingPathComponent("library-unlinked-by-you.png"))
                 store.forgetSamplePastSource(unknown)
                 // With that skill unlinked, where the panel's links lead.
                 let unlinked = PanelModel.skills(from: store).rows.compactMap { row -> String? in
