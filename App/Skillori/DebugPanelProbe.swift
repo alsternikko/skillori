@@ -36,9 +36,16 @@ enum DebugPanelProbe {
             }
             RunLoop.main.add(recorder, forMode: .common)
 
+            /// The panel as it looks, next to the log; works off screen too.
+            @MainActor func picture(_ name: String) {
+                guard let rep = container.bitmapImageRepForCachingDisplay(in: container.bounds) else { return }
+                container.cacheDisplay(in: container.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path + ".\(name).png"))
+            }
             @MainActor func click(_ y: CGFloat) {
                 let local = NSPoint(x: 120, y: host.isFlipped ? y : host.bounds.height - y)
                 let point = host.convert(local, to: nil)
+                book.log("   hit \(container.hitTest(container.convert(point, from: nil)).map { String(describing: type(of: $0)).prefix(40) } ?? "nothing"), panel key \(window.isKeyWindow)")
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                     if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
                                                       timestamp: ProcessInfo.processInfo.systemUptime,
@@ -62,11 +69,14 @@ enum DebugPanelProbe {
             book.top = top
             let closedHeight = window.frame.height
             settled("opened")
+            picture("1-opened")
 
             book.log("-- click source row (open list) at y \(Int(rowY))")
             book.mark()
             click(rowY)
             await pause(900)
+            picture("2-after-click")
+            book.log("   panel at x \(Int(window.frame.minX)), open: \(panel.isOpen), other windows: \(NSApp.windows.filter { $0.isVisible && $0 !== window && !$0.title.isEmpty }.map { "\($0.title) at x \(Int($0.frame.minX))" })")
             let openedHeight = window.frame.height
             book.check("list opens: the panel grows", openedHeight > closedHeight, "\(closedHeight) → \(openedHeight)")
             book.check("list opens: the growth is eased", book.distinctHeightsSinceMark() >= 4, "\(book.distinctHeightsSinceMark()) heights")

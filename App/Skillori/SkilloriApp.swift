@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.firstStart?.show() }
         }
         let env = ProcessInfo.processInfo.environment
-        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_LIBRARY_PROBE"] == nil, env["SKILLORI_ADOPT_PROBE"] == nil, env["SKILLORI_PANEL_PROBE"] == nil, env["SKILLORI_LIBRARY_RUN_PROBE"] == nil, env["SKILLORI_LOST_PROBE"] == nil { firstStart.showIfNeeded() }
+        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_LIBRARY_PROBE"] == nil, env["SKILLORI_ADOPT_PROBE"] == nil, env["SKILLORI_PANEL_PROBE"] == nil, env["SKILLORI_LIBRARY_RUN_PROBE"] == nil, env["SKILLORI_LOST_PROBE"] == nil, env["SKILLORI_PAGE_PICTURE"] == nil { firstStart.showIfNeeded() }
         #if DEBUG
         DebugSnapshots.runIfRequested(store: store, statusPanel: statusPanel)
         DebugLibraryProbe.runIfRequested(store: store, windows: windows)
@@ -72,6 +72,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let statusPanel { DebugSelfTest.runIfRequested(store: store, panel: statusPanel, windows: windows) }
         if let statusPanel { DebugPanelProbe.runIfRequested(store: store, panel: statusPanel) }
         #endif
+    }
+}
+
+/// The library and settings windows. In a quiet test run (debug builds) they stay where they
+/// are put, off screen; otherwise AppKit pulls a titled window back onto the nearest screen.
+final class AppWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        #if DEBUG
+        if DebugQuiet.isOn { return frameRect }
+        #endif
+        return super.constrainFrameRect(frameRect, to: screen)
     }
 }
 
@@ -125,6 +136,17 @@ final class WindowRouter {
     }
 
     private func present(_ window: NSWindow?) {
+        #if DEBUG
+        // A test run: off screen, and without taking the keyboard from the app in front.
+        if DebugQuiet.isOn, let window {
+            if window.frame.minX > DebugQuiet.shift / 2 {
+                window.setFrameOrigin(NSPoint(x: DebugQuiet.shift, y: 0))
+            }
+            window.orderFrontRegardless()
+            window.makeKey()
+            return
+        }
+        #endif
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }
@@ -134,7 +156,7 @@ final class WindowRouter {
         var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
         if resizable { style.insert(.resizable) }
         if ownChrome { style.insert(.fullSizeContentView) }
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: style,
+        let window = AppWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: style,
                               backing: .buffered, defer: false)
         if ownChrome {
             // The view draws its own top bar. An empty unified toolbar gives the taller title

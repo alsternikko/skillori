@@ -26,7 +26,7 @@ enum DebugLibraryProbe {
             windows.showLibrary()
             await pause(700)
             guard let window = windows.library, let content = window.contentView else { log("no library window"); NSApp.terminate(nil); return }
-            log("window key: \(window.isKeyWindow), app active: \(NSApp.isActive), content \(Int(content.bounds.width))×\(Int(content.bounds.height))")
+            log("window at x \(Int(window.frame.minX)), key: \(window.isKeyWindow), app active: \(NSApp.isActive), content \(Int(content.bounds.width))×\(Int(content.bounds.height))")
 
             var step = 0
             @MainActor func picture(_ name: String) {

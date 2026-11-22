@@ -33,7 +33,8 @@ enum DebugSelfTest {
 
             panel.open()
             await pause(400)
-            let frame = panel.panelWindow.frame
+            // Measured where the panel would be: a quiet run moves it off screen.
+            let frame = panel.panelWindow.frame.offsetBy(dx: DebugQuiet.isOn ? -DebugQuiet.shift : 0, dy: 0)
             check("panel opens", panel.isOpen)
             check("panel takes keyboard focus", panel.panelWindow.isKeyWindow)
             check("panel is fully opaque after opening", panel.panelWindow.alphaValue == 1, "alpha \(panel.panelWindow.alphaValue)")

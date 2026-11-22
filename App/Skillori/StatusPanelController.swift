@@ -247,7 +247,10 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             height = min(height, max(anchor.minY - 6 - screen.visibleFrame.minY - 8, 200).rounded(.down))
         }
         let top = (anchor.minY - 6).rounded(.down)
-        let frame = NSRect(x: x.rounded(), y: top - height, width: width, height: height)
+        var frame = NSRect(x: x.rounded(), y: top - height, width: width, height: height)
+        #if DEBUG
+        if DebugQuiet.isOn { frame.origin.x += DebugQuiet.shift }
+        #endif
         if animated, isOpen, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             guard frame != (resize?.to ?? panel.frame) else { return }
             startResizing(to: frame)
@@ -373,7 +376,11 @@ final class PanelWindow: NSPanel {
         container.addSubview(view)
     }
 
+    #if DEBUG
+    override var canBecomeKey: Bool { DebugQuiet.panelTakesKeys }
+    #else
     override var canBecomeKey: Bool { true }
+    #endif
 
     var onCancel: (() -> Void)?
 
