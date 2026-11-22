@@ -7,7 +7,7 @@ import SwiftUI
 struct PanelActions {
     var openLibrary: () -> Void = {}
     /// Opens the library at one skill's page, by installation id.
-    var openSkill: (String) -> Void = { _ in }
+    var openPage: (LibraryPage) -> Void = { _ in }
     var openSettings: () -> Void = {}
     var addFolder: () -> Void = {}
     var rescan: () -> Void = {}
@@ -36,7 +36,7 @@ struct PanelModel {
         }
     }
 
-    enum Command { case library, skill(String), settings, addFolder, rescan, privacySettings, enableChecks, installAppUpdate }
+    enum Command { case library, page(LibraryPage), settings, addFolder, rescan, privacySettings, enableChecks, installAppUpdate }
 
     /// The skills of one source that differ from it: one row with the command that updates them
     /// all under it. Open, it also lists the skills, each with its own run button.
@@ -260,7 +260,7 @@ struct MenuPanel: View {
     private func run(_ command: PanelModel.Command) {
         switch command {
         case .library: actions.openLibrary()
-        case .skill(let id): actions.openSkill(id)
+        case .page(let page): actions.openPage(page)
         case .settings: actions.openSettings()
         case .addFolder: actions.addFolder()
         case .rescan: actions.rescan()
@@ -373,7 +373,7 @@ extension PanelModel {
             default: "\(first.displayName)’s source is gone"
             }
             let text = lost.count > 1 ? "\(lost.count) skills’ sources are gone" : one
-            tail.append(.link(text: text, label: "Show", command: lost.count == 1 ? .skill(first.id) : .library))
+            tail.append(.link(text: text, label: "Show", command: .page(lost.count == 1 ? .skill(first.id) : .mine)))
         }
         let (unchecked, reasons) = store.unansweredCantCheck
         if unchecked > 0 {
@@ -389,8 +389,12 @@ extension PanelModel {
             tail.append(.link(text: text, label: "Show", command: .library))
         }
         if unknown > 0 {
+            // The library's home has nothing to do about these, so Show goes where something can
+            // be done: the skill's own page with Find sources, or your skills under that card.
+            let unsourced = store.unsourced
+            let page: LibraryPage = unsourced.count == 1 ? .skill(unsourced[0].id) : .mine
             tail.append(.link(text: "\(unknown) \(unknown == 1 ? "has" : "have") no known source",
-                              label: "Show", command: .library))
+                              label: "Show", command: .page(page)))
         }
 
         // Something new at a source is the first thing the panel says.

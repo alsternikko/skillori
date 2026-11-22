@@ -56,6 +56,12 @@ enum DebugSnapshots {
                     .environment(store).environment(\.colorScheme, scheme),
                         size: CGSize(width: 420, height: 560), to: out.appendingPathComponent("\(name).png"))
             }
+            // Where each of the live panel's links leads, one per line.
+            let links = PanelModel.skills(from: store).rows.compactMap { row -> String? in
+                guard case let .link(text, label, command) = row else { return nil }
+                return "\(text) · \(label) → \(command)"
+            }
+            try? (links.joined(separator: "\n") + "\nunsourced: \(store.unsourced.map(\.displayName))\n").write(to: out.appendingPathComponent("panel-links.txt"), atomically: true, encoding: .utf8)
             for (step, scheme, name) in [(1, ColorScheme.light, "first-start-1"), (2, .light, "first-start-2"),
                                          (3, .light, "first-start-3"), (2, .dark, "first-start-2-dark")] {
                 let view = PanelBackdrop { FirstStartView(step: step) }
@@ -205,6 +211,13 @@ enum DebugSnapshots {
                 render(LibraryView(path: [.mine]).environment(store), size: lib, to: out.appendingPathComponent("library-mine-package.png"))
                 store.unlink(unknown)
                 store.forgetSamplePastSource(unknown)
+                // With that skill unlinked, where the panel's links lead.
+                let unlinked = PanelModel.skills(from: store).rows.compactMap { row -> String? in
+                    guard case let .link(text, label, command) = row else { return nil }
+                    return "\(text) · \(label) → \(command)"
+                }
+                try? (unlinked.joined(separator: "\n") + "\nunsourced: \(store.unsourced.map(\.displayName))\n")
+                    .write(to: out.appendingPathComponent("panel-links-unlinked.txt"), atomically: true, encoding: .utf8)
             }
             let icon = ImageRenderer(content: AppIconArt())
             icon.scale = AppIconArt.scale

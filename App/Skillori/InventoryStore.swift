@@ -1264,10 +1264,12 @@ final class InventoryStore {
     var trackedCount: Int { own.filter { sourceKey(for: $0) != nil }.count }
     /// Skills with no source, counting identical-name copies once.
     var unknownNameCount: Int {
-        Set(own.filter { $0.provenance == .unknown && link(for: $0) == nil }.map { $0.directoryName.lowercased() }).count
+        Set(unsourced.map { $0.directoryName.lowercased() }).count
     }
 
-    var unknownCount: Int { own.filter { $0.provenance == .unknown && link(for: $0) == nil }.count }
+    /// Your skills with no source: not recorded by an installer and not linked by you.
+    var unsourced: [Installation] { own.filter { $0.provenance == .unknown && link(for: $0) == nil } }
+    var unknownCount: Int { unsourced.count }
     var managedCount: Int { count { if case .managed = $0 { true } else { false } } }
     var localChangeCount: Int {
         count { if case .skillsLock(_, _, _, _, .modified) = $0 { true } else { false } }
