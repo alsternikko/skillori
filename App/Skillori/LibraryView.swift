@@ -48,6 +48,9 @@ struct LibraryView: View {
         .font(TypeRole.sans(13))
         .ignoresSafeArea(edges: .top)
         .animation(reduceMotion ? nil : Motion.swap, value: path)
+        // A link's receipt is said on the page where it was made, until the reader leaves it.
+        .onChange(of: path) { store.clearLinkReceipt() }
+        .onDisappear { store.clearLinkReceipt() }
         .onReceive(NotificationCenter.default.publisher(for: Self.openPage)) { note in
             if let page = note.object as? LibraryPage { search = ""; open(page) }
         }
@@ -85,6 +88,7 @@ struct LibraryView: View {
         case .mine:
             VStack(spacing: 6) {
                 Crumb(title: backTitle, action: back)
+                if let linked = store.linkReceipt { linkedCard(linked).transition(.opacity) }
                 if store.unknownCount > 0 { findSourcesCard }
                 ListCard { MySkillsList(open: open) }
             }
@@ -97,6 +101,23 @@ struct LibraryView: View {
             LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 },
                             onFindSources: { findingFor = $0 })
         }
+    }
+
+    /// What Find sources just linked, above the list it changed, until the reader leaves the page.
+    private func linkedCard(_ linked: InventoryStore.LinkReceipt) -> some View {
+        let one = linked.names.count == 1
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(one ? "Linked \(linked.names[0])" : "Linked \(Assist.spelled(linked.names.count).lowercased()) skills")
+                .font(TypeRole.sans(16, .medium))
+            Text((one ? "" : Assist.names(linked.names) + ". ") + "To \(Assist.names(linked.sources)). Open a skill to see what its source means for it.")
+                .font(TypeRole.sans(12.5))
+                .foregroundStyle(Tone.new.blockSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 18))
+        .foregroundStyle(Tone.new.blockForeground)
+        .background { Tone.new.blockBackground(phase: 41) }
     }
 
     /// Above your skills while some have no known source: one line and the way to find them.

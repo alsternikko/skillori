@@ -21,6 +21,24 @@ enum LibraryPage: Hashable {
     case folders
 }
 
+// MARK: Changes the reader made
+
+/// A change the reader made in a sheet, made once the sheet has gone, so the page it changes is
+/// in view and moves as it changes, instead of being changed behind the sheet.
+@MainActor
+enum AfterSheet {
+    /// About as long as a sheet takes to leave.
+    static let delay = Duration.milliseconds(300)
+
+    static func run(_ change: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(for: delay)
+            let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            withAnimation(still ? .easeOut(duration: 0.15) : Motion.fold) { change() }
+        }
+    }
+}
+
 // MARK: What needs the reader
 
 /// One thing that needs the reader, said as a sentence, with the one thing to do about it.

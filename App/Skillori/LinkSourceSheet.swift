@@ -81,12 +81,13 @@ struct LinkSourceSheet: View {
 
             HStack(spacing: 6) {
                 Button("Link") {
+                    let installation = installation, store = store
                     if case .found(let search) = phase, let candidate = search.candidates.first(where: { $0.subpath == chosen }) {
-                        store.link(installation, to: candidate, in: search)
                         dismiss()
+                        AfterSheet.run { store.link(installation, to: candidate, in: search) }
                     } else if case .package(let info) = phase {
-                        store.link(installation, toPackage: info)
                         dismiss()
+                        AfterSheet.run { store.link(installation, toPackage: info) }
                     }
                 }
                 .buttonStyle(PillButtonStyle(prominent: hasResult))

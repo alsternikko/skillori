@@ -117,7 +117,7 @@ struct FindSourcesSheet: View {
                         .padding(.leading, 6)
                 } else {
                     if updatable.isEmpty {
-                        Button(linkTitle) { linkChosen(); dismiss() }
+                        Button(linkTitle) { linkChosenAndClose() }
                             .buttonStyle(PillButtonStyle(prominent: !chosen.isEmpty))
                             .disabled(chosen.isEmpty)
                             .keyboardShortcut(.defaultAction)
@@ -126,7 +126,7 @@ struct FindSourcesSheet: View {
                             .buttonStyle(PillButtonStyle(prominent: true))
                             .disabled(store.updater.isRunning)
                             .keyboardShortcut(.defaultAction)
-                        Button("Link only") { linkChosen(); dismiss() }
+                        Button("Link only") { linkChosenAndClose() }
                             .buttonStyle(PillButtonStyle())
                     }
                     Button("Cancel") { dismiss() }
@@ -166,6 +166,22 @@ struct FindSourcesSheet: View {
                 store.link(group, to: proposal)
             } else if let info = chosenInstaller(for: group) {
                 store.link(group, toPackage: info)
+            }
+        }
+    }
+
+    /// Links what is ticked once the sheet has gone, so the page behind it changes in view.
+    private func linkChosenAndClose() {
+        let links: [(InventoryStore.UnlinkedGroup, SourceProposal?, PackageInfo?)] = groups.compactMap { group in
+            if let proposal = chosenProposal(for: group) { return (group, proposal, nil) }
+            if let info = chosenInstaller(for: group) { return (group, nil, info) }
+            return nil
+        }
+        let store = store
+        dismiss()
+        AfterSheet.run {
+            for (group, proposal, info) in links {
+                if let proposal { store.link(group, to: proposal) } else if let info { store.link(group, toPackage: info) }
             }
         }
     }

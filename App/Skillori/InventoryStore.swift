@@ -79,6 +79,38 @@ final class InventoryStore {
     @ObservationIgnored private var askAgain: Task<Void, Never>?
     /// An update that just went well, shown for a moment as a receipt before its line folds away.
     private(set) var receipt: Receipt?
+    /// What the reader just linked, said on the page they are on until they leave it.
+    private(set) var linkReceipt: LinkReceipt?
+
+    struct LinkReceipt: Equatable {
+        /// The copies linked, by link key.
+        var keys: Set<String>
+        /// The skills' names, once each, in the order they were linked.
+        var names: [String]
+        /// The sources' names, once each.
+        var sources: [String]
+        let at: Date
+
+        func contains(_ installation: Installation) -> Bool { keys.contains(InventoryStore.linkKey(for: installation)) }
+    }
+
+    /// Notes a link for the receipt. Links made together, as Find sources makes them, are one receipt.
+    private func noteLinked(_ installations: [Installation], to source: String) {
+        let now = Date()
+        var receipt = linkReceipt.flatMap { now.timeIntervalSince($0.at) < 2 ? $0 : nil }
+            ?? LinkReceipt(keys: [], names: [], sources: [], at: now)
+        for installation in installations {
+            receipt.keys.insert(Self.linkKey(for: installation))
+            if !receipt.names.contains(installation.displayName) { receipt.names.append(installation.displayName) }
+        }
+        if !receipt.sources.contains(source) { receipt.sources.append(source) }
+        linkReceipt = receipt
+    }
+
+    /// The reader left the page that said it.
+    func clearLinkReceipt() {
+        if linkReceipt != nil { linkReceipt = nil }
+    }
 
     struct Receipt {
         /// The skills as they were when the update ran.
@@ -201,7 +233,7 @@ final class InventoryStore {
         }
     }
 
-    private static func linkKey(for installation: Installation) -> String { "link:" + installation.canonicalPath }
+    nonisolated fileprivate static func linkKey(for installation: Installation) -> String { "link:" + installation.canonicalPath }
 
     /// The source the reader linked this skill to, if they did.
     func link(for installation: Installation) -> SourceLink? {
@@ -987,6 +1019,7 @@ final class InventoryStore {
         readings[key] = UpstreamReading(state: state, checkedAt: now)
         pastSources[key] = nil
         save()
+        noteLinked([installation], to: search.source.name)
     }
 
     /// Reads a page the reader named for the ways it gives to install skills. Only the request
@@ -1013,6 +1046,7 @@ final class InventoryStore {
         held[key] = nil
         pastSources[key] = nil
         save()
+        noteLinked([installation], to: info.package)
         // The files' hash, for the type plate: read off the main thread, kept once it is there.
         Task { [weak self] in
             let hash = await Task.detached(priority: .utility) {
@@ -1166,10 +1200,12 @@ final class InventoryStore {
             pastSources[key] = nil
         }
         save()
+        noteLinked(group.installations.filter { links[Self.linkKey(for: $0)] != nil }, to: proposal.source.name)
     }
 
     func unlink(_ installation: Installation) {
         let key = Self.linkKey(for: installation)
+        if linkReceipt?.keys.contains(key) == true { linkReceipt = nil }
         // A link whose source stopped answering: remember it, and what it said, so the trail stays.
         if let link = links[key], case .cannotCheck(let reason)? = readings[key]?.state, Self.lostReasons.contains(reason) {
             pastSources[key] = PastSource(name: link.source.name, until: Date(), notice: readings[key]?.notice)

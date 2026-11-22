@@ -44,6 +44,8 @@ struct SkillPage: View {
                         whereCard
                         readByCard
                         sourceCard
+                            // After the receipt above it, so the eye goes there first.
+                            .animation(Motion.swap.delay(0.12), value: store.upstreamSource(for: installation)?.name)
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     HStack {
@@ -172,6 +174,28 @@ struct SkillPage: View {
         return "Open " + (host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
     }
 
+    /// The receipt for a link the reader just made. A newer version at the source is left to
+    /// its own advice, which has the button to get it.
+    private var linkedAdvice: Advice? {
+        guard isMine, store.linkReceipt?.contains(installation) == true, store.link(for: installation) != nil,
+              let source = store.upstreamSource(for: installation) else { return nil }
+        switch status {
+        case .updateAvailable, .differs, .checkFailed, .changedHere: return nil
+        default: break
+        }
+        let text: String = switch source {
+        case .package(let installer):
+            "From \(installer.name). Skillori won’t check it for new versions. Run your install command again to update."
+        case .installer:
+            status == .upToDate ? "The script writes the same files as this copy. Skillori reads it for changes and never runs it."
+                : status.sentence
+        case .github:
+            status == .upToDate ? "Same as its source. Skillori tells you when it changes." : status.sentence
+        }
+        let name = if case .package(let installer) = source { installer.package } else { source.name }
+        return Advice(tone: .new, title: "Linked to \(name)", text: text)
+    }
+
     private var advice: Advice? {
         if isMine, differing, copies.count > 1 {
             let new = newest
@@ -205,6 +229,8 @@ struct SkillPage: View {
                           text: "At \(at). Start a new agent session to load it.",
                           command: receipt.showsOutput ? receipt.installations : nil)
         }
+        // Just linked: say to what and what it means now, until the reader leaves the page.
+        if let linked = linkedAdvice { return linked }
         // The source the installer recorded is gone: say what probably happened, and the ways on.
         if isMine, let reason = store.lostSource(of: installation) {
             let recorded = store.recordedSource(of: installation) ?? "Its source"
