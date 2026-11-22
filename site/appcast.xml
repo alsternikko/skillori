@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.18</title>
-      <pubDate>Sun, 22 Nov 2026 16:17:17 +0000</pubDate>
-      <sparkle:version>23</sparkle:version>
-      <sparkle:shortVersionString>0.2.18</sparkle:shortVersionString>
+      <title>Skillori 0.2.19</title>
+      <pubDate>Sun, 22 Nov 2026 18:16:28 +0000</pubDate>
+      <sparkle:version>24</sparkle:version>
+      <sparkle:shortVersionString>0.2.19</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.18</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skills handed out by an installer you run with your own key, like npx @interfacecraft/install, can be linked to that installer. Skillori keeps only the installer's name, never your key, and the skill's page says how to update it.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.19</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Show on the menu bar panel's "no known source" line now opens that skill's page, where you can find or link its source, instead of the library's front page.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="x1s4ON4D4NGPJ2AALT77D3t+Sg5J+fED6ETCVXKcbc88gfc7ygxr+QfSpACaaQOSeHlxUysJPqalIYS/13nRCQ==" length="5490969"/>
+                 sparkle:edSignature="bvA863bHjZzzEoc0t2U7M3MLD+2ctpfA6co+vKbfPBIVP71I6ZbWRezypmEeYYQb59UMKFMTf0Uop53GDn6rAQ==" length="5490751"/>
     </item>
   </channel>
 </rss>
