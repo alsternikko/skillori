@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.23</title>
-      <pubDate>Sun, 22 Nov 2026 20:43:20 +0000</pubDate>
-      <sparkle:version>28</sparkle:version>
-      <sparkle:shortVersionString>0.2.23</sparkle:shortVersionString>
+      <title>Skillori 0.2.24</title>
+      <pubDate>Mon, 23 Nov 2026 23:18:44 +0000</pubDate>
+      <sparkle:version>29</sparkle:version>
+      <sparkle:shortVersionString>0.2.24</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.23</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skills you install with your own key can now be checked for new versions: keep the key in your Keychain, and Skillori runs the installer into a folder of its own to compare.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.24</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Share skills: tick the skills you want to pass on and copy one command that adds them from their sources, for a terminal or a coding agent, or save it as a script. Whoever gets it needs Node.js, not Skillori.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="jdbunuldeZ11porD8GSbB4Yzb/PUJloTHdRIgVH5bASTg9ZEVQ06QMYVKJrphfInwAuYtAhh2EWq7yAHQ2LNAQ==" length="5659729"/>
+                 sparkle:edSignature="AjXqvjLVMcTF5+mWBEtxiCmcoW46eZ9+NO10fXWJ9651ZgoTTC6X1UbCJK72DkuVJbxuQBj8RUT1DDNlUnbeDQ==" length="5801511"/>
     </item>
   </channel>
 </rss>
