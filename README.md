@@ -11,6 +11,7 @@ Skillori is a small macOS menu bar app that shows which AI agent skills are on y
 - **Finds your skills.** Reads the skill folders of Claude Code, Cursor, Codex, Gemini CLI, Antigravity, GitHub Copilot, OpenCode, Amp, Kiro, Factory Droid, Devin Desktop and goose, including the shared `~/.agents/skills` folder and plugin caches. The same skill linked into five agents shows up once.
 - **Knows where they came from.** Reads the lockfile written by `npx skills` and the plugin metadata of Claude Code, Cursor and Codex. Skills with no known source can be linked to a GitHub repository by hand.
 - **Tells you what changed.** When you turn it on, it asks GitHub whether a skill's source folder has changed, by comparing git tree hashes. No account, no token.
+- **Passes them on.** Tick skills and get one command that adds them from their sources with `npx skills`: a line for a terminal, a request for a coding agent, or a script file. Whoever gets it needs Node.js, not Skillori.
 - **Stays out of the way.** Lives in the menu bar. Skills you wrote yourself are listed first; the hundreds managed by plugins are grouped under the app that manages them.
 
 ## Principles

@@ -17,6 +17,8 @@ struct LibraryView: View {
     @State private var findingFor: Installation?
     /// The skill whose installer key the reader is adding.
     @State private var keyFor: Installation?
+    /// The share sheet, for every skill or opened on one.
+    @State private var sharing: ShareRequest?
     /// The tone the block of things to do shows. It follows the real one a moment later, so the
     /// light turns after the line that changed it has folded away.
     @State private var shownTone: Tone?
@@ -74,6 +76,9 @@ struct LibraryView: View {
         .sheet(item: $findingFor) { installation in
             FindSourcesSheet(only: installation).environment(store)
         }
+        .sheet(item: $sharing) { request in
+            ShareSheet(only: request.only).environment(store)
+        }
     }
 
     // MARK: Pages
@@ -92,7 +97,15 @@ struct LibraryView: View {
         switch page {
         case .mine:
             VStack(spacing: 6) {
-                Crumb(title: backTitle, action: back)
+                HStack(spacing: 0) {
+                    Crumb(title: backTitle, action: back)
+                    if !Assist.mine(store).isEmpty {
+                        Button("Share skills…") { sharing = ShareRequest() }
+                            .buttonStyle(PillButtonStyle())
+                            .help("Make a command that adds your skills on someone else’s computer")
+                            .padding(.trailing, 2)
+                    }
+                }
                 if let linked = store.linkReceipt { linkedCard(linked).transition(.opacity) }
                 if store.unknownCount > 0 { findSourcesCard }
                 ListCard { MySkillsList(open: open) }
@@ -104,7 +117,8 @@ struct LibraryView: View {
             }
         default:
             LibraryPageView(page: page, backTitle: backTitle, back: back, open: open, onLink: { linking = $0 },
-                            onFindSources: { findingFor = $0 }, onAddKey: { keyFor = $0 })
+                            onFindSources: { findingFor = $0 }, onAddKey: { keyFor = $0 },
+                            onShare: { sharing = ShareRequest(only: $0) })
         }
     }
 

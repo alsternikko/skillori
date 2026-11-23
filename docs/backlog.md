@@ -75,6 +75,21 @@ Beslut:
 
 Enligt briefen §10. Första kandidat: skills som ägs av `npx skills`. Antingen delegera till `npx skills update`, vilket kräver capability-verifiering och Node, eller ersätta katalogen själva med transaktion, backup och rollback.
 
+## Dela skills
+
+**✅ byggt (23 november, inte släppt):** Share-arket (`App/Skillori/ShareSheet.swift`) öppnas från "Share skills…" ovanför Your skills och från "Share…" på en skills sida, där bara den skillen är ikryssad. Man kryssar skills per källa (All, None, eller källans egen ruta) och får ett kommando som lägger till dem från sina källor med `npx skills`. Mottagaren behöver Node.js men inte Skillori.
+
+- **Tre former av samma sak** (`SkilloriCore/ShareCommand.swift`): en rad för terminalen, samma rad med en begäran runt för en agent, och en skriptfil (`skills.sh`) via Save as file…. Valen "Paste into" och "Install for" kommer ihåg det senaste valet.
+- **En rad, med `;` emellan.** Flera rader som klistras in tappas: installeraren läser resten av inmatningen, så bara första raden körs. En rad läses hel innan något körs. Skriptet stänger inmatningen för varje körning.
+- **Namn väljs bara inom en mapp.** Skills som ligger i samma mapp i ett repo läggs till med `owner/repo/<mapp> -s namn…`, övriga med sin egen mapp. `-s` över ett helt repo tar första träffen, och ett repo kan ha samma namn två gånger (materic-inc/plugins).
+- **Bara säkra tecken.** Texten byggs av repo-, mapp- och skillnamn med bokstäver, siffror, `.`, `_` och `-`. En skill som kräver annat lämnas utanför, och beskrivningar tas aldrig med: texten klistras in i skal och agenter av folk som inte skrev den.
+- **Install for.** Utan vald agent tar installeraren de agenter den hittar, och alla den känner till (ett femtiotal mappar i hemkatalogen) om den inte hittar någon. En vald agent ger `-a <id>`.
+- **Det som inte erbjuds** står som en mening under listan: skills utan källa, med försvunnen källa, från installationsskript, bakom egen nyckel, eller från annat än GitHub. Appars plugins finns inte med alls.
+
+Provat: kommandot och skriptet för alla 25 skills på utvecklarens Mac i ett tillfälligt HOME (25 av 25 tillagda, samma mappar som här), och klick i arket med `SKILLORI_SHARE_PROBE` (utanför skärmen, med eget urklipp). Inte provat: Save as file… genom spardialogen, att dra filen till en annan app, en vända genom Slack, och PowerShell.
+
+Kvar som idéer: att ta emot ett sådant kommando i Skillori (klistra in, kryssa, installera), plugins som marketplace-kommandon, en delningssida på skillori.app, och att följa en lista på en adress.
+
 ## Senare / idéer
 
 - "Find more…": sök `SKILL.md` i vald katalog och föreslå nya rötter.

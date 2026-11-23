@@ -934,6 +934,7 @@ struct LibraryPageView: View {
     var onLink: (Installation) -> Void
     var onFindSources: (Installation) -> Void = { _ in }
     var onAddKey: (Installation) -> Void = { _ in }
+    var onShare: (Installation) -> Void = { _ in }
 
     var body: some View {
         switch page {
@@ -941,7 +942,7 @@ struct LibraryPageView: View {
             if let installation = find(id) {
                 SkillPage(installation: installation, backTitle: backTitle, back: back, open: open,
                           onLink: { onLink(installation) }, onFindSources: { onFindSources(installation) },
-                          onAddKey: { onAddKey(installation) })
+                          onAddKey: { onAddKey(installation) }, onShare: { onShare(installation) })
                     .id(id)
             } else {
                 gone

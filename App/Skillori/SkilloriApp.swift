@@ -60,12 +60,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.firstStart?.show() }
         }
         let env = ProcessInfo.processInfo.environment
-        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_LIBRARY_PROBE"] == nil, env["SKILLORI_ADOPT_PROBE"] == nil, env["SKILLORI_PANEL_PROBE"] == nil, env["SKILLORI_LIBRARY_RUN_PROBE"] == nil, env["SKILLORI_LOST_PROBE"] == nil, env["SKILLORI_PAGE_PICTURE"] == nil { firstStart.showIfNeeded() }
+        if env["SKILLORI_SNAPSHOT_DIR"] == nil, env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_LIBRARY_PROBE"] == nil, env["SKILLORI_ADOPT_PROBE"] == nil, env["SKILLORI_PANEL_PROBE"] == nil, env["SKILLORI_LIBRARY_RUN_PROBE"] == nil, env["SKILLORI_LOST_PROBE"] == nil, env["SKILLORI_PAGE_PICTURE"] == nil, env["SKILLORI_SHARE_PROBE"] == nil { firstStart.showIfNeeded() }
         #if DEBUG
         DebugSnapshots.runIfRequested(store: store, statusPanel: statusPanel)
         DebugLibraryProbe.runIfRequested(store: store, windows: windows)
         DebugPagePicture.runIfRequested(store: store, windows: windows)
         DebugLibraryRunProbe.runIfRequested(store: store, windows: windows)
+        DebugShareProbe.runIfRequested(store: store, windows: windows)
         DebugAdoptProbe.runIfRequested(store: store)
         DebugLostSourceProbe.runIfRequested(store: store, windows: windows)
         DebugPluginUpdate.runIfRequested(store: store)

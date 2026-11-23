@@ -30,6 +30,8 @@ struct SkillPage: View {
     var onFindSources: () -> Void = {}
     /// Asks for the reader's key to the installer this skill is linked to.
     var onAddKey: () -> Void = {}
+    /// Opens the share sheet on this skill.
+    var onShare: () -> Void = {}
     /// The last update of this skill, kept while the page is open. The store's receipt folds
     /// away after a few seconds, as its line in the library's list does; here the reader came
     /// for this skill, so the result stays until they leave.
@@ -56,6 +58,11 @@ struct SkillPage: View {
                             NSWorkspace.shared.open(URL(fileURLWithPath: installation.canonicalPath).appendingPathComponent("SKILL.md"))
                         }
                         .buttonStyle(PillButtonStyle())
+                        // Only where a command can add it from its source: the button must do the thing.
+                        if store.canShare(installation) {
+                            Button("Share…", action: onShare).buttonStyle(PillButtonStyle())
+                                .help("Make a command that adds this skill on someone else’s computer")
+                        }
                         Spacer()
                     }
                     .padding(.top, 6)

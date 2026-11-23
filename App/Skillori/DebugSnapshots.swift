@@ -5,7 +5,8 @@ import SkilloriUI
 import SwiftUI
 
 /// Debug builds only: `SKILLORI_SNAPSHOT_DIR=/some/dir` renders the main views to PNG files
-/// and quits. Lets us check the UI without screen recording permission.
+/// and quits. Lets us check the UI without screen recording permission. With
+/// `SKILLORI_SNAPSHOT_ONLY=share` it renders the share sheet alone, and asks no source.
 /// Debug builds only: `SKILLORI_UPDATE_PLUGIN=<name@marketplace>` with `SKILLORI_UPDATE_LOG=<file>`
 /// runs the real plugin update through the app's own runner, writes how it went, and quits.
 @MainActor
@@ -78,6 +79,12 @@ enum DebugSnapshots {
             try? await Task.sleep(for: .milliseconds(400))
             while store.isChecking || store.isAskingCodex { try? await Task.sleep(for: .milliseconds(100)) }
             let out = URL(fileURLWithPath: dir)
+            // `SKILLORI_SNAPSHOT_ONLY=share` renders the share sheet alone: no source is asked.
+            if ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_ONLY"] == "share" {
+                sharePictures(store: store, to: out)
+                NSApp.terminate(nil)
+                return
+            }
             let states: [(String, PanelModel?, ColorScheme)] = [
                 ("panel-live", nil, .light), ("panel-live-dark", nil, .dark),
                 ("panel-updates", .sampleUpdates, .light), ("panel-in-sync", .sampleInSync, .light),
@@ -152,6 +159,7 @@ enum DebugSnapshots {
                 render(FindSourcesSheet(preview: answered).environment(store),
                        size: CGSize(width: 600, height: 640), to: out.appendingPathComponent("find-sources.png"))
             }
+            sharePictures(store: store, to: out)
             // The update command: waiting to be run, and after a run that printed something.
             if let target = store.updatable.first {
                 // The panel with a source opened, and after a run for that source.
@@ -296,6 +304,34 @@ enum DebugSnapshots {
             picture(MarkSheet(), size: CGSize(width: 1280, height: 460), to: out.appendingPathComponent("mark.png"))
             NSApp.terminate(nil)
         }
+    }
+
+    /// Passing skills on: the list, the receipts, and the text that is made for the real skills.
+    private static func sharePictures(store: InventoryStore, to out: URL) {
+        // The two ways in: the button above your skills, and the one on a skill's page.
+        let lib = CGSize(width: 1120, height: 800)
+        render(LibraryView(path: [.mine]).environment(store), size: lib, to: out.appendingPathComponent("share-entry-mine.png"))
+        if let row = store.shareList().rows.first, let skill = Assist.mine(store).first(where: { $0.id == row.id })?.primary {
+            render(LibraryView(path: [.mine, .skill(skill.id)]).environment(store), size: lib,
+                   to: out.appendingPathComponent("share-entry-skill.png"))
+        }
+        let share = CGSize(width: 600, height: 780)
+        render(ShareSheet(preview: nil).environment(store), size: share, to: out.appendingPathComponent("share.png"))
+        let shared = store.shareList()
+        // Most of the largest source left unticked, so a group shows as partly ticked.
+        let fewer = Set(shared.groups.max { $0.rows.count < $1.rows.count }.map { $0.rows.dropFirst(2).map(\.id) } ?? [])
+        render(ShareSheet(preview: nil, target: .agent, agent: store.shareAgents.first, unticked: fewer)
+            .environment(store).environment(\.colorScheme, .dark), size: share, to: out.appendingPathComponent("share-some-dark.png"))
+        render(ShareSheet(preview: .copied).environment(store), size: CGSize(width: 600, height: 460),
+               to: out.appendingPathComponent("share-copied.png"))
+        render(ShareSheet(preview: .copied, target: .agent, agent: store.shareAgents.first, unticked: fewer).environment(store),
+               size: CGSize(width: 600, height: 460), to: out.appendingPathComponent("share-copied-agent.png"))
+        render(ShareSheet(preview: .saved(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads/skills.sh")))
+            .environment(store), size: CGSize(width: 600, height: 300), to: out.appendingPathComponent("share-saved.png"))
+        let everything = ShareCommand(shared.rows.map(\.skill))
+        try? ([everything.line, ShareCommand(shared.rows.map(\.skill), agent: store.shareAgents.first).prompt, everything.script,
+               shared.leftOutSentence ?? "Nothing left out.", "agents offered: \(store.shareAgents.map(\.id))"]
+            .joined(separator: "\n-----\n") + "\n").write(to: out.appendingPathComponent("share.txt"), atomically: true, encoding: .utf8)
     }
 
     /// For views SwiftUI draws alone, such as the panel. Unlike a cached AppKit display this
