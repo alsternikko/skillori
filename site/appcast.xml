@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.25</title>
-      <pubDate>Tue, 24 Nov 2026 12:04:50 +0000</pubDate>
-      <sparkle:version>30</sparkle:version>
-      <sparkle:shortVersionString>0.2.25</sparkle:shortVersionString>
+      <title>Skillori 0.2.26</title>
+      <pubDate>Tue, 24 Nov 2026 12:26:09 +0000</pubDate>
+      <sparkle:version>31</sparkle:version>
+      <sparkle:shortVersionString>0.2.26</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.25</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Update checks are now on from the start: a new installation asks GitHub about each source every six hours, once first start has shown what is sent. Turn them off on first start's last step or in Settings. If you already use Skillori, your choice stays as it is.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.26</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Skillori now asks macOS for permission to notify you whenever it opens with update checks on; macOS only shows the question if you have never answered it. If you turned checks on in an early version, you were never asked and never got a notification.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="+AReWisxI8RzyK5Gl512WiDhyGtp9w/bR250YLeu5crFLIlW23gK4II/CuGRzQFNnSSNNjgpNBRqu68Hg+S3Dw==" length="5801753"/>
+                 sparkle:edSignature="Ad3D+HsRZRb6X49bvKFjA8sSDuxNH2ejJwYAXuIKsGGgZhuusJvQICRjXKKkxhJ+b1+1ebdau/gMt+XpWZK5Dg==" length="5801881"/>
     </item>
   </channel>
 </rss>
