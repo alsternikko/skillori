@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.26</title>
-      <pubDate>Tue, 24 Nov 2026 12:26:09 +0000</pubDate>
-      <sparkle:version>31</sparkle:version>
-      <sparkle:shortVersionString>0.2.26</sparkle:shortVersionString>
+      <title>Skillori 0.2.27</title>
+      <pubDate>Tue, 24 Nov 2026 12:42:06 +0000</pubDate>
+      <sparkle:version>32</sparkle:version>
+      <sparkle:shortVersionString>0.2.27</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.26</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skillori now asks macOS for permission to notify you whenever it opens with update checks on; macOS only shows the question if you have never answered it. If you turned checks on in an early version, you were never asked and never got a notification.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.27</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Fixes from a review of the last two versions. Updates found before you answered the macOS notification question are no longer lost: once you allow notifications, the next check tells you about everything that is waiting. A new installation always waits for first start to close before it asks anything. First start, Settings and the privacy text now also say that plugins are checked and that Codex is asked which plugins it has.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="Ad3D+HsRZRb6X49bvKFjA8sSDuxNH2ejJwYAXuIKsGGgZhuusJvQICRjXKKkxhJ+b1+1ebdau/gMt+XpWZK5Dg==" length="5801881"/>
+                 sparkle:edSignature="mGCKNQv+hVd5vMSB2vG4a/qHczGs6OwtzBbySi5mQsaYcDlZTpRwhd6Yl8TF5Vzz5sYDiDl98qUbmtRtk30XCg==" length="5802958"/>
     </item>
   </channel>
 </rss>
