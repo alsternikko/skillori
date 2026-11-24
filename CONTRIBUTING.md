@@ -26,6 +26,6 @@ Open an issue first for anything bigger than a small fix, so we can agree on the
 
 - **Skill content is untrusted data.** Nothing from a skill folder is ever executed, evaluated or passed to a shell while reading or comparing. Names passed to external tools go as arguments, never as a shell string.
 - **Never change a real installation.** Tests build fixtures in temporary folders.
-- **Nothing leaves the Mac** except the upstream check, which sends a repository name and nothing else. It is on unless the user turns it off.
+- **Nothing leaves the Mac** except what the user can turn off: the daily update check to skillori.app and the source checks, which name a repository and say nothing about the user. The [README](README.md#principles) lists everything a source check can ask.
 - **Adapter rules follow documentation.** A new agent or folder should point to the agent's own docs. [`docs/research/kompatibilitetsmatris.md`](docs/research/kompatibilitetsmatris.md) lists the sources used so far.
 - The app's UI text, code identifiers and comments are in English. The working documents in `docs/` are in Swedish; you don't have to write Swedish to contribute.

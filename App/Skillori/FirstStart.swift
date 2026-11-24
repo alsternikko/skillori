@@ -159,7 +159,7 @@ struct FirstStartView: View {
             DotNumber("\(tracked)", size: 72).padding(.top, 22)
             Spacer(minLength: 0)
             lead(tracked == 1 ? "skill has a source to ask" : "skills have a source to ask")
-            note(on ? "Skillori asks GitHub whether \(tracked == 1 ? "it" : "they") changed, every six hours. On unless you turn it off."
+            note(on ? asking(tracked: tracked) + " On unless you turn it off."
                     : "Checks are off. Skillori asks no source until you turn them on.", tone: on ? .new : .quiet)
         }
         PlainList {
@@ -175,6 +175,21 @@ struct FirstStartView: View {
             Spacer(minLength: 0)
             Button("Back") { step = 3 }.buttonStyle(HintButtonStyle())
         }
+    }
+
+    /// What is asked with checks on, for what this Mac has: skills with a source, plugins, and
+    /// Codex, which is asked which of its plugins it reads.
+    private func asking(tracked: Int) -> String {
+        let plugins = store.pluginRecords
+        let what: String
+        switch (tracked, plugins.isEmpty) {
+        case (0, true): return "When a skill has a source, Skillori asks GitHub whether it changed, every six hours."
+        case (0, false): what = "your plugins"
+        case (_, true): what = tracked == 1 ? "it" : "they"
+        case (_, false): what = (tracked == 1 ? "it" : "they") + " or your plugins"
+        }
+        let codex = plugins.contains { $0.app == "Codex" } ? ", and Codex which plugins it has" : ""
+        return "Skillori asks GitHub whether \(what) changed, every six hours\(codex)."
     }
 
     // MARK: Parts

@@ -197,7 +197,7 @@ struct SettingsView: View {
                     .disabled(!store.checksEnabled)
             }
             VStack(alignment: .leading, spacing: 10) {
-                Text("Asks github.com about each source, every 6 hours while Skillori runs. It sends the source's name and nothing about you or your files. No account. Skillori never changes a skill on its own: an update runs only when you press Run, and the installer does it.")
+                Text("Asks github.com about each source, every 6 hours while Skillori runs. It sends the source's name and nothing about you or your files. No account. If you have Codex plugins, it also asks Codex which ones it has. Skillori never changes a skill on its own: an update runs only when you press Run, and the installer does it.")
                     .font(TypeRole.sans(12))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)

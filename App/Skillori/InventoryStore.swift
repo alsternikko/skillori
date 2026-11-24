@@ -237,8 +237,8 @@ final class InventoryStore {
             if checksEnabled, !waitsForFirstStart { beginChecks() }
         }
     }
-    /// A new installation has checks on, but asks nothing on its own while first start is still
-    /// up: neither macOS about notifications nor a source. First start's last step says what is
+    /// An installation that has not finished first start asks nothing on its own while first start
+    /// is up: neither macOS about notifications nor a source. First start's last step says what is
     /// sent and can turn the checks off. A check the reader asks for themselves still runs.
     private(set) var waitsForFirstStart: Bool
     #if DEBUG
@@ -294,7 +294,9 @@ final class InventoryStore {
         let chosen = UserDefaults.standard.object(forKey: Self.checksKey) as? Bool
         let finishedFirstStart = UserDefaults.standard.bool(forKey: FirstStartController.doneKey)
         checksEnabled = usesSampleReadings || (chosen ?? !finishedFirstStart)
-        waitsForFirstStart = !usesSampleReadings && chosen == nil && !finishedFirstStart
+        // Whatever was chosen on the last step, nothing is asked until first start has closed:
+        // a choice made there is saved at once, and the app may be quit before Done.
+        waitsForFirstStart = !usesSampleReadings && !finishedFirstStart
         if !usesSampleReadings { loadSaved() }
         Task {
             await rescan()

@@ -107,7 +107,8 @@ enum DebugFirstStartProbe {
                 return false
             }
 
-            let kind = chosenAtStart != nil ? "chosen" : finishedAtStart ? "older" : "new"
+            // First start not finished is "new" whatever is saved: the wait holds until it has closed.
+            let kind = !finishedAtStart ? "new" : chosenAtStart != nil ? "chosen" : "older"
             log("bundle \(Bundle.main.bundleIdentifier ?? "none"), home \(InventoryStore.home.path)")
             log("started from: asksSources=\(chosenAtStart.map { "\($0)" } ?? "unset"), didFinishFirstStart=\(finishedAtStart) → \(kind)")
             log("at launch: checks \(onAtStart ? "on" : "off"), waits for first start \(waitsAtStart), first start \(shownAtStart ? "showing" : "not showing")")
@@ -155,8 +156,29 @@ enum DebugFirstStartProbe {
                         let started = Date()
                         for _ in 0..<(wait * 2) where Notifier.shared.permissionAnswer == nil { await pause(500) }
                         // The answer comes at once when macOS already had one, and after the reader's click when it asked.
+                        // What the first reading found came before the reader answered macOS: none of it may count as told.
+                        let toldBefore = defaults.stringArray(forKey: "notifiedUpdates") ?? []
+                        let waiting = store.updateCount
+                        log("   \(waiting) with updates after the first reading; counted as told before macOS was answered: \(toldBefore.count)")
                         log("   macOS answered the request \(Int(Date().timeIntervalSince(started)) + 4) s after the app opened: \(Notifier.shared.permissionAnswer ?? "nothing yet (the question is still open)"); permission now \(await permission())")
                         check("macOS took the request", !(Notifier.shared.permissionAnswer ?? "").hasPrefix("error"))
+                        if waiting > 0, Notifier.shared.permissionAnswer == "allowed" {
+                            if started.timeIntervalSinceNow > -1 {
+                                log("   macOS already had an answer, so the first reading told at once")
+                            } else {
+                                check("nothing counted as told while macOS had no answer", toldBefore.isEmpty)
+                            }
+                            // The next check is the one that tells. Check now, as the reader would.
+                            await store.checkSources(force: true)
+                            while store.isChecking { await pause(100) }
+                            await pause(1500)
+                            let shown = await UNUserNotificationCenter.current().deliveredNotifications()
+                            for notification in shown {
+                                log("   notification shown: \(notification.request.content.title) / \(notification.request.content.body)")
+                            }
+                            check("macOS shows a notification about what was waiting", !shown.isEmpty)
+                            check("and it now counts as told", (defaults.stringArray(forKey: "notifiedUpdates") ?? []).count == waiting)
+                        }
                     }
                 } else {
                     check("macOS was not asked about notifications", Notifier.shared.permissionAsks == 0)
@@ -166,11 +188,12 @@ enum DebugFirstStartProbe {
 
             default:
                 check("checks are on", onAtStart && store.checksEnabled)
+                check("the app waits for first start", waitsAtStart)
                 check("first start shows", shownAtStart && firstStart.panel != nil)
                 check("the panel does not say checks are off", !saysOff)
                 check("macOS was not asked about notifications while first start is up", Notifier.shared.permissionAsks == 0)
                 check("no source was asked while first start is up", store.checksStarted == 0 && store.lastCheck == nil)
-                check("nothing is saved yet", defaults.object(forKey: "asksSources") == nil && !defaults.bool(forKey: FirstStartController.doneKey))
+                check("nothing new is saved yet", defaults.object(forKey: "asksSources") as? Bool == chosenAtStart && !defaults.bool(forKey: FirstStartController.doneKey))
                 guard firstStart.panel != nil else { finish(); return }
                 if let view = firstStart.panel?.contentView { log("   panel \(Int(view.bounds.width))×\(Int(view.bounds.height))") }
                 picture("step-1")

@@ -33,10 +33,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var center: UNUserNotificationCenter? {
         let env = ProcessInfo.processInfo.environment
         guard Bundle.main.bundleIdentifier != nil, env["SKILLORI_SNAPSHOT_DIR"] == nil,
-              env["SKILLORI_SELFTEST"] == nil,
-              // The first start probe only counts the asking, unless it is told to ask for real.
-              env["SKILLORI_FIRST_START_PROBE"] == nil || env["SKILLORI_FIRST_START_PROBE_NOTIFY"] == "real"
-        else { return nil }
+              env["SKILLORI_SELFTEST"] == nil else { return nil }
+        #if DEBUG
+        // The first start probe only counts the asking, unless it is told to ask for real.
+        if env["SKILLORI_FIRST_START_PROBE"] != nil, env["SKILLORI_FIRST_START_PROBE_NOTIFY"] != "real" { return nil }
+        #endif
         return UNUserNotificationCenter.current()
     }
 
@@ -77,17 +78,40 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Tells the reader about updates that were not there the last time they were told.
-    /// Revisions told about are remembered, so a restart does not repeat them.
+    /// Revisions told about are remembered, so a restart does not repeat them. Nothing counts as
+    /// told while macOS does not show Skillori's notifications (its question unanswered, or
+    /// answered no): once it does, the next check tells about everything that is waiting.
     func updatesFound(_ found: [Found]) {
+        guard isEnabled, let center else {
+            // The reader turned notifications off in Settings: what is there now is old news if
+            // they turn them on again.
+            _ = remember(found)
+            return
+        }
+        Task { @MainActor in
+            let status = await center.notificationSettings().authorizationStatus
+            guard status == .authorized || status == .provisional else {
+                UserDefaults.standard.removeObject(forKey: Self.toldKey)
+                return
+            }
+            let new = remember(found)
+            guard !new.isEmpty else { return }
+            try? await center.add(UNNotificationRequest(identifier: Self.updatesID, content: Self.content(for: new), trigger: nil))
+        }
+    }
+
+    /// Notes these updates as told and gives the ones that were not told before.
+    private func remember(_ found: [Found]) -> [Found] {
         var told = Set(UserDefaults.standard.stringArray(forKey: Self.toldKey) ?? [])
         // Forget revisions that are no longer an update, so a later one at the same skill is new again.
-        let current = Set(found.map(\.token))
-        told.formIntersection(current)
+        told.formIntersection(Set(found.map(\.token)))
         let new = found.filter { !told.contains($0.token) }
         told.formUnion(new.map(\.token))
         UserDefaults.standard.set(Array(told).sorted(), forKey: Self.toldKey)
-        guard !new.isEmpty, isEnabled, let center else { return }
+        return new
+    }
 
+    private static func content(for new: [Found]) -> UNNotificationContent {
         let sources = Dictionary(grouping: new, by: \.source)
         let content = UNMutableNotificationContent()
         if sources.count == 1, let (source, skills) = sources.first {
@@ -99,7 +123,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             content.body = "From \(sources.count) sources: \(names)\(sources.count > 3 ? " and more" : ""). Review them in Skillori."
         }
         content.threadIdentifier = Self.updatesID
-        center.add(UNNotificationRequest(identifier: Self.updatesID, content: content, trigger: nil))
+        return content
     }
 
     /// How an update run ended, when the reader was not looking at Skillori.

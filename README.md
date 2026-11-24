@@ -17,7 +17,11 @@ Skillori is a small macOS menu bar app that shows which AI agent skills are on y
 ## Principles
 
 - Skill content is treated as untrusted data. Skillori never runs a script from a skill, neither while reading nor while comparing.
-- Nothing is uploaded. The app makes two kinds of request, and both can be turned off: a daily update check to skillori.app and the upstream check, which carries only the repository name. A new installation asks no source before first start has shown what is sent.
+- Nothing is uploaded. The app asks two kinds of question, and both can be turned off: a daily update check to skillori.app, and the source checks.
+  - A source check asks GitHub about a repository by name (the tree of a skill's folder, or a plugin's manifest and marketplace file). It carries nothing about you.
+  - With checks on, Skillori also runs `codex plugin list` if you have Codex plugins, to ask your own Codex which ones it reads. Codex may look at its catalog online to answer.
+  - Two things are only asked if you set them up: an install script you linked a skill to is fetched from its address, and an installer you gave a key is run with `npx` in a temporary folder.
+  - On a new installation none of this happens while first start is up. Its last step says what is sent; closing first start earlier starts the checks too.
 - Skillori doesn't write to your skill folders. An update only happens when you press **Update**, and then it's `npx skills update` that writes the files.
 
 ## Status
