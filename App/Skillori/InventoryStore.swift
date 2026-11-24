@@ -227,16 +227,38 @@ final class InventoryStore {
     let pluginUpdater = PluginUpdateRunner()
     /// Adds Codex plugins again from Codex's current catalog when the reader asks for it.
     let codexRunner = CodexPluginRunner()
-    /// Asking sources is the reader's choice and is off until they turn it on.
+    /// Asking sources is on unless the reader turns it off. Their choice is saved either way,
+    /// so a no can be told from never having chosen.
     var checksEnabled: Bool {
         didSet {
             guard checksEnabled != oldValue else { return }
             UserDefaults.standard.set(checksEnabled, forKey: Self.checksKey)
-            if checksEnabled {
-                Notifier.shared.requestPermission()
-                Task { await checkSources(force: true) }
-            }
+            // During first start the asking waits for it to close; `firstStartEnded` begins it.
+            if checksEnabled, !waitsForFirstStart { beginChecks() }
         }
+    }
+    /// A new installation has checks on, but asks nothing on its own while first start is still
+    /// up: neither macOS about notifications nor a source. First start's last step says what is
+    /// sent and can turn the checks off. A check the reader asks for themselves still runs.
+    private(set) var waitsForFirstStart: Bool
+    #if DEBUG
+    /// How many times the sources have been asked since the app opened. For the probes.
+    @ObservationIgnored private(set) var checksStarted = 0
+    #endif
+
+    /// First start closed, by its last button or any other way. On a new installation this is
+    /// when the choice is saved and, with checks on, when macOS is asked about notifications and
+    /// the sources are asked for the first time.
+    func firstStartEnded() {
+        guard waitsForFirstStart else { return }
+        waitsForFirstStart = false
+        UserDefaults.standard.set(checksEnabled, forKey: Self.checksKey)
+        if checksEnabled { beginChecks() }
+    }
+
+    private func beginChecks() {
+        Notifier.shared.requestPermission()
+        Task { await checkSources(force: true) }
     }
 
     private static let projectsKey = "projectPaths"
@@ -257,7 +279,13 @@ final class InventoryStore {
         #else
         usesSampleReadings = false
         #endif
-        checksEnabled = usesSampleReadings || UserDefaults.standard.bool(forKey: Self.checksKey)
+        // With no saved choice, checks are on for a new installation. One that finished first
+        // start without a saved choice is older than 0.2.25, where "Not now" saved nothing: no
+        // choice there may be a no, so it stays off.
+        let chosen = UserDefaults.standard.object(forKey: Self.checksKey) as? Bool
+        let finishedFirstStart = UserDefaults.standard.bool(forKey: FirstStartController.doneKey)
+        checksEnabled = usesSampleReadings || (chosen ?? !finishedFirstStart)
+        waitsForFirstStart = !usesSampleReadings && chosen == nil && !finishedFirstStart
         if !usesSampleReadings { loadSaved() }
         Task {
             await rescan()
@@ -623,7 +651,7 @@ final class InventoryStore {
     /// own catalog online to answer; and only when the Codex plugins on this Mac are not the ones
     /// it was last asked about, that answer has grown old, or the reader asked for a check.
     func askCodex(force: Bool = false) async {
-        guard checksEnabled, !usesSampleReadings, !isAskingCodex else { return }
+        guard checksEnabled, force || !waitsForFirstStart, !usesSampleReadings, !isAskingCodex else { return }
         let keys = Set(pluginRecords.filter { $0.app == "Codex" }.map(Self.codexKey))
         guard !keys.isEmpty else { return }
         let codexFolder = environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
@@ -840,11 +868,12 @@ final class InventoryStore {
         await checkSources(force: true)
     }
 
-    /// Asks each source once whether its skills have changed. Does nothing while checks are off.
+    /// Asks each source once whether its skills have changed. Does nothing while checks are off,
+    /// and nothing on its own (without `force`) while a new installation's first start is up.
     /// With `only`, asks about just those skills (by `sourceKey`) and leaves the rest, the
     /// plugins and the time of the last full answer as they are.
     func checkSources(force: Bool = false, only: Set<String>? = nil) async {
-        guard checksEnabled else { return }
+        guard checksEnabled, force || !waitsForFirstStart else { return }
         if isChecking {
             // A check that started before this was asked for may use an old reading of this
             // Mac, such as the one before an update ran. Ask again as soon as it is done.
@@ -871,6 +900,9 @@ final class InventoryStore {
         isChecking = true
         checkingCount = tracked.count
         defer { isChecking = false }
+        #if DEBUG
+        checksStarted += 1
+        #endif
 
         #if DEBUG
         if usesSampleReadings {

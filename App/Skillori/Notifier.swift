@@ -33,9 +33,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var center: UNUserNotificationCenter? {
         let env = ProcessInfo.processInfo.environment
         guard Bundle.main.bundleIdentifier != nil, env["SKILLORI_SNAPSHOT_DIR"] == nil,
-              env["SKILLORI_SELFTEST"] == nil else { return nil }
+              env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_FIRST_START_PROBE"] == nil else { return nil }
         return UNUserNotificationCenter.current()
     }
+
+    #if DEBUG
+    /// How many times macOS would have been asked for permission since the app opened. For the probes.
+    private(set) var permissionAsks = 0
+    #endif
 
     func start() {
         center?.delegate = self
@@ -43,6 +48,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     /// Asks macOS once; later calls return what the reader already chose.
     func requestPermission() {
+        #if DEBUG
+        if isEnabled { permissionAsks += 1 }
+        #endif
         guard isEnabled, let center else { return }
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }

@@ -4,13 +4,16 @@ import SkilloriUI
 import SwiftUI
 
 /// First start, in four steps: what Skillori does, where it looks, the first reading, and
-/// whether to ask sources about changes. Asking is off until the reader turns it on.
+/// asking sources about changes. Asking is on unless the reader turns it off, here or later;
+/// on a new installation nothing is asked before this has closed (`InventoryStore.firstStartEnded`).
 struct FirstStartView: View {
     @Environment(InventoryStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State var step = 1
     /// Shows the last step as it looks when nothing was found. For pictures of that state.
     var previewsEmpty = false
+    /// Shows the last step as it looks with checks turned off. For pictures of that state.
+    var previewsChecksOff = false
     var onDone: () -> Void = {}
     var onLibrary: () -> Void = {}
 
@@ -27,6 +30,9 @@ struct FirstStartView: View {
             .animation(Motion.swap, value: step)
         }
         .frame(width: Self.width)
+        #if DEBUG
+        .onChange(of: step, initial: true) { DebugFirstStartProbe.step = step }
+        #endif
     }
 
     @ViewBuilder private var content: some View {
@@ -148,13 +154,13 @@ struct FirstStartView: View {
 
     @ViewBuilder private var checking: some View {
         let tracked = store.trackedCount
-        let on = store.checksEnabled
-        hero(.new, label: "Changes") {
+        let on = store.checksEnabled && !previewsChecksOff
+        hero(on ? .new : .quiet, label: "Changes") {
             DotNumber("\(tracked)", size: 72).padding(.top, 22)
             Spacer(minLength: 0)
             lead(tracked == 1 ? "skill has a source to ask" : "skills have a source to ask")
-            note(on ? "Checks are on. Skillori asks every six hours while it runs."
-                    : "Skillori can ask GitHub whether they changed. Off until you turn it on.", tone: .new)
+            note(on ? "Skillori asks GitHub whether \(tracked == 1 ? "it" : "they") changed, every six hours. On unless you turn it off."
+                    : "Checks are off. Skillori asks no source until you turn them on.", tone: on ? .new : .quiet)
         }
         PlainList {
             bullet("Sends only the repository name")
@@ -162,16 +168,10 @@ struct FirstStartView: View {
             bullet("Nothing is updated until you say so", isLast: true)
         }
         footer {
-            if on {
-                Button("Done", action: onDone).buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
-            } else {
-                Button("Turn on checks") {
-                    store.checksEnabled = true
-                    onDone()
-                }
-                .buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
-                Button("Not now", action: onDone).buttonStyle(PillButtonStyle())
-            }
+            Button("Done", action: onDone).buttonStyle(PillButtonStyle(prominent: true)).keyboardShortcut(.defaultAction)
+            // Stays on this step, so the reader sees what they chose. A no is saved as a no.
+            Button(on ? "Turn off checks" : "Turn on checks") { store.checksEnabled.toggle() }
+                .buttonStyle(PillButtonStyle())
             Spacer(minLength: 0)
             Button("Back") { step = 3 }.buttonStyle(HintButtonStyle())
         }
@@ -290,7 +290,7 @@ final class FirstStartController {
     static let doneKey = "didFinishFirstStart"
     private let store: InventoryStore
     private let windows: WindowRouter
-    private var panel: PanelWindow?
+    private(set) var panel: PanelWindow?
 
     init(store: InventoryStore, windows: WindowRouter) {
         self.store = store
@@ -323,14 +323,26 @@ final class FirstStartController {
         panel.setContentSize(host.fittingSize)
         panel.center()
         self.panel = panel
+        #if DEBUG
+        // A test run: off screen, and without taking the keyboard from the app in front.
+        if DebugQuiet.isOn {
+            panel.setFrameOrigin(NSPoint(x: DebugQuiet.shift, y: 0))
+            panel.orderFrontRegardless()
+            return
+        }
+        #endif
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
     }
 
+    /// Every way out ends here: the last step's Done, Open Library, and Escape. Closing early
+    /// is not a no to the checks, so on a new installation they begin now, as they would have
+    /// after the last step.
     private func finish() {
         UserDefaults.standard.set(true, forKey: Self.doneKey)
         panel?.orderOut(nil)
         panel = nil
+        store.firstStartEnded()
     }
 }
 

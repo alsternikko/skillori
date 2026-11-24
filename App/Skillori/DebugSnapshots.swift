@@ -6,7 +6,8 @@ import SwiftUI
 
 /// Debug builds only: `SKILLORI_SNAPSHOT_DIR=/some/dir` renders the main views to PNG files
 /// and quits. Lets us check the UI without screen recording permission. With
-/// `SKILLORI_SNAPSHOT_ONLY=share` it renders the share sheet alone, and asks no source.
+/// `SKILLORI_SNAPSHOT_ONLY=share` it renders the share sheet alone, and asks no source;
+/// with `first-start`, first start's last step alone, with checks on and turned off.
 /// Debug builds only: `SKILLORI_UPDATE_PLUGIN=<name@marketplace>` with `SKILLORI_UPDATE_LOG=<file>`
 /// runs the real plugin update through the app's own runner, writes how it went, and quits.
 @MainActor
@@ -85,6 +86,17 @@ enum DebugSnapshots {
                 NSApp.terminate(nil)
                 return
             }
+            // `SKILLORI_SNAPSHOT_ONLY=first-start` renders first start's last step alone.
+            if ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_ONLY"] == "first-start" {
+                for (off, scheme, name) in [(false, ColorScheme.light, "first-start-4"), (true, .light, "first-start-4-off"),
+                                            (false, .dark, "first-start-4-dark")] {
+                    picture(PanelBackdrop { FirstStartView(step: 4, previewsChecksOff: off) }
+                        .environment(store).environment(\.colorScheme, scheme),
+                            size: CGSize(width: 400, height: 580), to: out.appendingPathComponent("\(name).png"))
+                }
+                NSApp.terminate(nil)
+                return
+            }
             let states: [(String, PanelModel?, ColorScheme)] = [
                 ("panel-live", nil, .light), ("panel-live-dark", nil, .dark),
                 ("panel-updates", .sampleUpdates, .light), ("panel-in-sync", .sampleInSync, .light),
@@ -105,7 +117,8 @@ enum DebugSnapshots {
             }
             try? (links.joined(separator: "\n") + "\nunsourced: \(store.unsourced.map(\.displayName))\n").write(to: out.appendingPathComponent("panel-links.txt"), atomically: true, encoding: .utf8)
             for (step, scheme, name) in [(1, ColorScheme.light, "first-start-1"), (2, .light, "first-start-2"),
-                                         (3, .light, "first-start-3"), (2, .dark, "first-start-2-dark")] {
+                                         (3, .light, "first-start-3"), (4, .light, "first-start-4"),
+                                         (2, .dark, "first-start-2-dark")] {
                 let view = PanelBackdrop { FirstStartView(step: step) }
                     .environment(store).environment(\.colorScheme, scheme)
                 let size = CGSize(width: 400, height: 580), file = out.appendingPathComponent("\(name).png")
@@ -114,6 +127,8 @@ enum DebugSnapshots {
             }
             picture(PanelBackdrop { FirstStartView(step: 3, previewsEmpty: true) }.environment(store),
                     size: CGSize(width: 400, height: 580), to: out.appendingPathComponent("first-start-3-empty.png"))
+            picture(PanelBackdrop { FirstStartView(step: 4, previewsChecksOff: true) }.environment(store),
+                    size: CGSize(width: 400, height: 580), to: out.appendingPathComponent("first-start-4-off.png"))
             if ProcessInfo.processInfo.environment["SKILLORI_SNAPSHOT_OPEN_PANEL"] != nil {
                 statusPanel?.open()
                 try? await Task.sleep(for: .seconds(6))

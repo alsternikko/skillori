@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DebugPagePicture.runIfRequested(store: store, windows: windows)
         DebugLibraryRunProbe.runIfRequested(store: store, windows: windows)
         DebugShareProbe.runIfRequested(store: store, windows: windows)
+        DebugFirstStartProbe.runIfRequested(store: store, firstStart: firstStart) { [store] in PanelModel.skills(from: store) }
         DebugAdoptProbe.runIfRequested(store: store)
         DebugLostSourceProbe.runIfRequested(store: store, windows: windows)
         DebugPluginUpdate.runIfRequested(store: store)
