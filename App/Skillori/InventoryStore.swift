@@ -261,6 +261,15 @@ final class InventoryStore {
         Task { await checkSources(force: true) }
     }
 
+    /// The app opened. With checks on, macOS is asked about notifications, which it only puts to
+    /// the reader if it never has. Checks turned on before Skillori had notifications (0.2.0)
+    /// never led to that question, and neither did an answer that was never given. A new
+    /// installation waits for first start instead (`firstStartEnded`).
+    func appOpened() {
+        guard checksEnabled, !waitsForFirstStart, !usesSampleReadings else { return }
+        Notifier.shared.requestPermission()
+    }
+
     private static let projectsKey = "projectPaths"
     private static let checksKey = "asksSources"
     private static let minimumScanDisplay: TimeInterval = 0.45

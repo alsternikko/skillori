@@ -73,6 +73,7 @@ Beslut:
   - Sista steget i första start säger att kontrollerna är på och har knappen "Turn off checks". Ett nej sparas som `asksSources = false` direkt, och steget står kvar så att valet syns.
   - Stängs första start i förtid (Escape, eller Open Library på steg 3) räknas det inte som ett nej: kontrollerna börjar då. Avslutas appen med första start uppe sparas inget, och första start visas igen nästa gång.
   - Befintlig installation utan sparat val (första start avklarad före 0.2.25, där "Not now" inte sparade något) förblir av: där kan tystnaden betyda nej. Panelens rad "Update checks are off · Turn on" och inställningarna finns kvar för den.
+  - Notisfrågan ställs också varje gång appen öppnas med kontrollerna på (24 november, efter produktägarens "Ja, bygg det"). macOS visar den bara om den aldrig har visats. Förut ställdes den bara när kontrollerna eller "Notify me" slogs på, så den som slog på kontrollerna före notiserna (0.2.0) fick aldrig frågan och därmed aldrig en notis. Det gällde produktägarens egen installation.
   - Provas med `SKILLORI_FIRST_START_PROBE` (App/Skillori/DebugFirstStartProbe.swift) på en kopia av appen med eget bundle-id, så att de sparade valen inte är användarens.
 
 ## Etapp 3 — Begränsade säkra uppdateringar

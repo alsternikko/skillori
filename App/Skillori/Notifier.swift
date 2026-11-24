@@ -33,26 +33,39 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var center: UNUserNotificationCenter? {
         let env = ProcessInfo.processInfo.environment
         guard Bundle.main.bundleIdentifier != nil, env["SKILLORI_SNAPSHOT_DIR"] == nil,
-              env["SKILLORI_SELFTEST"] == nil, env["SKILLORI_FIRST_START_PROBE"] == nil else { return nil }
+              env["SKILLORI_SELFTEST"] == nil,
+              // The first start probe only counts the asking, unless it is told to ask for real.
+              env["SKILLORI_FIRST_START_PROBE"] == nil || env["SKILLORI_FIRST_START_PROBE_NOTIFY"] == "real"
+        else { return nil }
         return UNUserNotificationCenter.current()
     }
 
     #if DEBUG
     /// How many times macOS would have been asked for permission since the app opened. For the probes.
     private(set) var permissionAsks = 0
+    /// What macOS answered the last time it was asked, once it has. For the probes.
+    private(set) var permissionAnswer: String?
     #endif
 
     func start() {
         center?.delegate = self
     }
 
-    /// Asks macOS once; later calls return what the reader already chose.
+    /// Asks macOS, which puts the question to the reader once; later calls return what they chose.
+    /// Called when checks begin and every time the app opens with checks on.
     func requestPermission() {
         #if DEBUG
         if isEnabled { permissionAsks += 1 }
         #endif
         guard isEnabled, let center else { return }
+        #if DEBUG
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            let answer = error.map { "error: \($0.localizedDescription)" } ?? (granted ? "allowed" : "not allowed")
+            Task { @MainActor in Notifier.shared.permissionAnswer = answer }
+        }
+        #else
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        #endif
     }
 
     /// One update the reader might want to hear about: a skill, its source and the revision there.

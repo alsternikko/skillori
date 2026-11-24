@@ -1,6 +1,7 @@
 #if DEBUG
 import AppKit
 import SkilloriCore
+import UserNotifications
 
 /// Debug builds only: `SKILLORI_FIRST_START_PROBE=/some/file` checks what the app asks, and
 /// when, on its first opening. It reads the saved choices as the app found them and follows
@@ -12,12 +13,16 @@ import SkilloriCore
 ///   default), `off` (Turn off checks, then Done) or `escape` (closed on the first step).
 /// - **older** (first start finished, no saved choice): an installation from before 0.2.25,
 ///   where "Not now" saved nothing. Checks stay off and nothing is asked.
-/// - **chosen**: the saved choice stands.
+/// - **chosen**: the saved choice stands. With checks on, macOS is asked about notifications
+///   when the app opens (it shows its question only if it never has); with checks off it is not.
 ///
 /// Run it on a copy of the app with a bundle identifier of its own, so the settings it starts
 /// from and writes are not the reader's, and with `SKILLORI_TEST_HOME` (and `HOME`) set to a
-/// folder made for it. macOS is never really asked about notifications here; the probe counts
-/// the times it would have been. One line per step, a picture of each step, PASS or FAIL last.
+/// folder made for it. macOS is not really asked about notifications; the probe counts the
+/// times it would have been. `SKILLORI_FIRST_START_PROBE_NOTIFY=real` asks for real: on a copy
+/// macOS has never seen, its question then shows on screen, and the probe writes down where
+/// the permission stands before and after, and waits a while for it to be answered.
+/// One line per step, a picture of each step, PASS or FAIL last.
 @MainActor
 enum DebugFirstStartProbe {
     /// The step first start shows now, as it shows it.
@@ -33,6 +38,8 @@ enum DebugFirstStartProbe {
         let finishedAtStart = defaults.bool(forKey: FirstStartController.doneKey)
         let shownAtStart = firstStart.panel != nil
         let onAtStart = store.checksEnabled, waitsAtStart = store.waitsForFirstStart
+        // An answer younger than six hours stands, so an opening soon after another asks no source.
+        let freshAnswer = store.lastCheck.map { Date().timeIntervalSince($0) < InventoryStore.checkInterval } ?? false
         Task { @MainActor in
             var lines: [String] = []
             var failures = 0
@@ -51,6 +58,17 @@ enum DebugFirstStartProbe {
             }
             @MainActor func asked() -> String {
                 "macOS asked \(Notifier.shared.permissionAsks)×, sources asked \(store.checksStarted)×"
+            }
+            let asksForReal = env["SKILLORI_FIRST_START_PROBE_NOTIFY"] == "real"
+            /// Where macOS has the permission for this copy of the app.
+            @MainActor func permission() async -> String {
+                switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
+                case .notDetermined: "not asked yet"
+                case .denied: "denied"
+                case .authorized: "allowed"
+                case .provisional: "provisional"
+                default: "other"
+                }
             }
             @MainActor func finish() {
                 log(failures == 0 ? "PASS" : "FAIL (\(failures))")
@@ -100,6 +118,11 @@ enum DebugFirstStartProbe {
             // The first reading asks the sources on its own when it may. Give it time to.
             await pause(4000)
             log("4 s after the first reading: \(asked()); \(saved())")
+            var permissionBefore = ""
+            if asksForReal {
+                permissionBefore = await permission()
+                log("macOS has the notification permission as: \(permissionBefore)")
+            }
             let panelLines = panelModel().rows.compactMap { row -> String? in
                 if case let .link(text, label, _) = row { return "\(text) · \(label)" }
                 if case let .line(text, data, _) = row { return "\(text) · \(data)" }
@@ -119,10 +142,24 @@ enum DebugFirstStartProbe {
 
             case "chosen":
                 check("the saved choice stands", store.checksEnabled == chosenAtStart && !waitsAtStart)
-                check("macOS was not asked about notifications", Notifier.shared.permissionAsks == 0)
                 if chosenAtStart == true {
-                    check("the sources were asked on the first reading", tracked == 0 || store.checksStarted > 0)
+                    // With checks on, the app asks macOS when it opens; macOS shows its question only if it never has.
+                    check("macOS was asked about notifications when the app opened, once", Notifier.shared.permissionAsks == 1)
+                    if freshAnswer {
+                        check("no source was asked again: the last answer is younger than six hours", store.checksStarted == 0)
+                    } else {
+                        check("the sources were asked on the first reading", tracked == 0 || store.checksStarted > 0)
+                    }
+                    if asksForReal {
+                        let wait = Int(env["SKILLORI_FIRST_START_PROBE_WAIT"] ?? "") ?? 90
+                        let started = Date()
+                        for _ in 0..<(wait * 2) where Notifier.shared.permissionAnswer == nil { await pause(500) }
+                        // The answer comes at once when macOS already had one, and after the reader's click when it asked.
+                        log("   macOS answered the request \(Int(Date().timeIntervalSince(started)) + 4) s after the app opened: \(Notifier.shared.permissionAnswer ?? "nothing yet (the question is still open)"); permission now \(await permission())")
+                        check("macOS took the request", !(Notifier.shared.permissionAnswer ?? "").hasPrefix("error"))
+                    }
                 } else {
+                    check("macOS was not asked about notifications", Notifier.shared.permissionAsks == 0)
                     check("no source was asked", store.checksStarted == 0)
                     check("the panel offers to turn checks on", tracked == 0 || saysOff)
                 }
@@ -173,6 +210,19 @@ enum DebugFirstStartProbe {
                 } else {
                     check("the yes is saved: \(saved())", defaults.object(forKey: "asksSources") as? Bool == true && store.checksEnabled)
                     check("macOS is asked about notifications now, once", Notifier.shared.permissionAsks == 1)
+                    if asksForReal {
+                        // The marker a script outside waits for before it takes a picture of the screen.
+                        log("   ASKED-FOR-REAL: macOS had it as \(permissionBefore) until now")
+                        check("macOS had not been asked before first start closed", permissionBefore == "not asked yet")
+                        let wait = Int(env["SKILLORI_FIRST_START_PROBE_WAIT"] ?? "") ?? 90
+                        // macOS has the permission as denied for as long as its question is unanswered,
+                        // so only its answer to the request says that the reader has chosen.
+                        log("   macOS has it as \(await permission()) while its question is up")
+                        for _ in 0..<(wait * 2) where Notifier.shared.permissionAnswer == nil { await pause(500) }
+                        await pause(300)
+                        log("   after up to \(wait) s: permission \(await permission()), macOS answered the request: \(Notifier.shared.permissionAnswer ?? "nothing yet (the question is still open)")")
+                        check("macOS took the request", !(Notifier.shared.permissionAnswer ?? "").hasPrefix("error"))
+                    }
                     if tracked > 0 {
                         let heard = await answered(within: 60)
                         check("the sources are asked now: \(asked())", store.checksStarted > 0)
@@ -183,6 +233,64 @@ enum DebugFirstStartProbe {
                 }
             }
             finish()
+        }
+    }
+}
+#endif
+
+#if DEBUG
+/// Debug builds only: `SKILLORI_NOTIFY_PROBE=/some/file` writes down where macOS has this copy's
+/// notification permission, and quits. It asks nothing. With `SKILLORI_NOTIFY_PROBE_ASK=1` it
+/// then asks macOS for the permission, as the app does when checks begin, and writes down what
+/// macOS said, waiting up to `SKILLORI_NOTIFY_PROBE_WAIT` seconds (30) for the reader's answer.
+@MainActor
+enum DebugNotifyProbe {
+    /// What macOS said when it was asked, once it has.
+    private static var answer: String?
+
+    static func runIfRequested() {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["SKILLORI_NOTIFY_PROBE"] else { return }
+        Task { @MainActor in
+            var lines: [String] = []
+            @MainActor func log(_ line: String) {
+                lines.append(line)
+                try? lines.joined(separator: "\n").appending("\n").write(toFile: path, atomically: true, encoding: .utf8)
+            }
+            @MainActor func permission() async -> String {
+                let settings = await UNUserNotificationCenter.current().notificationSettings()
+                let status = switch settings.authorizationStatus {
+                case .notDetermined: "not asked yet"
+                case .denied: "denied"
+                case .authorized: "allowed"
+                case .provisional: "provisional"
+                default: "other"
+                }
+                return "\(status) (alerts \(settings.alertSetting == .enabled ? "on" : "off"), style \(settings.alertStyle.rawValue))"
+            }
+            log("bundle \(Bundle.main.bundleIdentifier ?? "none") at \(Bundle.main.bundlePath)")
+            log("HOME=\(env["HOME"] ?? "unset"), agent app \(Bundle.main.object(forInfoDictionaryKey: "LSUIElement") ?? "unset")")
+            log("permission: \(await permission())")
+            if env["SKILLORI_NOTIFY_PROBE_ASK"] != nil {
+                let wait = Int(env["SKILLORI_NOTIFY_PROBE_WAIT"] ?? "") ?? 30
+                let started = Date()
+                answer = nil
+                Task { @MainActor in
+                    do {
+                        let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                        answer = granted ? "allowed" : "not allowed"
+                    } catch {
+                        answer = "error: \(error.localizedDescription) (\((error as NSError).domain) \((error as NSError).code))"
+                    }
+                }
+                while answer == nil, Date().timeIntervalSince(started) < Double(wait) {
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                log("asked macOS; after \(Int(Date().timeIntervalSince(started))) s it said: \(answer ?? "nothing yet (its question is still open)")")
+                log("permission: \(await permission())")
+            }
+            log("done")
+            NSApp.terminate(nil)
         }
     }
 }
