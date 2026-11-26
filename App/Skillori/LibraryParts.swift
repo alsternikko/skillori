@@ -284,6 +284,57 @@ enum Assist {
         .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// One line in the list of your skills: a skill, or a source several of them came from.
+    enum MineEntry: Identifiable {
+        case skill(MySkill)
+        case source(name: String, skills: [MySkill])
+
+        var id: String {
+            switch self {
+            case .skill(let skill): "skill:" + skill.id
+            case .source(let name, _): "source:" + name.lowercased()
+            }
+        }
+
+        /// What the list is sorted by: the skill's name, or the source's.
+        var title: String {
+            switch self {
+            case .skill(let skill): skill.name
+            case .source(let name, _): name
+            }
+        }
+    }
+
+    /// Your skills with every source that brought two or more of them on one line, in one
+    /// alphabetical order. A source with one skill, and a skill with none, stay plain lines.
+    static func mineBySource(_ store: InventoryStore) -> [MineEntry] {
+        var bySource: [String: (name: String, skills: [MySkill])] = [:]
+        var plain: [MySkill] = []
+        for skill in mine(store) {
+            guard let name = store.upstreamSource(for: skill.primary)?.name else { plain.append(skill); continue }
+            bySource[name.lowercased(), default: (name, [])].skills.append(skill)
+        }
+        var entries = plain.map(MineEntry.skill)
+        for (_, group) in bySource {
+            if group.skills.count == 1 { entries.append(.skill(group.skills[0])) }
+            else { entries.append(.source(name: group.name, skills: group.skills)) }
+        }
+        return entries.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// The word a source's line shows: its most pressing skill's, counted when not all share it,
+    /// so an update inside a folded source is still seen.
+    static func note(forSource skills: [MySkill], store: InventoryStore) -> (text: String, kind: StatusChip.Kind)? {
+        let notes = skills.compactMap { note(for: $0, store: store) }
+        let order: [StatusChip.Kind] = [.new, .attention, .neutral, .outline]
+        guard let kind = order.first(where: { kind in notes.contains { $0.kind == kind } }) else { return nil }
+        let pressing = notes.filter { $0.kind == kind }
+        if kind == .new { return (pressing.count == 1 ? "1 update" : "\(pressing.count) updates", .new) }
+        let text = pressing[0].text
+        if pressing.count == skills.count, pressing.allSatisfy({ $0.text == text }) { return (text, kind) }
+        return (pressing.allSatisfy({ $0.text == text }) ? "\(pressing.count) · \(text)" : "\(pressing.count) to look at", kind)
+    }
+
     /// The one word a skill of yours shows in a list, and only when something is off.
     static func note(for skill: MySkill, store: InventoryStore) -> (text: String, kind: StatusChip.Kind)? {
         if case .different = store.copies(of: skill.primary) { return ("Exists twice", .attention) }
@@ -676,15 +727,32 @@ struct MySkillsList: View {
     @Environment(InventoryStore.self) private var store
     var open: (LibraryPage) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        let skills = Assist.mine(store)
+        let entries = Assist.mineBySource(store)
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(skills) { skill in
-                    SkillLine(name: skill.name, description: skill.primary.frontmatter.description,
-                              note: Assist.note(for: skill, store: store)) { open(.skill(skill.primary.id)) }
+                ForEach(entries) { entry in
+                    switch entry {
+                    case .skill(let skill):
+                        line(skill)
+                    case .source(let name, let skills):
+                        let isOpen = store.openSources.contains(name.lowercased())
+                        SourceLine(name: name, skills: skills.map(\.name), isOpen: isOpen,
+                                   note: Assist.note(forSource: skills, store: store)) { toggle(name) }
+                        if isOpen {
+                            VStack(spacing: 0) {
+                                ForEach(skills) { line($0, indent: SourceLine.indent) }
+                            }
+                            .overlay(alignment: .leading) {
+                                Rectangle().fill(Palette.line).frame(width: 1).padding(.leading, SourceLine.guide)
+                            }
+                            .transition(.opacity)
+                        }
+                    }
                 }
-                if skills.isEmpty {
+                if entries.isEmpty {
                     Text("No skills of your own yet. Skills you install with the skills installer show up here.")
                         .font(TypeRole.sans(13)).foregroundStyle(Palette.ink2)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(16)
@@ -694,6 +762,71 @@ struct MySkillsList: View {
         }
         .scrollIndicators(.never)
     }
+
+    private func line(_ skill: Assist.MySkill, indent: CGFloat = 0) -> some View {
+        SkillLine(name: skill.name, description: skill.primary.frontmatter.description,
+                  note: Assist.note(for: skill, store: store), indent: indent) { open(.skill(skill.primary.id)) }
+    }
+
+    private func toggle(_ name: String) {
+        withAnimation(reduceMotion ? nil : Motion.fold) {
+            let key = name.lowercased()
+            if store.openSources.contains(key) { store.openSources.remove(key) } else { store.openSources.insert(key) }
+        }
+    }
+}
+
+/// A source that brought several of your skills: its name, how many, the first of them, and
+/// the most pressing word among them. Folds out to the skills.
+struct SourceLine: View {
+    let name: String
+    let skills: [String]
+    let isOpen: Bool
+    let note: (text: String, kind: StatusChip.Kind)?
+    var action: () -> Void
+    @State private var hovering = false
+
+    /// How far the skills under a source are moved in, and where the line beside them runs.
+    static let indent: CGFloat = 22
+    static let guide: CGFloat = 18
+
+    var body: some View {
+        HStack(spacing: 16) {
+            HStack(spacing: 8) {
+                Text("›").font(TypeRole.mono(13)).foregroundStyle(Palette.ink3)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    .frame(width: 12)
+                Text(name).font(TypeRole.sans(13, .medium)).lineLimit(1)
+                DataText("\(skills.count) skills").foregroundStyle(Palette.ink3).fixedSize()
+            }
+            .frame(width: 240, alignment: .leading)
+            Text(Self.names(skills)).font(TypeRole.sans(13)).foregroundStyle(Palette.ink2).lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let note {
+                if note.kind == .outline {
+                    LabelText(note.text).foregroundStyle(Palette.ink3)
+                } else {
+                    StatusChip(note.text, kind: note.kind)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .background(Palette.ink.opacity(hovering ? 0.04 : 0), in: RoundedRectangle(cornerRadius: Radius.row, style: .circular))
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: action)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+        .accessibilityHint(isOpen ? "Hides its skills" : "Shows its skills")
+    }
+
+    /// "a, b, c and 15 more", or all of them when there are three or fewer.
+    static func names(_ names: [String]) -> String {
+        if names.count > 3 { return names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more" }
+        return names.dropLast().joined(separator: ", ") + " and " + (names.last ?? "")
+    }
 }
 
 /// A skill in a list: its name, what it is for, and a word if something is off.
@@ -701,12 +834,14 @@ struct SkillLine: View {
     let name: String
     let description: String?
     let note: (text: String, kind: StatusChip.Kind)?
+    /// Moved in under a source; the name column gives up the same, so descriptions line up.
+    var indent: CGFloat = 0
     var action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 16) {
-            Text(name).font(TypeRole.sans(13, .medium)).lineLimit(1).frame(width: 240, alignment: .leading)
+            Text(name).font(TypeRole.sans(13, .medium)).lineLimit(1).frame(width: 240 - indent, alignment: .leading)
             Text(Self.short(description)).font(TypeRole.sans(13)).foregroundStyle(Palette.ink2).lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let note {
@@ -725,6 +860,7 @@ struct SkillLine: View {
         .onTapGesture(perform: action)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
+        .padding(.leading, indent)
     }
 
     /// The first sentence of a description, without the "Use when" that follows.

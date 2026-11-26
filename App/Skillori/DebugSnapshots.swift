@@ -144,6 +144,15 @@ enum DebugSnapshots {
                            to: out.appendingPathComponent("\(name)-dark.png"))
                 }
             }
+            // Your skills with every source folded out, light and dark.
+            let opened = store.openSources
+            store.openSources = Set(Assist.mineBySource(store).compactMap { entry in
+                if case .source(let name, _) = entry { name.lowercased() } else { nil }
+            })
+            render(LibraryView(path: [.mine]).environment(store), size: lib, to: out.appendingPathComponent("library-mine-open.png"))
+            render(LibraryView(path: [.mine]).environment(store).environment(\.colorScheme, .dark), size: lib,
+                   to: out.appendingPathComponent("library-mine-open-dark.png"))
+            store.openSources = opened
             let installs = store.inventory?.installations ?? []
             render(SettingsView(ownChrome: true).environment(store), size: CGSize(width: 640, height: 680),
                    to: out.appendingPathComponent("settings.png"))

@@ -30,6 +30,9 @@ final class InventoryStore {
     /// Skills the reader keeps as local copies, no longer checked against a source, and since
     /// when. By folder, like links.
     private(set) var keptLocal: [String: Date] = [:]
+    /// The sources folded out in the list of your skills, by lowercased name. Kept while the
+    /// app runs, so coming back from a skill's page finds the list as it was left.
+    var openSources: Set<String> = []
     /// Skills moved from a source the installer recorded to the one the reader linked, by folder.
     /// Kept, so the skill's page can tell where it came from before.
     private(set) var moves: [String: Move] = [:]
