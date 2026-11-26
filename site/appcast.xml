@@ -5,15 +5,15 @@
     <title>Skillori</title>
     <link>https://skillori.app/changelog/</link>
     <item>
-      <title>Skillori 0.2.28</title>
-      <pubDate>Thu, 26 Nov 2026 15:05:23 +0000</pubDate>
-      <sparkle:version>33</sparkle:version>
-      <sparkle:shortVersionString>0.2.28</sparkle:shortVersionString>
+      <title>Skillori 0.2.29</title>
+      <pubDate>Thu, 26 Nov 2026 15:27:40 +0000</pubDate>
+      <sparkle:version>34</sparkle:version>
+      <sparkle:shortVersionString>0.2.29</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.28</sparkle:fullReleaseNotesLink>
-      <description><![CDATA[<p>Skills from a private GitHub repository, such as your team's own, are now checked with your GitHub CLI sign-in instead of looking like their source is gone. Skillori asks signed out first and uses your sign-in only when GitHub says it can't find the repository. The way back on a skill's All details page now stays in view when you scroll.</p>]]></description>
+      <sparkle:fullReleaseNotesLink>https://skillori.app/changelog/#v0.2.29</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[<p>Your skills are now grouped by where they came from. A repository you installed several skills from is one line in the library, with how many and the first few names, and folds out to show them all. A new version inside a folded repository still shows on its line.</p>]]></description>
       <enclosure url="https://dl.dropboxusercontent.com/scl/fi/5a712jyr61keg4ii1wszr/Skillori.dmg?rlkey=6mjshiwn0xvhkh8mfcdivcrwa&amp;dl=1" type="application/octet-stream"
-                 sparkle:edSignature="OmxnlRJLQKsdX463krmVOev1/jVfm9BIVptQZ5P4h2xZlkPY/izrxTNqp/TU/3aRzU8joh1wWLYLZ9FIT5UzCw==" length="5828484"/>
+                 sparkle:edSignature="E15qx2gv/ETDisCsH3urf8EP7kUFWm41oDszxrRGzlUgJF4qC538iRdM8MNFCP/o4KGjObRXALzkmCm26Ya4Dg==" length="5858001"/>
     </item>
   </channel>
 </rss>
