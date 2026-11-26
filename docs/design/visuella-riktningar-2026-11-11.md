@@ -2,7 +2,7 @@
 
 **Status:** Underkänd av produktägaren 2026-11-11. Ingen av riktningarna når den nivå som eftersträvas. Behålls som historik; se [Mobbin-baseline](mobbin-baseline-2026-11-11.md) för vad som saknades.
 **Canvas:** [Skillori visuella riktningar](https://claude.ai/artifact/NPHy2godiviY3M8SHg7wpv) (privat tills den delas)
-**Underlag:** [Namn- och varumärkesbrief](../Skillori-namn-och-varumarkesbrief.md) §8–9 och §13, [spikfynd](../research/spike-2026-11-11.md)
+**Underlag:** namn- och varumärkesbriefen (utanför repot) §8–9 och §13, [spikfynd](../research/spike-2026-11-11.md)
 
 Varje riktning visas i verkliga sammanhang: menyradsikon i 16 px i ljust och mörkt läge, förstorad mallbild, appikon i tre storlekar, menyradspanel och bibliotek med riktiga data från inventeringen (309 skills, varav 280 hanterade av appar). Symbolerna finns som mallbilder i [`symboler/`](symboler/).
 

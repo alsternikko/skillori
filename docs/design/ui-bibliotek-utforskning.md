@@ -2,7 +2,7 @@
 
 **Datum:** 11 november 2026 (uppdaterad samma dag med Mobbin-baselinen och produktägarens svar)
 **Status:** Underlag för beslut. Inga beroenden är tillagda och ingen kod är ändrad.
-**Underlag:** [Produktbrief](../Skillori-produktbrief.md) §5–6 och §14, [namn- och varumärkesbrief](../Skillori-namn-och-varumarkesbrief.md), [beslut 0003](../beslut/0003-teknikstack.md), [spike](../research/spike-2026-11-11.md), [Mobbin-baseline](mobbin-baseline-2026-11-11.md) och koden i `App/Skillori/`.
+**Underlag:** [Produktbrief](../Skillori-produktbrief.md) §5–6 och §14, namn- och varumärkesbriefen (utanför repot), [beslut 0003](../beslut/0003-teknikstack.md), [spike](../research/spike-2026-11-11.md), [Mobbin-baseline](mobbin-baseline-2026-11-11.md) och koden i `App/Skillori/`.
 **Arbetssätt:** Skillerna `pick-ui-library` och `emil-design-eng`.
 
 ## Sammanfattning

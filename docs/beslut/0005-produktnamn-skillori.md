@@ -4,7 +4,7 @@
 
 ## Kontext
 
-Skillwatch var arbetsnamn i [produktbriefen](../Skillori-produktbrief.md). Produktägaren har utforskat namn vidare och valt **Skillori** ([namn- och varumärkesbrief](../Skillori-namn-och-varumarkesbrief.md)). Associationen *ori → origami* (ett ark som genom vikning får struktur) är en avsiktlig kreativ association, inte en språklig härledning.
+Skillwatch var arbetsnamn i [produktbriefen](../Skillori-produktbrief.md). Produktägaren har utforskat namn vidare och valt **Skillori** (i namn- och varumärkesbriefen, som ligger utanför repot). Associationen *ori → origami* (ett ark som genom vikning får struktur) är en avsiktlig kreativ association, inte en språklig härledning.
 
 ## Beslut
 
