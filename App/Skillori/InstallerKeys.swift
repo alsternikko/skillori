@@ -45,6 +45,18 @@ enum InstallerKeys {
     static func remove(for package: String) {
         SecItemDelete(query(package) as CFDictionary)
     }
+
+    /// The packages arguments are kept for. Reads names only, no secret, so it never asks the reader.
+    static func packages() -> [String] {
+        let request: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+                                      kSecAttrService as String: service,
+                                      kSecReturnAttributes as String: true,
+                                      kSecMatchLimit as String: kSecMatchLimitAll]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess,
+              let items = result as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
+    }
 }
 
 /// Runs an installer that fetches skills with the reader's key into a home folder of its own,

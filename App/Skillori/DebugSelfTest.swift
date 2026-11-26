@@ -160,12 +160,24 @@ enum DebugSelfTest {
             // Reading an install script, without linking: only runs when the skill is on this Mac.
             if let craft = store.inventory?.installations.first(where: { $0.directoryName == "interface-craft" && $0.provenance == .unknown }) {
                 let pasted = "curl -fsSL https://www.interfacecraft.dev/api/install-skills | bash"
+                // Read as a source while the script is there; since 2026-11-26 it answers 410 and
+                // says where it moved, which is followed instead of reported as not found.
                 switch await store.searchSource(pasted, for: craft) {
                 case .success(let search):
                     check("install script is read as a source", search.candidates.first?.subpath == "interface-craft",
                           "\(search.candidates.first.map { "\($0.subpath) \($0.match)" } ?? "none")")
+                case .failure(.moved(let notice)):
+                    check("a moved install script says where it went", notice.url != nil, "\(notice.message) → \(notice.url?.absoluteString ?? "no address")")
+                    if let url = notice.url {
+                        let page = await store.readPage(url)
+                        check("the page it moved to is read", { if case .success = page { true } else { false } }(), "\(page)")
+                    }
                 case .failure(let problem):
                     check("install script is read as a source", false, problem.sentence)
+                }
+                // A key kept for its installer is offered when the link was lost.
+                if let group = await store.unlinkedGroups(only: [craft.id]).first {
+                    check("a kept installer key is offered", true, store.keptKeys(for: group).joined(separator: ", "))
                 }
             }
 

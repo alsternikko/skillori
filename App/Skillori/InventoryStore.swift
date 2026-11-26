@@ -1139,6 +1139,8 @@ final class InventoryStore {
         case unreadable
         case source(UpstreamState.Reason, installer: Bool)
         case noSkills(installer: Bool)
+        /// The script answered "gone" and said something, such as where it moved to.
+        case moved(SourceNotice)
 
         var sentence: String {
             switch self {
@@ -1146,6 +1148,8 @@ final class InventoryStore {
                 "That is neither a GitHub repository nor a script address. Use owner/repository, an address on github.com, or the https address of an install script."
             case .source(.failed, installer: true):
                 "Skillori could not read which files that script writes. It only reads scripts that carry their files, and never runs them."
+            case .source(.notFound, installer: true), .moved:
+                "That script is no longer at that address. Paste the address of the page you installed the skill from, or its new install command."
             case .source(let reason, _): reason.sentence
             case .noSkills(installer: false): "That repository has no folder with a SKILL.md."
             case .noSkills(installer: true): "That script writes no SKILL.md that Skillori can read."
@@ -1162,7 +1166,15 @@ final class InventoryStore {
         async let local = Task.detached(priority: .utility) {
             try? GitTreeHash.hashDirectory(at: URL(fileURLWithPath: path)).treeID
         }.value
-        switch await Self.tree(of: source) {
+        let answer: Result<SourceTree, UpstreamState.Reason>
+        if case .installer(let script) = source {
+            let read = await InstallerScripts().read(script)
+            if case .failure(.notFound) = read.tree, let notice = read.notice { return .failure(.moved(notice)) }
+            answer = read.tree
+        } else {
+            answer = await Self.tree(of: source)
+        }
+        switch answer {
         case .failure(let reason): return .failure(.source(reason, installer: isInstaller))
         case .success(let tree):
             let localHash = await local
@@ -1350,7 +1362,8 @@ final class InventoryStore {
         // The installer it was linked to before, then those the site's pages name.
         let unlinked = group.installations.compactMap { pastSource(of: $0)?.package }.map { PackageInstaller(package: $0) }
         let named = pages.compactMap { lead -> PackageInstaller? in if case .package(let installer) = lead.source { installer } else { nil } }
-        for installer in unlinked + named where !found.contains(where: { $0.package == installer.package }) {
+        let kept = keptKeys(for: group).map { PackageInstaller(package: $0) }
+        for installer in unlinked + kept + named where !found.contains(where: { $0.package == installer.package }) {
             if case .success(let info) = await NpmRegistry().info(for: installer.package) { found.append(info) }
         }
         for site in knownSites(of: group) {
@@ -1360,6 +1373,22 @@ final class InventoryStore {
             }
         }
         return .success(found)
+    }
+
+    /// Installers the reader kept a key for that no skill is linked to any more, when the
+    /// package's name holds the skill's (`@interfacecraft/install` for interface-craft). A link
+    /// to one can be lost while its key stays, and the key says the reader installed from it.
+    /// Reads the Keychain's names only.
+    func keptKeys(for group: UnlinkedGroup) -> [String] {
+        let skill = Self.letters(group.name)
+        guard skill.count >= 4 else { return [] }
+        let linked = Set(links.values.compactMap(\.package))
+        return InstallerKeys.packages().filter { !linked.contains($0) && Self.letters($0).contains(skill) }
+    }
+
+    /// Letters and digits only, lowercased, so that `interface-craft` and `@interfacecraft/install` meet.
+    private static func letters(_ text: String) -> String {
+        String(text.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains).map(Character.init))
     }
 
     /// Links every copy in the group to an installer run with the reader's own key.

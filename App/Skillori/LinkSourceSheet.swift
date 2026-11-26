@@ -308,8 +308,20 @@ struct LinkSourceSheet: View {
 
     /// The page behind an address that turned out not to be a script, read for what it names.
     /// One way to install is followed at once; several are offered.
-    private func readPage(_ url: URL) async {
+    /// `moved` is what a script said when it answered "gone" and pointed here: said again when
+    /// the page shows nothing to follow, since it may need the reader to sign in.
+    private func readPage(_ url: URL, moved: SourceNotice? = nil) async {
         let host = url.host.map(Self.bare) ?? url.absoluteString
+        if let moved {
+            switch await store.readPage(url) {
+            case .success(let leads) where leads.count == 1: follow(leads[0], from: host)
+            case .success(let leads) where !leads.isEmpty: phase = .page(host: host, leads: leads)
+            default:
+                phase = .failed("The script says: “\(moved.message)” Skillori can’t see an install command at \(url.absoluteString). "
+                                + "If you have to sign in there, copy the new install command and paste it here.", chip: "Moved")
+            }
+            return
+        }
         switch await store.readPage(url) {
         case .success(let leads) where leads.count == 1:
             follow(leads[0], from: host)
@@ -361,6 +373,13 @@ struct LinkSourceSheet: View {
                     await readPage(address.url)
                 } else {
                     phase = .failed(InventoryStore.LinkProblem.source(.failed, installer: true).sentence, chip: "Not found")
+                }
+            case .failure(.moved(let notice)) where !followingPage:
+                if let url = notice.url {
+                    await readPage(url, moved: notice)
+                } else {
+                    phase = .failed("The script says: “\(notice.message)” "
+                                    + InventoryStore.LinkProblem.moved(notice).sentence, chip: "Moved")
                 }
             case .failure(let problem):
                 phase = .failed(problem.sentence, chip: "Not found")
