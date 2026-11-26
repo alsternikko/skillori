@@ -7,15 +7,12 @@ import Foundation
 /// out, since they are drawn from the windows' own content. `SKILLORI_ON_SCREEN=1` shows the
 /// windows where they normally go, for watching a run.
 enum DebugQuiet {
-    static let testKeys = [
-        "SKILLORI_SNAPSHOT_DIR", "SKILLORI_SELFTEST", "SKILLORI_LIBRARY_PROBE", "SKILLORI_ADOPT_PROBE",
-        "SKILLORI_PANEL_PROBE", "SKILLORI_LIBRARY_RUN_PROBE", "SKILLORI_LOST_PROBE", "SKILLORI_PAGE_PICTURE",
-        "SKILLORI_UPDATE_PLUGIN", "SKILLORI_SHARE_PROBE", "SKILLORI_FIRST_START_PROBE", "SKILLORI_NOTIFY_PROBE",
-    ]
-
+    /// Every test run here is started with at least one `SKILLORI_…` variable (a probe, the
+    /// self-test, the pictures, an installer trial, sample data), so any of them makes the run
+    /// quiet. A new test key needs no list to join; only `SKILLORI_ON_SCREEN` opts out.
     static let isOn: Bool = {
         let env = ProcessInfo.processInfo.environment
-        return env["SKILLORI_ON_SCREEN"] == nil && testKeys.contains { env[$0] != nil }
+        return env["SKILLORI_ON_SCREEN"] == nil && env.keys.contains { $0.hasPrefix("SKILLORI_") }
     }()
 
     /// How far to the left the windows go: past any arrangement of screens.
