@@ -162,6 +162,11 @@ struct SkillPage: View {
     // MARK: Advice
 
     /// What the gone source said, quoted as it said it, for the advice.
+    /// Whether this skill's source is a GitHub repository, which Skillori can ask as the reader.
+    private var isGitHub: Bool {
+        if case .github? = store.upstreamSource(for: installation) { true } else { false }
+    }
+
     private var noteSentence: String? {
         guard let message = store.notice(for: installation)?.message, !message.isEmpty else { return nil }
         return "It says: “\(message)” "
@@ -255,6 +260,13 @@ struct SkillPage: View {
         if isMine, let reason = store.lostSource(of: installation) {
             let recorded = store.recordedSource(of: installation) ?? "Its source"
             let (title, text): (String, String) = switch reason {
+            // GitHub says "not found" about a private repository too, so that is said as it is.
+            case .notFound where noteSentence == nil && isGitHub && GitHubSignIn.signedIn != true:
+                ("GitHub doesn’t show the source", "\(recorded) can’t be seen signed out. If it’s a private repository, "
+                    + "sign in with the GitHub CLI (gh auth login) and Skillori asks as you. It may also have been removed or moved. Your copy works as it is.")
+            case .notFound where noteSentence == nil && isGitHub:
+                ("The source is gone", "\(recorded) doesn’t answer, even when Skillori asks as you on GitHub. "
+                    + "It may have been removed or moved, or your account can’t see it. Your copy works as it is.")
             case .notFound:
                 ("The source is gone", "\(recorded) no longer answers. "
                     + (noteSentence ?? "It may be private or removed, or have moved. ") + "Your copy works as it is.")

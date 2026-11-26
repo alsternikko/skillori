@@ -206,7 +206,11 @@ extension SourceProposal {
 extension UpstreamState.Reason {
     var sentence: String {
         switch self {
-        case .notFound: "The source no longer answers. It may be private or removed, or have moved."
+        // GitHub says "not found" about a private repository too. Whether Skillori could ask as
+        // the reader decides what that can still mean.
+        case .notFound: GitHubSignIn.signedIn == true
+            ? "The source doesn’t answer, even when Skillori asks as you on GitHub. It may have been removed or moved, or your account can’t see it."
+            : "The source doesn’t answer. It may be private, removed or moved. If it’s a private GitHub repository, sign in with the GitHub CLI (gh auth login) and Skillori asks as you."
         case .folderGone: "The source no longer has this skill's folder. It may have moved."
         case .rateLimited: "The source asked Skillori to wait. It will ask again later."
         case .offline: "No contact with the source."

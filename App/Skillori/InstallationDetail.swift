@@ -12,6 +12,8 @@ struct InstallationDetail: View {
     var total = 1
     var readAt: Date?
     var agentsOnThisMac: [Agent] = []
+    /// The page the way back leads to, by name.
+    var backTitle = "Library"
     var onBack: () -> Void = {}
     /// Opens the sheet where the reader points out this skill's source.
     var onLink: () -> Void = {}
@@ -21,6 +23,14 @@ struct InstallationDetail: View {
     @State private var changes: Result<[FileChange], UpstreamState.Reason>?
 
     var body: some View {
+        VStack(spacing: 6) {
+            // Above the scrolling part, as on every other page, so the way back stays in view.
+            Crumb(title: backTitle, action: onBack)
+            content
+        }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(spacing: 6) {
                 header
@@ -57,19 +67,6 @@ struct InstallationDetail: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            // Where this is, and the way back.
-            HStack(spacing: 8) {
-                Button(action: onBack) {
-                    Text("← LIBRARY").font(TypeRole.mono(11.5, .medium)).foregroundStyle(Palette.ink)
-                }
-                .buttonStyle(.plain)
-                DataText("/").foregroundStyle(Palette.ink3)
-                DataText(installation.displayName).foregroundStyle(Palette.ink2).lineLimit(1)
-                Spacer(minLength: 8)
-            }
-            .frame(height: 30)
-            .padding(.horizontal, 10)
-
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     LabelText("Skill · \(scope) · \(status.word)")

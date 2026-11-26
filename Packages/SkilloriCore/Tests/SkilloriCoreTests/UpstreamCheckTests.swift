@@ -155,6 +155,61 @@ import Testing
         #expect(await stopped.tree(of: source).failureReason == .cancelled)
     }
 
+    /// A private repository answers "not found" signed out. Skillori then asks as the reader,
+    /// and only then: a public answer never carries the token.
+    @Test func asksAPrivateRepositoryAsTheReaderAfterNotFound() async throws {
+        let seen = Counter()
+        let body = #"{"sha":"root","tree":[{"path":"skills/a/SKILL.md","type":"blob","sha":"f"},{"path":"skills/a","type":"tree","sha":"a1"}]}"#
+        let transport: GitHubTrees.Transport = { request in
+            await seen.add(request)
+            let signedIn = request.value(forHTTPHeaderField: "Authorization") == "Bearer t0ken"
+            return (signedIn ? Data(body.utf8) : Data(), Self.response(request.url!, signedIn ? 200 : 404, ["etag": "\"e\""]))
+        }
+        let budget = GitHubBudget()
+        let signIn = GitHubSignIn(source: { "t0ken" })
+        let trees = GitHubTrees(transport: transport, budget: budget, signIn: signIn)
+        let source = UpstreamSource(owner: "Team", repository: "skills")
+        let tree = try await trees.tree(of: source).get()
+        #expect(tree.hash(of: "skills/a") == "a1")
+        var requests = await seen.requests
+        #expect(requests.map { $0.value(forHTTPHeaderField: "Authorization") } == [nil, "Bearer t0ken"])
+        // The answer given to the reader is not kept for conditional questions.
+        #expect(await budget.cached(requests[1].url!.absoluteString) == nil)
+        // Known to be private now: asked as the reader straight away.
+        _ = await trees.tree(of: source)
+        requests = await seen.requests
+        #expect(requests.count == 3)
+        #expect(requests[2].value(forHTTPHeaderField: "Authorization") == "Bearer t0ken")
+        // Not held up when GitHub asks the public questions to wait.
+        await budget.wait(until: Date().addingTimeInterval(600))
+        #expect((try? await trees.tree(of: source).get()) != nil)
+        #expect(await trees.tree(of: UpstreamSource(owner: "o", repository: "public")).failureReason == .rateLimited)
+    }
+
+    @Test func withoutASignInANotFoundStaysNotFound() async {
+        let seen = Counter()
+        let trees = GitHubTrees(transport: { request in
+            await seen.add(request)
+            return (Data(), Self.response(request.url!, 404))
+        }, signIn: GitHubSignIn(source: { nil }))
+        #expect(await trees.tree(of: UpstreamSource(owner: "o", repository: "r")).failureReason == .notFound)
+        #expect(await seen.requests.count == 1)
+        // Signed in but still not found: removed, or the account can't see it.
+        let refused = GitHubTrees(transport: { request in (Data(), Self.response(request.url!, 404)) },
+                                  signIn: GitHubSignIn(source: { "t" }))
+        #expect(await refused.tree(of: UpstreamSource(owner: "o", repository: "r")).failureReason == .notFound)
+    }
+
+    @Test func aPublicAnswerNeverAsksForTheToken() async {
+        let asked = Counter()
+        let trees = GitHubTrees(transport: { request in
+            #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+            return (Data(#"{"sha":"r","tree":[]}"#.utf8), Self.response(request.url!, 200))
+        }, signIn: GitHubSignIn(source: { await asked.add(URLRequest(url: URL(string: "https://x")!)); return "t" }))
+        _ = await trees.tree(of: UpstreamSource(owner: "o", repository: "r"))
+        #expect(await asked.requests.isEmpty)
+    }
+
 }
 
 private actor Counter {

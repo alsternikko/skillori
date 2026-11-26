@@ -6,6 +6,23 @@ import SkilloriCore
 // With --check-sources it also asks each tracked skill's source whether it has changed. That is
 // the only thing here that uses the network.
 let checkSources = CommandLine.arguments.contains("--check-sources")
+// With --signed-in as well, a source GitHub doesn't show signed out is asked again as you,
+// with the token `gh auth token` gives, as the app does.
+if CommandLine.arguments.contains("--signed-in") {
+    GitHubSignIn.shared.use {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["gh", "auth", "token", "--hostname", "github.com"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+            ? String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+    }
+}
 // With --find-source <repository or script address> <skill> it asks one repository which of its folders that skill
 // on this Mac matches, the way "Link source" does.
 var arguments = Array(CommandLine.arguments.dropFirst())

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a tracked skill came from, in a form that can be asked about its current content.
-/// Only public GitHub repositories are supported so far.
+/// GitHub repositories only so far: public ones, and private ones the reader can see when signed in with `gh`.
 public struct UpstreamSource: Hashable, Sendable {
     public let owner: String
     public let repository: String
@@ -257,18 +257,29 @@ public enum UpstreamComparer {
 /// Asks GitHub for a repository's folders. One question per repository answers for every skill in it.
 ///
 /// The request carries the repository's name and nothing else: no account, no token, nothing
-/// about the reader or the files on this Mac.
+/// about the reader or the files on this Mac. Only when GitHub answers "not found", which is
+/// also how it answers about a private repository, and the reader is signed in to GitHub on
+/// this Mac, is the same question asked again as them (see `GitHubSignIn`).
 public struct GitHubTrees: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, HTTPURLResponse)
     private let transport: Transport
     private let budget: GitHubBudget
+    private let signIn: GitHubSignIn?
 
     /// `budget` is what this asker remembers of GitHub's answers. The app passes `.shared`, so
     /// every check builds on the last; a fresh one remembers nothing, which tests want.
-    public init(transport: @escaping Transport = GitHubTrees.network, budget: GitHubBudget = GitHubBudget()) {
+    /// `signIn` is where the reader's own GitHub sign-in comes from; without one, only the
+    /// public question is asked.
+    public init(transport: @escaping Transport = GitHubTrees.network, budget: GitHubBudget = GitHubBudget(),
+                signIn: GitHubSignIn? = nil) {
         self.transport = transport
         self.budget = budget
+        self.signIn = signIn
     }
+
+    /// How the app asks: building on every earlier answer, and as the reader where GitHub
+    /// shows a repository only to them.
+    public static var app: GitHubTrees { GitHubTrees(budget: .shared, signIn: .shared) }
 
     /// One session for every request: no cookies, no stored credentials, nothing kept on disk.
     private static let session: URLSession = {
@@ -325,11 +336,47 @@ public struct GitHubTrees: Sendable {
     }
 
     public func tree(of source: UpstreamSource) async -> Result<SourceTree, UpstreamState.Reason> {
-        guard var request = Self.request(for: source) else { return .failure(.unsupported) }
+        guard let request = Self.request(for: source) else { return .failure(.unsupported) }
+        let name = source.name.lowercased()
+        // A repository that answered only to the reader before is asked as them straight away,
+        // so the public question isn't spent on a "not found" every time. The reader's limit is
+        // their own, so a wait GitHub asked for on public questions doesn't hold this one up.
+        if let signIn, await signIn.isPrivate(name), let answer = await signedIn(request, signIn) {
+            return answer.flatMap(Self.tree(from:))
+        }
         // GitHub said to wait: asking anyway only makes the wait longer.
         if await budget.mustWait() { return .failure(.rateLimited) }
+        let open = await fetch(request)
+        guard case .failure(.notFound) = open, let signIn else { return open.flatMap(Self.tree(from:)) }
+        guard let answer = await signedIn(request, signIn) else { return .failure(.notFound) }
+        if case .success = answer { await signIn.markPrivate(name) }
+        return answer.flatMap(Self.tree(from:))
+    }
+
+    /// The same question as the reader, or nil when there is no sign-in to ask with.
+    private func signedIn(_ request: URLRequest, _ signIn: GitHubSignIn) async -> Result<Data, UpstreamState.Reason>? {
+        guard let token = await signIn.token() else { return nil }
+        var request = request
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var refused = false
+        let answer = await fetch(request, asReader: true, refused: &refused)
+        // A token GitHub no longer takes: read it again next time, it may have been renewed.
+        if refused { await signIn.forget() }
+        return answer
+    }
+
+    /// One question. A public answer is remembered by its ETag, so it can be asked again
+    /// conditionally; an answer given to the reader is never kept, in memory or on disk.
+    private func fetch(_ request: URLRequest) async -> Result<Data, UpstreamState.Reason> {
+        var refused = false
+        return await fetch(request, asReader: false, refused: &refused)
+    }
+
+    /// `refused` is set when GitHub didn't take the reader's sign-in.
+    private func fetch(_ request: URLRequest, asReader: Bool, refused: inout Bool) async -> Result<Data, UpstreamState.Reason> {
+        var request = request
         let url = request.url!.absoluteString
-        let cached = await budget.cached(url)
+        let cached = asReader ? nil : await budget.cached(url)
         if let cached { request.setValue(cached.etag, forHTTPHeaderField: "If-None-Match") }
         var data: Data
         let response: HTTPURLResponse
@@ -344,18 +391,26 @@ public struct GitHubTrees: Sendable {
         }
         switch response.statusCode {
         case 200:
-            if let etag = response.value(forHTTPHeaderField: "etag") { await budget.store(url, etag: etag, data: data) }
+            if !asReader, let etag = response.value(forHTTPHeaderField: "etag") { await budget.store(url, etag: etag, data: data) }
         case 304 where cached != nil:
             // Unchanged since the last answer. A conditional request like this does not count
             // against GitHub's hourly limit.
             data = cached!.data
+        case 401 where asReader:
+            refused = true
+            return .failure(.notFound)
         case 404: return .failure(.notFound)
         case 403, 429:
             guard Self.isRateLimit(response) else { return .failure(.notFound) }
-            await budget.wait(until: Self.retryDate(response))
+            // The reader's own limit is not the public one: it doesn't hold up public questions.
+            if !asReader { await budget.wait(until: Self.retryDate(response)) }
             return .failure(.rateLimited)
         default: return .failure(.failed)
         }
+        return .success(data)
+    }
+
+    static func tree(from data: Data) -> Result<SourceTree, UpstreamState.Reason> {
         struct Listing: Decodable {
             struct Item: Decodable { let path: String; let type: String; let sha: String; let mode: String? }
             let sha: String
@@ -522,13 +577,13 @@ public enum UpstreamChecker {
     /// How many sources are asked at the same time.
     public static let maxConcurrent = 4
 
-    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared),
+    public static func check(_ questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees.app,
                              installers: InstallerScripts = InstallerScripts()) async -> [String: UpstreamState] {
         await answers(to: questions, using: trees, installers: installers).mapValues(\.state)
     }
 
     /// Answers every question, asking each source once, with what a gone source said.
-    public static func answers(to questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees(budget: .shared),
+    public static func answers(to questions: [UpstreamQuestion], using trees: GitHubTrees = GitHubTrees.app,
                                installers: InstallerScripts = InstallerScripts()) async -> [String: UpstreamAnswer] {
         var answers: [String: UpstreamAnswer] = [:]
         var bySource: [SkillSource: [UpstreamQuestion]] = [:]

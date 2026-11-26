@@ -177,7 +177,7 @@ public struct PluginChecker: Sendable {
     private let trees: GitHubTrees
     private let fetchFile: FileFetcher
 
-    public init(trees: GitHubTrees = GitHubTrees(budget: .shared), fetchFile: @escaping FileFetcher = PluginChecker.rawFile) {
+    public init(trees: GitHubTrees = GitHubTrees.app, fetchFile: @escaping FileFetcher = PluginChecker.rawFile) {
         self.trees = trees
         self.fetchFile = fetchFile
     }

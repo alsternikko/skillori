@@ -211,7 +211,7 @@ public struct SourceFinder: Sendable {
     /// How many earlier versions of one skill file are read at most.
     public static let maxVersions = 30
 
-    public init(trees: GitHubTrees = GitHubTrees(budget: .shared), registry: SkillRegistry = SkillRegistry(),
+    public init(trees: GitHubTrees = GitHubTrees.app, registry: SkillRegistry = SkillRegistry(),
                 fetchFile: @escaping FileFetcher = SourceFinder.rawFile, history: @escaping HistoryFetcher = SourceFinder.commits) {
         self.trees = trees
         self.registry = registry

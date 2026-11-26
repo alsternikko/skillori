@@ -147,6 +147,48 @@ enum Shell {
     }
 }
 
+/// The token the GitHub CLI keeps for the reader, for repositories GitHub shows only to them.
+/// Read with `gh auth token`, which takes it from the keychain or gh's own file; nil when gh
+/// isn't installed or the reader isn't signed in.
+enum GitHubCLI {
+    @Sendable static func token() async -> String? {
+        guard let gh = await location() else { return nil }
+        return await Task.detached(priority: .utility) { () -> String? in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: gh)
+            process.arguments = ["auth", "token", "--hostname", "github.com"]
+            process.standardInput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            do { try process.run() } catch { return nil }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 8) { if process.isRunning { process.terminate() } }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let token = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !token.isEmpty, !token.contains(where: \.isWhitespace) else { return nil }
+            return token
+        }.value
+    }
+
+    /// Where gh is: Homebrew's folders first, then wherever the reader's login shell finds it.
+    private static func location() async -> String? {
+        for path in ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"] where FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+        let mark = "__SKILLORI__"
+        let output = Protected("")
+        _ = await Shell.run(script: "print -r -- \"\(mark)$(command -v gh)\"", interactive: true, timeout: 8) { text in
+            output.with { $0 += text }
+        }
+        let line = output.with { $0 }.split(whereSeparator: \.isNewline).last { $0.hasPrefix(mark) }
+        guard let path = line.map({ String($0.dropFirst(mark.count)) }), path.hasPrefix("/"),
+              FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return path
+    }
+}
+
 /// A value several threads use, one at a time.
 final class Protected<Value>: @unchecked Sendable {
     private let lock = NSLock()

@@ -1,4 +1,5 @@
 import AppKit
+import SkilloriCore
 import SkilloriUI
 import SwiftUI
 
@@ -46,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before the first check: a private repository is asked about as the reader.
+        GitHubSignIn.shared.use(GitHubCLI.token)
         SkilloriFonts.register()
         AppearanceSetting.current.apply()
         AppUpdater.shared.start()

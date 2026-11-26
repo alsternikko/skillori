@@ -1109,7 +1109,7 @@ final class InventoryStore {
     /// One question to one source, whichever kind it is.
     private static func tree(of source: SkillSource) async -> Result<SourceTree, UpstreamState.Reason> {
         switch source {
-        case .github(let repository): await GitHubTrees(budget: .shared).tree(of: repository)
+        case .github(let repository): await GitHubTrees.app.tree(of: repository)
         case .installer(let script): await InstallerScripts().tree(of: script)
         case .package: .failure(.unsupported)
         }

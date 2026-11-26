@@ -951,7 +951,7 @@ struct LibraryPageView: View {
             if let installation = find(id) {
                 InstallationDetail(installation: installation, readAt: store.inventory?.scannedAt,
                                    agentsOnThisMac: Array(Set((store.inventory?.installations ?? []).flatMap(\.installedAgents))).sorted(),
-                                   onBack: back, onLink: { onLink(installation) })
+                                   backTitle: backTitle, onBack: back, onLink: { onLink(installation) })
             } else {
                 gone
             }

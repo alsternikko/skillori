@@ -164,7 +164,7 @@ struct FirstStartView: View {
         }
         PlainList {
             bullet("Sends only the repository name")
-            bullet("No account and no token")
+            bullet("No account; private repos via gh")
             bullet("Nothing is updated until you say so", isLast: true)
         }
         footer {
