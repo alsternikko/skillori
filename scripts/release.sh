@@ -1,10 +1,11 @@
 #!/bin/zsh
 # Skillori's release in one command. It bumps the version, builds a Release Skillori.app signed
 # with Developer ID, has Apple notarize the app and a .dmg around it, puts the version on the
-# launch page and the line on what is new on top of the changelog (site/changelog/), rebuilds
-# the sitemap from the pages under site/, copies the
-# .dmg to Dropbox/Skillori under a fixed name and waits until Dropbox serves it. Review, commit,
-# tag and push yourself afterwards: the push publishes the site on Vercel.
+# launch page and the line on what is new on top of the changelog, rebuilds the sitemap,
+# copies the .dmg to Dropbox/Skillori under a fixed name and waits until Dropbox serves it.
+# The site lives in its own repository (SITE_REPO in release.conf, a clone of
+# alsternikko/skillori-site), under site/. Review, commit, tag and push both yourself
+# afterwards: the site's push publishes it on Vercel, with the appcast.
 #
 #   sh scripts/release.sh 0.1.0 "One or two sentences in English on what is new."
 #
@@ -36,12 +37,15 @@ conf="$root/scripts/release.conf"
 local_conf="$root/scripts/notarize.conf.local"
 source "$conf"
 
-page="$root/site/index.html"
-changelog="$root/site/changelog/index.html"
-appcast="$root/site/appcast.xml"
-sitemap="$root/site/sitemap.xml"
+# The site's own repository, next to this one unless release.conf says otherwise.
+site_repo="${SITE_REPO:-${root:h}/skillori-site}"
+[[ -d "$site_repo/site" ]] || { print -u2 "release: no site at $site_repo/site. Clone it: git clone https://github.com/alsternikko/skillori-site.git \"$site_repo\""; exit 1; }
+page="$site_repo/site/index.html"
+changelog="$site_repo/site/changelog/index.html"
+appcast="$site_repo/site/appcast.xml"
+sitemap="$site_repo/site/sitemap.xml"
 sparkle_bin="$root/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
-counter="$root/site/api/download.mjs"
+counter="$site_repo/site/api/download.mjs"
 dropbox_file="$DROPBOX_DIR/$DMG_NAME"
 
 say() { print "\n== $1"; }
@@ -71,7 +75,7 @@ check_link() {
   if [[ "$to" == "$DMG_URL" ]]; then
     print "$DMG_LINK leads to the file in Dropbox."
   else
-    print -u2 "$DMG_LINK leads to '${to:-nothing}', not to DMG_URL. Push site/api/download.mjs, or check the Vercel project."
+    print -u2 "$DMG_LINK leads to '${to:-nothing}', not to DMG_URL. Push site/api/download.mjs in $site_repo, or check the Vercel project."
     return 1
   fi
 }
@@ -109,7 +113,7 @@ PY
   if [[ -f "$dropbox_file" ]]; then
     wait_for_dropbox
   fi
-  print "\nCommit and push scripts/release.conf, site/api/download.mjs and site/appcast.xml. Then the buttons lead to Dropbox."
+  print "\nCommit and push scripts/release.conf here, and site/api/download.mjs and site/appcast.xml in $site_repo. Then the buttons lead to Dropbox."
   exit 0
 fi
 
@@ -393,12 +397,17 @@ say "Done"
 cat <<EOF
 Skillori $version is in Dropbox, and the launch page and the changelog say so. Left for you:
 
-  git add project.yml site/index.html site/changelog/index.html site/appcast.xml site/sitemap.xml scripts/release.conf site/api/download.mjs
+  git add project.yml scripts/release.conf
   git commit -m "Release $version"
   git tag v$version
   git push origin main --tags
 
-The push publishes the site, and with it the appcast: installed copies find $version within a
+  cd "$site_repo"
+  git add site
+  git commit -m "Release $version"
+  git push origin main
+
+The site's push publishes it, and with it the appcast: installed copies find $version within a
 day, or at once with Check now. Push soon after Dropbox has the file, because until then the
 old appcast's signature doesn't match the new file and an install in between fails (it can
 be retried). Afterwards, sh scripts/release.sh --check confirms that

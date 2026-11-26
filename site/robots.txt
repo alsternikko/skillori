@@ -1,5 +1,0 @@
-User-agent: *
-Disallow: /api/
-Disallow: /download/
-
-Sitemap: https://skillori.app/sitemap.xml
