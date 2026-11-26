@@ -10,10 +10,14 @@ enum DebugQuiet {
     /// Every test run here is started with at least one `SKILLORI_…` variable (a probe, the
     /// self-test, the pictures, an installer trial, sample data), so any of them makes the run
     /// quiet. A new test key needs no list to join; only `SKILLORI_ON_SCREEN` opts out.
-    static let isOn: Bool = {
-        let env = ProcessInfo.processInfo.environment
-        return env["SKILLORI_ON_SCREEN"] == nil && env.keys.contains { $0.hasPrefix("SKILLORI_") }
-    }()
+    static let isOn: Bool = isTestRun && ProcessInfo.processInfo.environment["SKILLORI_ON_SCREEN"] == nil
+
+    /// Whether a test run drives the app: any `SKILLORI_…` variable but the two that only say how
+    /// (`SKILLORI_ON_SCREEN`) or where (`SKILLORI_TEST_HOME`). Such a run saves no links, answers
+    /// or installer keys outside a test home of its own (`InventoryStore.keepsState`).
+    static let isTestRun: Bool = ProcessInfo.processInfo.environment.keys.contains {
+        $0.hasPrefix("SKILLORI_") && $0 != "SKILLORI_ON_SCREEN" && $0 != "SKILLORI_TEST_HOME"
+    }
 
     /// How far to the left the windows go: past any arrangement of screens.
     static let shift: CGFloat = -30_000

@@ -8,6 +8,8 @@ import SwiftUI
 /// and quits. Lets us check the UI without screen recording permission. With
 /// `SKILLORI_SNAPSHOT_ONLY=share` it renders the share sheet alone, and asks no source;
 /// with `first-start`, first start's last step alone, with checks on and turned off.
+/// It links and unlinks skills for its pictures, so like every test run it saves nothing
+/// (`InventoryStore.keepsState`) unless `SKILLORI_TEST_HOME` gives it a home of its own.
 /// Debug builds only: `SKILLORI_UPDATE_PLUGIN=<name@marketplace>` with `SKILLORI_UPDATE_LOG=<file>`
 /// runs the real plugin update through the app's own runner, writes how it went, and quits.
 @MainActor

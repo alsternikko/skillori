@@ -279,6 +279,10 @@ final class InventoryStore {
     /// How long an answer stands before the sources are asked again.
     static let checkInterval: TimeInterval = 6 * 60 * 60
     private let usesSampleReadings: Bool
+    /// Whether this run may change what the app keeps between runs: the saved links and
+    /// answers, and installer keys. A test run (pictures, probes) links, unlinks and plays
+    /// updates on the reader's own skills, so it keeps nothing unless it has a test home of its own.
+    private let keepsState: Bool
     /// The variables the scan reads. Starts as this app's own, which lack what the reader's
     /// shell sets when the app was opened from Finder; `followLoginShell` fills those in.
     private var environment = ProcessInfo.processInfo.environment
@@ -288,8 +292,10 @@ final class InventoryStore {
         projects = paths.map { URL(fileURLWithPath: $0, isDirectory: true) }
         #if DEBUG
         usesSampleReadings = ProcessInfo.processInfo.environment["SKILLORI_SAMPLE_READINGS"] != nil
+        keepsState = !usesSampleReadings && (!DebugQuiet.isTestRun || Self.testHome != nil)
         #else
         usesSampleReadings = false
+        keepsState = true
         #endif
         // With no saved choice, checks are on for a new installation. One that finished first
         // start without a saved choice is older than 0.2.25, where "Not now" saved nothing: no
@@ -1399,7 +1405,7 @@ final class InventoryStore {
         held[key] = nil
         // A key no linked skill uses any more is not kept.
         if let package, !links.values.contains(where: { $0.package == package }) {
-            InstallerKeys.remove(for: package)
+            if keepsState { InstallerKeys.remove(for: package) }
             keyedPackages.remove(package)
             installerProblems[package] = nil
         }
@@ -1464,7 +1470,7 @@ final class InventoryStore {
     }
 
     private func save() {
-        guard !usesSampleReadings, let url = Self.savedURL else { return }
+        guard keepsState, let url = Self.savedURL else { return }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let saved = Saved(readings: readings, held: held, lastCheck: lastCheck, links: links,
                           pluginReadings: pluginReadings, pluginBaselines: pluginBaselines, codexPlugins: codexPlugins,
